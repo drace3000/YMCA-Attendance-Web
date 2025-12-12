@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YMCA Branch Management System - Workflow Diagram</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            padding: 30px;
+        }
+        h1 {
+            text-align: center;
+            color: #1a5276;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 16px;
+        }
+        .diagram-section {
+            margin-bottom: 40px;
+        }
+        .section-title {
+            background: linear-gradient(90deg, #1a5276, #2874a6);
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 18px;
+            font-weight: 600;
+        }
+        
+        /* Flow diagram styles */
+        .flow-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+        }
+        .flow-row {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+        .flow-box {
+            padding: 15px 25px;
+            border-radius: 10px;
+            text-align: center;
+            font-weight: 500;
+            min-width: 180px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .flow-box:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+        }
+        .flow-box.actor {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 50px;
+        }
+        .flow-box.process {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            color: white;
+        }
+        .flow-box.decision {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            transform: rotate(0deg);
+            clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+            padding: 35px 30px;
+            min-width: 160px;
+        }
+        .flow-box.decision:hover {
+            transform: translateY(-3px) rotate(0deg);
+        }
+        .flow-box.database {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            border-radius: 10px 10px 50% 50%;
+            padding-bottom: 25px;
+        }
+        .flow-box.notification {
+            background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+            color: #333;
+        }
+        .flow-box.app {
+            background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+            color: #333;
+        }
+        .flow-box.report {
+            background: linear-gradient(135deg, #d299c2 0%, #fef9d7 100%);
+            color: #333;
+        }
+        .arrow {
+            font-size: 24px;
+            color: #1a5276;
+            font-weight: bold;
+        }
+        .arrow-down {
+            font-size: 30px;
+            color: #1a5276;
+        }
+        .label {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+        .yes-no {
+            display: flex;
+            gap: 100px;
+            margin-top: 10px;
+        }
+        .branch-label {
+            font-size: 14px;
+            font-weight: bold;
+            color: #1a5276;
+        }
+        
+        /* System Architecture */
+        .architecture {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .arch-layer {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 20px;
+            border: 2px solid #e9ecef;
+        }
+        .arch-layer h3 {
+            color: #1a5276;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #1a5276;
+        }
+        .arch-item {
+            background: white;
+            padding: 12px 15px;
+            margin-bottom: 10px;
+            border-radius: 8px;
+            border-left: 4px solid #2874a6;
+            font-size: 14px;
+        }
+        
+        /* Data flow */
+        .data-flow {
+            display: flex;
+            justify-content: space-between;
+            align-items: stretch;
+            gap: 20px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+        .data-column {
+            flex: 1;
+            min-width: 200px;
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+        }
+        .data-column h4 {
+            color: #1a5276;
+            margin-bottom: 15px;
+        }
+        .data-item {
+            background: white;
+            padding: 10px;
+            margin: 8px 0;
+            border-radius: 6px;
+            font-size: 13px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+        
+        /* Legend */
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            justify-content: center;
+            margin-top: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+        }
+        .legend-color {
+            width: 30px;
+            height: 20px;
+            border-radius: 4px;
+        }
+        
+        /* Swimlane diagram */
+        .swimlane {
+            display: grid;
+            grid-template-columns: 150px 1fr;
+            gap: 0;
+            margin-top: 20px;
+            border: 2px solid #dee2e6;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        .swimlane-header {
+            background: linear-gradient(135deg, #1a5276, #2874a6);
+            color: white;
+            padding: 15px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            border-bottom: 1px solid rgba(255,255,255,0.2);
+        }
+        .swimlane-content {
+            padding: 20px;
+            background: white;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+            border-bottom: 1px solid #dee2e6;
+        }
+        .swimlane-content:last-child {
+            border-bottom: none;
+        }
+        .swim-box {
+            padding: 10px 15px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 500;
+        }
+        .swim-arrow {
+            color: #1a5276;
+            font-size: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🏋️ YMCA Branch Management System</h1>
+        <p class="subtitle">Phase 2: Schedule Management & KPI Dashboard - System Workflow Diagram</p>
+        
+        <!-- System Architecture Overview -->
+        <div class="diagram-section">
+            <div class="section-title">📐 System Architecture Overview</div>
+            <div class="architecture">
+                <div class="arch-layer">
+                    <h3>👥 User Layer</h3>
+                    <div class="arch-item"><strong>Branch Manager</strong><br>Schedule CRUD, Instructor Mgmt, KPIs</div>
+                    <div class="arch-item"><strong>Regional Manager</strong><br>Multi-branch KPIs, Reports</div>
+                    <div class="arch-item"><strong>Instructor</strong><br>View Schedule, Submit Attendance</div>
+                </div>
+                <div class="arch-layer">
+                    <h3>💻 Application Layer</h3>
+                    <div class="arch-item"><strong>Management Web App</strong><br>React + TypeScript + Tailwind</div>
+                    <div class="arch-item"><strong>Instructor App</strong><br>Phase 1 (Existing)</div>
+                    <div class="arch-item"><strong>Notification Service</strong><br>Supabase Edge Functions</div>
+                </div>
+                <div class="arch-layer">
+                    <h3>🗄️ Data Layer</h3>
+                    <div class="arch-item"><strong>Supabase PostgreSQL</strong><br>Primary Database</div>
+                    <div class="arch-item"><strong>Real-time Subscriptions</strong><br>Live Updates</div>
+                    <div class="arch-item"><strong>Supabase Auth</strong><br>Authentication & RLS</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Schedule Creation & Publishing Workflow -->
+        <div class="diagram-section">
+            <div class="section-title">📅 Schedule Creation & Publishing Workflow</div>
+            <div class="swimlane">
+                <div class="swimlane-header">Branch<br>Manager</div>
+                <div class="swimlane-content">
+                    <div class="swim-box" style="background: #e8f4fd; border: 2px solid #2874a6;">Select Source Month</div>
+                    <span class="swim-arrow">→</span>
+                    <div class="swim-box" style="background: #e8f4fd; border: 2px solid #2874a6;">Clone to New Month</div>
+                    <span class="swim-arrow">→</span>
+                    <div class="swim-box" style="background: #e8f4fd; border: 2px solid #2874a6;">Review Conflicts</div>
+                    <span class="swim-arrow">→</span>
+                    <div class="swim-box" style="background: #e8f4fd; border: 2px solid #2874a6;">Resolve/Override</div>
+                    <span class="swim-arrow">→</span>
+                    <div class="swim-box" style="background: #d4edda; border: 2px solid #28a745;">Publish Schedule</div>
+                </div>
+                
+                <div class="swimlane-header">System</div>
+                <div class="swimlane-content">
+                    <div class="swim-box" style="background: #fff3cd; border: 2px solid #ffc107;">Extract Weekly Pattern</div>
+                    <span class="swim-arrow">→</span>
+                    <div class="swim-box" style="background: #fff3cd; border: 2px solid #ffc107;">Generate New Dates</div>
+                    <span class="swim-arrow">→</span>
+                    <div class="swim-box" style="background: #f8d7da; border: 2px solid #dc3545;">Detect Conflicts</div>
+                    <span class="swim-arrow">→</span>
+                    <div class="swim-box" style="background: #fff3cd; border: 2px solid #ffc107;">Validate Schedule</div>
+                    <span class="swim-arrow">→</span>
+                    <div class="swim-box" style="background: #d4edda; border: 2px solid #28a745;">Create Sessions</div>
+                </div>
+                
+                <div class="swimlane-header">Database</div>
+                <div class="swimlane-content">
+                    <div class="swim-box" style="background: #e2e3e5; border: 2px solid #6c757d;">schedules</div>
+                    <div class="swim-box" style="background: #e2e3e5; border: 2px solid #6c757d;">scheduled_classes</div>
+                    <div class="swim-box" style="background: #e2e3e5; border: 2px solid #6c757d;">schedule_conflicts</div>
+                    <div class="swim-box" style="background: #e2e3e5; border: 2px solid #6c757d;">class_sessions</div>
+                </div>
+                
+                <div class="swimlane-header">Notifications</div>
+                <div class="swimlane-content">
+                    <div class="swim-box" style="background: #f5c6cb; border: 2px solid #dc3545;">📧 Email to Instructors</div>
+                    <span class="swim-arrow">→</span>
+                    <div class="swim-box" style="background: #f5c6cb; border: 2px solid #dc3545;">🔔 In-App Notification</div>
+                    <span class="swim-arrow">→</span>
+                    <div class="swim-box" style="background: #d1ecf1; border: 2px solid #17a2b8;">📱 Instructor App Updated</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Conflict Detection Flow -->
+        <div class="diagram-section">
+            <div class="section-title">⚠️ Conflict Detection & Resolution Flow</div>
+            <div class="flow-container">
+                <div class="flow-row">
+                    <div class="flow-box process">Clone Schedule Initiated</div>
+                </div>
+                <div class="arrow-down">↓</div>
+                <div class="flow-row">
+                    <div class="flow-box process">System Scans All Classes</div>
+                </div>
+                <div class="arrow-down">↓</div>
+                <div class="flow-row">
+                    <div class="flow-box" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; padding: 20px 40px;">Conflicts Found?</div>
+                </div>
+                <div class="yes-no">
+                    <div style="text-align: center;">
+                        <div class="branch-label">YES</div>
+                        <div class="arrow-down">↓</div>
+                        <div class="flow-box notification">Generate TODO List</div>
+                        <div class="arrow-down">↓</div>
+                        <div class="flow-row" style="flex-direction: column; gap: 10px;">
+                            <div class="flow-box app" style="min-width: 150px;">Instructor Conflict</div>
+                            <div class="flow-box app" style="min-width: 150px;">Room Conflict</div>
+                        </div>
+                        <div class="arrow-down">↓</div>
+                        <div class="flow-box process">Manager Resolves</div>
+                        <div class="arrow-down">↓</div>
+                        <div class="flow-box" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; padding: 20px 40px;">Override?</div>
+                        <div class="flow-row" style="margin-top: 10px;">
+                            <div style="text-align: center;">
+                                <div class="branch-label">YES</div>
+                                <div class="arrow-down">↓</div>
+                                <div class="flow-box notification">Log Justification</div>
+                            </div>
+                            <div style="text-align: center; margin-left: 30px;">
+                                <div class="branch-label">NO</div>
+                                <div class="arrow-down">↓</div>
+                                <div class="flow-box process">Must Resolve All</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div class="branch-label">NO</div>
+                        <div class="arrow-down">↓</div>
+                        <div class="flow-box process" style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);">Ready to Publish</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Attendance & KPI Data Flow -->
+        <div class="diagram-section">
+            <div class="section-title">📊 Attendance & KPI Data Flow</div>
+            <div class="data-flow">
+                <div class="data-column">
+                    <h4>📱 Instructor App</h4>
+                    <div class="data-item">Instructor opens class</div>
+                    <div class="data-item">Enters head count</div>
+                    <div class="data-item">Submits attendance</div>
+                    <div style="font-size: 24px; margin: 10px 0;">↓</div>
+                </div>
+                <div class="data-column">
+                    <h4>🗄️ Database</h4>
+                    <div class="data-item">attendance_records INSERT</div>
+                    <div class="data-item">Real-time broadcast</div>
+                    <div class="data-item">Trigger calculations</div>
+                    <div style="font-size: 24px; margin: 10px 0;">↓</div>
+                </div>
+                <div class="data-column">
+                    <h4>📈 KPI Dashboard</h4>
+                    <div class="data-item">Real-time subscription</div>
+                    <div class="data-item">Aggregate metrics</div>
+                    <div class="data-item">Update visualizations</div>
+                    <div style="font-size: 24px; margin: 10px 0;">↓</div>
+                </div>
+                <div class="data-column">
+                    <h4>🔔 Alerts</h4>
+                    <div class="data-item">Check thresholds</div>
+                    <div class="data-item">Low attendance?</div>
+                    <div class="data-item">Trigger manager alert</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Role-Based Access -->
+        <div class="diagram-section">
+            <div class="section-title">🔐 Role-Based Access Control</div>
+            <div class="swimlane">
+                <div class="swimlane-header">Branch<br>Manager</div>
+                <div class="swimlane-content">
+                    <div class="swim-box" style="background: #d4edda;">✅ Create Schedule</div>
+                    <div class="swim-box" style="background: #d4edda;">✅ Edit Schedule</div>
+                    <div class="swim-box" style="background: #d4edda;">✅ Publish</div>
+                    <div class="swim-box" style="background: #d4edda;">✅ Manage Instructors</div>
+                    <div class="swim-box" style="background: #d4edda;">✅ View Branch KPIs</div>
+                    <div class="swim-box" style="background: #d4edda;">✅ Configure Alerts</div>
+                </div>
+                
+                <div class="swimlane-header">Regional<br>Manager</div>
+                <div class="swimlane-content">
+                    <div class="swim-box" style="background: #fff3cd;">👁️ View All Branches</div>
+                    <div class="swim-box" style="background: #fff3cd;">👁️ Cross-Branch KPIs</div>
+                    <div class="swim-box" style="background: #fff3cd;">👁️ Comparison Reports</div>
+                    <div class="swim-box" style="background: #f8d7da;">❌ No Edit Access</div>
+                    <div class="swim-box" style="background: #d4edda;">✅ Export Reports</div>
+                </div>
+                
+                <div class="swimlane-header">Instructor</div>
+                <div class="swimlane-content">
+                    <div class="swim-box" style="background: #fff3cd;">👁️ View Own Schedule</div>
+                    <div class="swim-box" style="background: #d4edda;">✅ Submit Attendance</div>
+                    <div class="swim-box" style="background: #d1ecf1;">🔔 Receive Notifications</div>
+                    <div class="swim-box" style="background: #f8d7da;">❌ No Management Access</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Database Entity Relationships -->
+        <div class="diagram-section">
+            <div class="section-title">🗃️ Core Database Relationships</div>
+            <div class="flow-container">
+                <div class="flow-row">
+                    <div class="flow-box database">branches</div>
+                    <span class="arrow">1:N</span>
+                    <div class="flow-box database">schedules</div>
+                    <span class="arrow">1:N</span>
+                    <div class="flow-box database">scheduled_classes</div>
+                    <span class="arrow">1:N</span>
+                    <div class="flow-box database">class_sessions</div>
+                    <span class="arrow">1:1</span>
+                    <div class="flow-box database">attendance_records</div>
+                </div>
+                <div style="margin-top: 20px;"></div>
+                <div class="flow-row">
+                    <div class="flow-box database">profiles<br><small>(instructors)</small></div>
+                    <span class="arrow">1:N</span>
+                    <div class="flow-box database">scheduled_classes</div>
+                </div>
+                <div style="margin-top: 10px;"></div>
+                <div class="flow-row">
+                    <div class="flow-box database">class_templates</div>
+                    <span class="arrow">1:N</span>
+                    <div class="flow-box database">scheduled_classes</div>
+                </div>
+                <div style="margin-top: 10px;"></div>
+                <div class="flow-row">
+                    <div class="flow-box database">schedules</div>
+                    <span class="arrow">1:N</span>
+                    <div class="flow-box database">schedule_conflicts</div>
+                </div>
+                <div style="margin-top: 10px;"></div>
+                <div class="flow-row">
+                    <div class="flow-box database">profiles</div>
+                    <span class="arrow">1:N</span>
+                    <div class="flow-box database">notifications</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Legend -->
+        <div class="legend">
+            <div class="legend-item">
+                <div class="legend-color" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);"></div>
+                <span>Actor/Role</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);"></div>
+                <span>Process/Action</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);"></div>
+                <span>Decision Point</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);"></div>
+                <span>Database Table</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);"></div>
+                <span>Notification/Alert</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);"></div>
+                <span>Application/UI</span>
+            </div>
+        </div>
+
+        <p style="text-align: center; margin-top: 30px; color: #666; font-size: 14px;">
+            YMCA Branch Management System - Phase 2 PRD | Version 1.0 | December 2025
+        </p>
+    </div>
+</body>
+</html>

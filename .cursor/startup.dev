@@ -1,0 +1,38 @@
+# Development Environment Startup Rule
+
+When starting work on this repo, follow this sequence:
+
+1) **Prereqs**
+   - Ensure Docker Desktop is running.
+   - Supabase CLI accessible at `C:\Program Files\Supabase CLI\supabase` (or on PATH).
+
+2) **Supabase local (baseline applied)**
+   ```powershell
+   cd C:\Projects\Cursor\Projects\YMCA\YMCA-Attendance-Web
+   "C:\Program Files\Supabase CLI\supabase" start
+   ```
+   - Local API: `http://127.0.0.1:54321`
+   - Local anon key: `sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH`
+
+3) **Web app env vars**
+   - Copy template once: `Copy-Item .\web\env.local.template .\web\.env.local` (if missing)
+   - Set for local dev:
+     ```
+     NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
+     NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH
+     ```
+
+4) **Web app dev server**
+   ```powershell
+   cd C:\Projects\Cursor\Projects\YMCA\YMCA-Attendance-Web\web
+   npm install
+   npm run dev
+   ```
+   - Open http://localhost:3000
+
+5) **Link targets (when pushing DB changes)**
+   - Staging: `supabase link --project-ref gchkarlboevsyxixeocd`
+   - Prod:    `supabase link --project-ref pgsqtbblahihqesnvwxd`
+
+Reference: `documents/supabase-environment-flow.md` for full flow details.
+

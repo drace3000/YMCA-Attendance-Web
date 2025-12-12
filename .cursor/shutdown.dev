@@ -1,0 +1,18 @@
+# Development Environment Shutdown
+
+1) Stop the web dev server
+   - In the terminal running `npm run dev`: press Ctrl+C
+
+2) Stop local Supabase
+   ```powershell
+   cd C:\Projects\Cursor\Projects\YMCA\YMCA-Attendance-Web
+   "C:\Program Files\Supabase CLI\supabase" stop
+   ```
+
+3) Optional Docker cleanup (to free space)
+   ```powershell
+   docker system prune -a
+   ```
+   - Warning: this removes all stopped containers and unused images.
+   - Close Docker Desktop if you want to save resources.
+

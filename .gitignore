@@ -1,0 +1,33 @@
+# Node / Next.js
+node_modules/
+.next/
+.turbo/
+dist/
+out/
+.vercel/
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Env files (keep templates)
+.env
+.env.*
+!.env.local.template
+!web/env.local.template
+
+# Supabase local artifacts
+supabase/.temp/
+supabase/.branches/
+supabase/.snapshots/
+supabase/.env
+supabase/.local
+supabase/.cache
+.supabase/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+
+# Binaries
+supabase.exe
+
