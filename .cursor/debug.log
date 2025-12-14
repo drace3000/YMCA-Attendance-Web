@@ -1,0 +1,5 @@
+{"sessionId":"debug-session","runId":"run-scroll","hypothesisId":"H2","location":"reports/page.tsx:scroll","message":"scroll ratio >= 0.8","data":{"y":217,"docH":1197,"winH":929,"ratio":0.8097014925373134},"timestamp":1765678804411}
+{"sessionId":"debug-session","runId":"run-scroll","hypothesisId":"H2","location":"reports/page.tsx:scroll","message":"scroll ratio >= 0.95","data":{"y":256,"docH":1197,"winH":929,"ratio":0.9552238805970149},"timestamp":1765678804578}
+{"sessionId":"debug-session","runId":"run1","hypothesisId":"H1","location":"reports/page.tsx:refreshReports:start","message":"refresh start","data":{"filters":{"year":"2025","quarter":"all","month":"all","week":"all","day":"all","instructor":"f843a16e-5433-4194-a01e-829e2250de0e"}},"timestamp":1765678845088}
+{"sessionId":"debug-session","runId":"run1","hypothesisId":"H1","location":"reports/page.tsx:refreshReports:end","message":"refresh end","data":{},"timestamp":1765678845175}
+{"sessionId":"debug-session","runId":"run-scroll","hypothesisId":"H2","location":"reports/page.tsx:data-change","message":"data change height snapshot","data":{"scrollHeight":1136,"innerHeight":929},"timestamp":1765678845213}
