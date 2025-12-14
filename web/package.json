@@ -23,6 +23,7 @@
     "date-fns": "^4.1.0",
     "igniteui-react": "^19.4.0",
     "igniteui-react-core": "^19.3.1",
+    "igniteui-react-grids": "^19.4.0",
     "lucide-react": "^0.561.0",
     "next": "16.0.10",
     "openai": "^6.10.0",

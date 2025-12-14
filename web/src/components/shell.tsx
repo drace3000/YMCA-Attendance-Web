@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  Calendar,
   ChartPie,
   Home,
   Menu,
@@ -26,6 +27,7 @@ const navItems: NavItem[] = [
   { label: "Welcome", href: "/", icon: <Home className="h-4 w-4" /> },
   { label: "Reports", href: "/reports", icon: <ChartPie className="h-4 w-4" /> },
   { label: "Trends", href: "/trends", icon: <TrendingUp className="h-4 w-4" /> },
+  { label: "Scheduling", href: "/scheduling", icon: <Calendar className="h-4 w-4" /> },
   { label: "Maintenance", href: "/maintenance", icon: <Wrench className="h-4 w-4" /> },
   { label: "Settings", href: "/settings", icon: <Settings className="h-4 w-4" /> },
 ];
