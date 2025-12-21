@@ -1,0 +1,1586 @@
+[
+  {
+    "session": {
+      "day": "SATURDAY",
+      "startTime": "11:15 pm",
+      "endTime": "12:15 pm",
+      "className": "TAI CHI",
+      "location": "MB",
+      "instructor1": "BINH",
+      "instructor2": "",
+      "datePairs": [
+        {
+          "date": "5/4",
+          "attendance": 18
+        },
+        {
+          "date": "5/11",
+          "attendance": 16
+        },
+        {
+          "date": "5/18",
+          "attendance": 18
+        },
+        {
+          "date": "5/25",
+          "attendance": 18
+        }
+      ]
+    },
+    "datePair": {
+      "date": "5/4",
+      "attendance": 18
+    },
+    "error": "new row for relation \"class_sessions\" violates check constraint \"class_sessions_time_order\""
+  },
+  {
+    "session": {
+      "day": "SATURDAY",
+      "startTime": "11:15 pm",
+      "endTime": "12:15 pm",
+      "className": "TAI CHI",
+      "location": "MB",
+      "instructor1": "BINH",
+      "instructor2": "",
+      "datePairs": [
+        {
+          "date": "5/4",
+          "attendance": 18
+        },
+        {
+          "date": "5/11",
+          "attendance": 16
+        },
+        {
+          "date": "5/18",
+          "attendance": 18
+        },
+        {
+          "date": "5/25",
+          "attendance": 18
+        }
+      ]
+    },
+    "datePair": {
+      "date": "5/11",
+      "attendance": 16
+    },
+    "error": "new row for relation \"class_sessions\" violates check constraint \"class_sessions_time_order\""
+  },
+  {
+    "session": {
+      "day": "SATURDAY",
+      "startTime": "11:15 pm",
+      "endTime": "12:15 pm",
+      "className": "TAI CHI",
+      "location": "MB",
+      "instructor1": "BINH",
+      "instructor2": "",
+      "datePairs": [
+        {
+          "date": "5/4",
+          "attendance": 18
+        },
+        {
+          "date": "5/11",
+          "attendance": 16
+        },
+        {
+          "date": "5/18",
+          "attendance": 18
+        },
+        {
+          "date": "5/25",
+          "attendance": 18
+        }
+      ]
+    },
+    "datePair": {
+      "date": "5/18",
+      "attendance": 18
+    },
+    "error": "new row for relation \"class_sessions\" violates check constraint \"class_sessions_time_order\""
+  },
+  {
+    "session": {
+      "day": "SATURDAY",
+      "startTime": "11:15 pm",
+      "endTime": "12:15 pm",
+      "className": "TAI CHI",
+      "location": "MB",
+      "instructor1": "BINH",
+      "instructor2": "",
+      "datePairs": [
+        {
+          "date": "5/4",
+          "attendance": 18
+        },
+        {
+          "date": "5/11",
+          "attendance": 16
+        },
+        {
+          "date": "5/18",
+          "attendance": 18
+        },
+        {
+          "date": "5/25",
+          "attendance": 18
+        }
+      ]
+    },
+    "datePair": {
+      "date": "5/25",
+      "attendance": 18
+    },
+    "error": "new row for relation \"class_sessions\" violates check constraint \"class_sessions_time_order\""
+  },
+  {
+    "session": {
+      "day": "SUNDAY",
+      "startTime": "11:30 pm",
+      "endTime": "12:30 pm",
+      "className": "ZUMBA®",
+      "location": "S",
+      "instructor1": "MARI",
+      "instructor2": "SHELLEY",
+      "datePairs": [
+        {
+          "date": "5/5",
+          "attendance": 26
+        },
+        {
+          "date": "5/12",
+          "attendance": 22
+        },
+        {
+          "date": "5/19",
+          "attendance": 18
+        },
+        {
+          "date": "5/26",
+          "attendance": 19
+        }
+      ]
+    },
+    "datePair": {
+      "date": "5/5",
+      "attendance": 26
+    },
+    "error": "new row for relation \"class_sessions\" violates check constraint \"class_sessions_time_order\""
+  },
+  {
+    "session": {
+      "day": "SUNDAY",
+      "startTime": "11:30 pm",
+      "endTime": "12:30 pm",
+      "className": "ZUMBA®",
+      "location": "S",
+      "instructor1": "MARI",
+      "instructor2": "SHELLEY",
+      "datePairs": [
+        {
+          "date": "5/5",
+          "attendance": 26
+        },
+        {
+          "date": "5/12",
+          "attendance": 22
+        },
+        {
+          "date": "5/19",
+          "attendance": 18
+        },
+        {
+          "date": "5/26",
+          "attendance": 19
+        }
+      ]
+    },
+    "datePair": {
+      "date": "5/12",
+      "attendance": 22
+    },
+    "error": "new row for relation \"class_sessions\" violates check constraint \"class_sessions_time_order\""
+  },
+  {
+    "session": {
+      "day": "SUNDAY",
+      "startTime": "11:30 pm",
+      "endTime": "12:30 pm",
+      "className": "ZUMBA®",
+      "location": "S",
+      "instructor1": "MARI",
+      "instructor2": "SHELLEY",
+      "datePairs": [
+        {
+          "date": "5/5",
+          "attendance": 26
+        },
+        {
+          "date": "5/12",
+          "attendance": 22
+        },
+        {
+          "date": "5/19",
+          "attendance": 18
+        },
+        {
+          "date": "5/26",
+          "attendance": 19
+        }
+      ]
+    },
+    "datePair": {
+      "date": "5/19",
+      "attendance": 18
+    },
+    "error": "new row for relation \"class_sessions\" violates check constraint \"class_sessions_time_order\""
+  },
+  {
+    "session": {
+      "day": "SUNDAY",
+      "startTime": "11:30 pm",
+      "endTime": "12:30 pm",
+      "className": "ZUMBA®",
+      "location": "S",
+      "instructor1": "MARI",
+      "instructor2": "SHELLEY",
+      "datePairs": [
+        {
+          "date": "5/5",
+          "attendance": 26
+        },
+        {
+          "date": "5/12",
+          "attendance": 22
+        },
+        {
+          "date": "5/19",
+          "attendance": 18
+        },
+        {
+          "date": "5/26",
+          "attendance": 19
+        }
+      ]
+    },
+    "datePair": {
+      "date": "5/26",
+      "attendance": 19
+    },
+    "error": "new row for relation \"class_sessions\" violates check constraint \"class_sessions_time_order\""
+  },
+  {
+    "session": {
+      "day": "TUESDAY",
+      "startTime": "11:00 pm",
+      "endTime": "12:00 pm",
+      "className": "GENTLE YOGA",
+      "location": "MB",
+      "instructor1": "SUSAN",
+      "instructor2": "",
+      "datePairs": [
+        {
+          "date": "5/7",
+          "attendance": 38
+        },
+        {
+          "date": "5/14",
+          "attendance": 46
+        },
+        {
+          "date": "5/21",
+          "attendance": 32
+        },
+        {
+          "date": "5/28",
+          "attendance": 41
+        }
+      ]
+    },
+    "datePair": {
+      "date": "5/7",
+      "attendance": 38
+    },
+    "error": "new row for relation \"class_sessions\" violates check constraint \"class_sessions_time_order\""
+  },
+  {
+    "session": {
+      "day": "TUESDAY",
+      "startTime": "11:00 pm",
+      "endTime": "12:00 pm",
+      "className": "GENTLE YOGA",
+      "location": "MB",
+      "instructor1": "SUSAN",
+      "instructor2": "",
+      "datePairs": [
+        {
+          "date": "5/7",
+          "attendance": 38
+        },
+        {
+          "date": "5/14",
+          "attendance": 46
+        },
+        {
+          "date": "5/21",
+          "attendance": 32
+        },
+        {
+          "date": "5/28",
+          "attendance": 41
+        }
+      ]
+    },
+    "datePair": {
+      "date": "5/14",
+      "attendance": 46
+    },
+    "error": "new row for relation \"class_sessions\" violates check constraint \"class_sessions_time_order\""
+  },
+  {
+    "session": {
+      "day": "TUESDAY",
+      "startTime": "11:00 pm",
+      "endTime": "12:00 pm",
+      "className": "GENTLE YOGA",
+      "location": "MB",
+      "instructor1": "SUSAN",
+      "instructor2": "",
+      "datePairs": [
+        {
+          "date": "5/7",
+          "attendance": 38
+        },
+        {
+          "date": "5/14",
+          "attendance": 46
+        },
+        {
+          "date": "5/21",
+          "attendance": 32
+        },
+        {
+          "date": "5/28",
+          "attendance": 41
+        }
+      ]
+    },
+    "datePair": {
+      "date": "5/21",
+      "attendance": 32
+    },
+    "error": "new row for relation \"class_sessions\" violates check constraint \"class_sessions_time_order\""
+  },
+  {
+    "session": {
+      "day": "TUESDAY",
+      "startTime": "11:00 pm",
+      "endTime": "12:00 pm",
+      "className": "GENTLE YOGA",
+      "location": "MB",
+      "instructor1": "SUSAN",
+      "instructor2": "",
+      "datePairs": [
+        {
+          "date": "5/7",
+          "attendance": 38
+        },
+        {
+          "date": "5/14",
+          "attendance": 46
+        },
+        {
+          "date": "5/21",
+          "attendance": 32
+        },
+        {
+          "date": "5/28",
+          "attendance": 41
+        }
+      ]
+    },
+    "datePair": {
+      "date": "5/28",
+      "attendance": 41
+    },
+    "error": "new row for relation \"class_sessions\" violates check constraint \"class_sessions_time_order\""
+  },
+  {
+    "session": {
+      "day": "THURSDAY",
+      "startTime": "11:00 pm",
+      "endTime": "12:00 pm",
+      "className": "GENTLE YOGA",
+      "location": "MB",
+      "instructor1": "CLAIRE",
+      "instructor2": "",
+      "datePairs": [
+        {
+          "date": "5/2",
+          "attendance": 20
+        },
+        {
+          "date": "5/9",
+          "attendance": 24
+        },
+        {
+          "date": "5/16",
+          "attendance": 23
+        },
+        {
+          "date": "5/23",
+          "attendance": 22
+        },
+        {
+          "date": "5/30",
+          "attendance": 19
+        }
+      ]
+    },
+    "datePair": {
+      "date": "5/2",
+      "attendance": 20
+    },
+    "error": "new row for relation \"class_sessions\" violates check constraint \"class_sessions_time_order\""
+  },
+  {
+    "session": {
+      "day": "THURSDAY",
+      "startTime": "11:00 pm",
+      "endTime": "12:00 pm",
+      "className": "GENTLE YOGA",
+      "location": "MB",
+      "instructor1": "CLAIRE",
+      "instructor2": "",
+      "datePairs": [
+        {
+          "date": "5/2",
+          "attendance": 20
+        },
+        {
+          "date": "5/9",
+          "attendance": 24
+        },
+        {
+          "date": "5/16",
+          "attendance": 23
+        },
+        {
+          "date": "5/23",
+          "attendance": 22
+        },
+        {
+          "date": "5/30",
+          "attendance": 19
+        }
+      ]
+    },
+    "datePair": {
+      "date": "5/9",
+      "attendance": 24
+    },
+    "error": "new row for relation \"class_sessions\" violates check constraint \"class_sessions_time_order\""
+  },
+  {
+    "session": {
+      "day": "THURSDAY",
+      "startTime": "11:00 pm",
+      "endTime": "12:00 pm",
+      "className": "GENTLE YOGA",
+      "location": "MB",
+      "instructor1": "CLAIRE",
+      "instructor2": "",
+      "datePairs": [
+        {
+          "date": "5/2",
+          "attendance": 20
+        },
+        {
+          "date": "5/9",
+          "attendance": 24
+        },
+        {
+          "date": "5/16",
+          "attendance": 23
+        },
+        {
+          "date": "5/23",
+          "attendance": 22
+        },
+        {
+          "date": "5/30",
+          "attendance": 19
+        }
+      ]
+    },
+    "datePair": {
+      "date": "5/16",
+      "attendance": 23
+    },
+    "error": "new row for relation \"class_sessions\" violates check constraint \"class_sessions_time_order\""
+  },
+  {
+    "session": {
+      "day": "THURSDAY",
+      "startTime": "11:00 pm",
+      "endTime": "12:00 pm",
+      "className": "GENTLE YOGA",
+      "location": "MB",
+      "instructor1": "CLAIRE",
+      "instructor2": "",
+      "datePairs": [
+        {
+          "date": "5/2",
+          "attendance": 20
+        },
+        {
+          "date": "5/9",
+          "attendance": 24
+        },
+        {
+          "date": "5/16",
+          "attendance": 23
+        },
+        {
+          "date": "5/23",
+          "attendance": 22
+        },
+        {
+          "date": "5/30",
+          "attendance": 19
+        }
+      ]
+    },
+    "datePair": {
+      "date": "5/23",
+      "attendance": 22
+    },
+    "error": "new row for relation \"class_sessions\" violates check constraint \"class_sessions_time_order\""
+  },
+  {
+    "session": {
+      "day": "THURSDAY",
+      "startTime": "11:00 pm",
+      "endTime": "12:00 pm",
+      "className": "GENTLE YOGA",
+      "location": "MB",
+      "instructor1": "CLAIRE",
+      "instructor2": "",
+      "datePairs": [
+        {
+          "date": "5/2",
+          "attendance": 20
+        },
+        {
+          "date": "5/9",
+          "attendance": 24
+        },
+        {
+          "date": "5/16",
+          "attendance": 23
+        },
+        {
+          "date": "5/23",
+          "attendance": 22
+        },
+        {
+          "date": "5/30",
+          "attendance": 19
+        }
+      ]
+    },
+    "datePair": {
+      "date": "5/30",
+      "attendance": 19
+    },
+    "error": "new row for relation \"class_sessions\" violates check constraint \"class_sessions_time_order\""
+  },
+  {
+    "session": {
+      "day": "TUESDAY",
+      "startTime": "11:15 pm",
+      "endTime": "12:00 pm",
+      "className": "FEELING FIT",
+      "location": "FG",
+      "instructor1": "HEATHER C",
+      "instructor2": "",
+      "datePairs": [
+        {
+          "date": "5/7",
+          "attendance": 60
+        },
+        {
+          "date": "5/14",
+          "attendance": 72
+        },
+        {
+          "date": "5/21",
+          "attendance": 70
+        },
+        {
+          "date": "5/28",
+          "attendance": 70
+        }
+      ]
+    },
+    "datePair": {
+      "date": "5/7",
+      "attendance": 60
+    },
+    "error": "new row for relation \"class_sessions\" violates check constraint \"class_sessions_time_order\""
+  },
+  {
+    "session": {
+      "day": "TUESDAY",
+      "startTime": "11:15 pm",
+      "endTime": "12:00 pm",
+      "className": "FEELING FIT",
+      "location": "FG",
+      "instructor1": "HEATHER C",
+      "instructor2": "",
+      "datePairs": [
+        {
+          "date": "5/7",
+          "attendance": 60
+        },
+        {
+          "date": "5/14",
+          "attendance": 72
+        },
+        {
+          "date": "5/21",
+          "attendance": 70
+        },
+        {
+          "date": "5/28",
+          "attendance": 70
+        }
+      ]
+    },
+    "datePair": {
+      "date": "5/14",
+      "attendance": 72
+    },
+    "error": "new row for relation \"class_sessions\" violates check constraint \"class_sessions_time_order\""
+  },
+  {
+    "session": {
+      "day": "TUESDAY",
+      "startTime": "11:15 pm",
+      "endTime": "12:00 pm",
+      "className": "FEELING FIT",
+      "location": "FG",
+      "instructor1": "HEATHER C",
+      "instructor2": "",
+      "datePairs": [
+        {
+          "date": "5/7",
+          "attendance": 60
+        },
+        {
+          "date": "5/14",
+          "attendance": 72
+        },
+        {
+          "date": "5/21",
+          "attendance": 70
+        },
+        {
+          "date": "5/28",
+          "attendance": 70
+        }
+      ]
+    },
+    "datePair": {
+      "date": "5/21",
+      "attendance": 70
+    },
+    "error": "new row for relation \"class_sessions\" violates check constraint \"class_sessions_time_order\""
+  },
+  {
+    "session": {
+      "day": "TUESDAY",
+      "startTime": "11:15 pm",
+      "endTime": "12:00 pm",
+      "className": "FEELING FIT",
+      "location": "FG",
+      "instructor1": "HEATHER C",
+      "instructor2": "",
+      "datePairs": [
+        {
+          "date": "5/7",
+          "attendance": 60
+        },
+        {
+          "date": "5/14",
+          "attendance": 72
+        },
+        {
+          "date": "5/21",
+          "attendance": 70
+        },
+        {
+          "date": "5/28",
+          "attendance": 70
+        }
+      ]
+    },
+    "datePair": {
+      "date": "5/28",
+      "attendance": 70
+    },
+    "error": "new row for relation \"class_sessions\" violates check constraint \"class_sessions_time_order\""
+  },
+  {
+    "session": {
+      "day": "MONDAY",
+      "startTime": "11:30 pm",
+      "endTime": "12:15 pm",
+      "className": "SILVERSNEAKERS® CIRCUIT",
+      "location": "FG",
+      "instructor1": "TESS",
+      "instructor2": "",
+      "datePairs": [
+        {
+          "date": "5/6",
+          "attendance": 80
+        },
+        {
+          "date": "5/13",
+          "attendance": 62
+        },
+        {
+          "date": "5/20",
+          "attendance": 70
+        }
+      ]
+    },
+    "datePair": {
+      "date": "5/6",
+      "attendance": 80
+    },
+    "error": "new row for relation \"class_sessions\" violates check constraint \"class_sessions_time_order\""
+  },
+  {
+    "session": {
+      "day": "MONDAY",
+      "startTime": "11:30 pm",
+      "endTime": "12:15 pm",
+      "className": "SILVERSNEAKERS® CIRCUIT",
+      "location": "FG",
+      "instructor1": "TESS",
+      "instructor2": "",
+      "datePairs": [
+        {
+          "date": "5/6",
+          "attendance": 80
+        },
+        {
+          "date": "5/13",
+          "attendance": 62
+        },
+        {
+          "date": "5/20",
+          "attendance": 70
+        }
+      ]
+    },
+    "datePair": {
+      "date": "5/13",
+      "attendance": 62
+    },
+    "error": "new row for relation \"class_sessions\" violates check constraint \"class_sessions_time_order\""
+  },
+  {
+    "session": {
+      "day": "MONDAY",
+      "startTime": "11:30 pm",
+      "endTime": "12:15 pm",
+      "className": "SILVERSNEAKERS® CIRCUIT",
+      "location": "FG",
+      "instructor1": "TESS",
+      "instructor2": "",
+      "datePairs": [
+        {
+          "date": "5/6",
+          "attendance": 80
+        },
+        {
+          "date": "5/13",
+          "attendance": 62
+        },
+        {
+          "date": "5/20",
+          "attendance": 70
+        }
+      ]
+    },
+    "datePair": {
+      "date": "5/20",
+      "attendance": 70
+    },
+    "error": "new row for relation \"class_sessions\" violates check constraint \"class_sessions_time_order\""
+  },
+  {
+    "session": {
+      "day": "THURSDAY",
+      "startTime": "11:15 pm",
+      "endTime": "12:00 pm",
+      "className": "FEELING FIT",
+      "location": "FG",
+      "instructor1": "HEATHER C",
+      "instructor2": "",
+      "datePairs": [
+        {
+          "date": "5/2",
+          "attendance": 70
+        },
+        {
+          "date": "5/9",
+          "attendance": 60
+        },
+        {
+          "date": "5/16",
+          "attendance": 70
+        },
+        {
+          "date": "5/23",
+          "attendance": 70
+        },
+        {
+          "date": "5/30",
+          "attendance": 72
+        }
+      ]
+    },
+    "datePair": {
+      "date": "5/2",
+      "attendance": 70
+    },
+    "error": "new row for relation \"class_sessions\" violates check constraint \"class_sessions_time_order\""
+  },
+  {
+    "session": {
+      "day": "THURSDAY",
+      "startTime": "11:15 pm",
+      "endTime": "12:00 pm",
+      "className": "FEELING FIT",
+      "location": "FG",
+      "instructor1": "HEATHER C",
+      "instructor2": "",
+      "datePairs": [
+        {
+          "date": "5/2",
+          "attendance": 70
+        },
+        {
+          "date": "5/9",
+          "attendance": 60
+        },
+        {
+          "date": "5/16",
+          "attendance": 70
+        },
+        {
+          "date": "5/23",
+          "attendance": 70
+        },
+        {
+          "date": "5/30",
+          "attendance": 72
+        }
+      ]
+    },
+    "datePair": {
+      "date": "5/9",
+      "attendance": 60
+    },
+    "error": "new row for relation \"class_sessions\" violates check constraint \"class_sessions_time_order\""
+  },
+  {
+    "session": {
+      "day": "THURSDAY",
+      "startTime": "11:15 pm",
+      "endTime": "12:00 pm",
+      "className": "FEELING FIT",
+      "location": "FG",
+      "instructor1": "HEATHER C",
+      "instructor2": "",
+      "datePairs": [
+        {
+          "date": "5/2",
+          "attendance": 70
+        },
+        {
+          "date": "5/9",
+          "attendance": 60
+        },
+        {
+          "date": "5/16",
+          "attendance": 70
+        },
+        {
+          "date": "5/23",
+          "attendance": 70
+        },
+        {
+          "date": "5/30",
+          "attendance": 72
+        }
+      ]
+    },
+    "datePair": {
+      "date": "5/16",
+      "attendance": 70
+    },
+    "error": "new row for relation \"class_sessions\" violates check constraint \"class_sessions_time_order\""
+  },
+  {
+    "session": {
+      "day": "THURSDAY",
+      "startTime": "11:15 pm",
+      "endTime": "12:00 pm",
+      "className": "FEELING FIT",
+      "location": "FG",
+      "instructor1": "HEATHER C",
+      "instructor2": "",
+      "datePairs": [
+        {
+          "date": "5/2",
+          "attendance": 70
+        },
+        {
+          "date": "5/9",
+          "attendance": 60
+        },
+        {
+          "date": "5/16",
+          "attendance": 70
+        },
+        {
+          "date": "5/23",
+          "attendance": 70
+        },
+        {
+          "date": "5/30",
+          "attendance": 72
+        }
+      ]
+    },
+    "datePair": {
+      "date": "5/23",
+      "attendance": 70
+    },
+    "error": "new row for relation \"class_sessions\" violates check constraint \"class_sessions_time_order\""
+  },
+  {
+    "session": {
+      "day": "THURSDAY",
+      "startTime": "11:15 pm",
+      "endTime": "12:00 pm",
+      "className": "FEELING FIT",
+      "location": "FG",
+      "instructor1": "HEATHER C",
+      "instructor2": "",
+      "datePairs": [
+        {
+          "date": "5/2",
+          "attendance": 70
+        },
+        {
+          "date": "5/9",
+          "attendance": 60
+        },
+        {
+          "date": "5/16",
+          "attendance": 70
+        },
+        {
+          "date": "5/23",
+          "attendance": 70
+        },
+        {
+          "date": "5/30",
+          "attendance": 72
+        }
+      ]
+    },
+    "datePair": {
+      "date": "5/30",
+      "attendance": 72
+    },
+    "error": "new row for relation \"class_sessions\" violates check constraint \"class_sessions_time_order\""
+  },
+  {
+    "session": {
+      "day": "WEDNESDAY",
+      "startTime": "11:30 pm",
+      "endTime": "12:15 pm",
+      "className": "SILVERSNEAKERS® CIRCUIT",
+      "location": "FG",
+      "instructor1": "TESS",
+      "instructor2": "",
+      "datePairs": [
+        {
+          "date": "5/1",
+          "attendance": 70
+        },
+        {
+          "date": "5/8",
+          "attendance": 65
+        },
+        {
+          "date": "5/15",
+          "attendance": 59
+        },
+        {
+          "date": "5/22",
+          "attendance": 60
+        },
+        {
+          "date": "5/29",
+          "attendance": 70
+        }
+      ]
+    },
+    "datePair": {
+      "date": "5/1",
+      "attendance": 70
+    },
+    "error": "new row for relation \"class_sessions\" violates check constraint \"class_sessions_time_order\""
+  },
+  {
+    "session": {
+      "day": "WEDNESDAY",
+      "startTime": "11:30 pm",
+      "endTime": "12:15 pm",
+      "className": "SILVERSNEAKERS® CIRCUIT",
+      "location": "FG",
+      "instructor1": "TESS",
+      "instructor2": "",
+      "datePairs": [
+        {
+          "date": "5/1",
+          "attendance": 70
+        },
+        {
+          "date": "5/8",
+          "attendance": 65
+        },
+        {
+          "date": "5/15",
+          "attendance": 59
+        },
+        {
+          "date": "5/22",
+          "attendance": 60
+        },
+        {
+          "date": "5/29",
+          "attendance": 70
+        }
+      ]
+    },
+    "datePair": {
+      "date": "5/8",
+      "attendance": 65
+    },
+    "error": "new row for relation \"class_sessions\" violates check constraint \"class_sessions_time_order\""
+  },
+  {
+    "session": {
+      "day": "WEDNESDAY",
+      "startTime": "11:30 pm",
+      "endTime": "12:15 pm",
+      "className": "SILVERSNEAKERS® CIRCUIT",
+      "location": "FG",
+      "instructor1": "TESS",
+      "instructor2": "",
+      "datePairs": [
+        {
+          "date": "5/1",
+          "attendance": 70
+        },
+        {
+          "date": "5/8",
+          "attendance": 65
+        },
+        {
+          "date": "5/15",
+          "attendance": 59
+        },
+        {
+          "date": "5/22",
+          "attendance": 60
+        },
+        {
+          "date": "5/29",
+          "attendance": 70
+        }
+      ]
+    },
+    "datePair": {
+      "date": "5/15",
+      "attendance": 59
+    },
+    "error": "new row for relation \"class_sessions\" violates check constraint \"class_sessions_time_order\""
+  },
+  {
+    "session": {
+      "day": "WEDNESDAY",
+      "startTime": "11:30 pm",
+      "endTime": "12:15 pm",
+      "className": "SILVERSNEAKERS® CIRCUIT",
+      "location": "FG",
+      "instructor1": "TESS",
+      "instructor2": "",
+      "datePairs": [
+        {
+          "date": "5/1",
+          "attendance": 70
+        },
+        {
+          "date": "5/8",
+          "attendance": 65
+        },
+        {
+          "date": "5/15",
+          "attendance": 59
+        },
+        {
+          "date": "5/22",
+          "attendance": 60
+        },
+        {
+          "date": "5/29",
+          "attendance": 70
+        }
+      ]
+    },
+    "datePair": {
+      "date": "5/22",
+      "attendance": 60
+    },
+    "error": "new row for relation \"class_sessions\" violates check constraint \"class_sessions_time_order\""
+  },
+  {
+    "session": {
+      "day": "WEDNESDAY",
+      "startTime": "11:30 pm",
+      "endTime": "12:15 pm",
+      "className": "SILVERSNEAKERS® CIRCUIT",
+      "location": "FG",
+      "instructor1": "TESS",
+      "instructor2": "",
+      "datePairs": [
+        {
+          "date": "5/1",
+          "attendance": 70
+        },
+        {
+          "date": "5/8",
+          "attendance": 65
+        },
+        {
+          "date": "5/15",
+          "attendance": 59
+        },
+        {
+          "date": "5/22",
+          "attendance": 60
+        },
+        {
+          "date": "5/29",
+          "attendance": 70
+        }
+      ]
+    },
+    "datePair": {
+      "date": "5/29",
+      "attendance": 70
+    },
+    "error": "new row for relation \"class_sessions\" violates check constraint \"class_sessions_time_order\""
+  },
+  {
+    "session": {
+      "day": "FRIDAY",
+      "startTime": "11:30 am",
+      "endTime": "12:15 am",
+      "className": "SILVERSNEAKERS® YOGA",
+      "location": "FG",
+      "instructor1": "TESS",
+      "instructor2": "",
+      "datePairs": [
+        {
+          "date": "5/3",
+          "attendance": 40
+        },
+        {
+          "date": "5/10",
+          "attendance": 40
+        },
+        {
+          "date": "5/17",
+          "attendance": 40
+        },
+        {
+          "date": "5/24",
+          "attendance": 40
+        },
+        {
+          "date": "5/31",
+          "attendance": 40
+        }
+      ]
+    },
+    "datePair": {
+      "date": "5/3",
+      "attendance": 40
+    },
+    "error": "new row for relation \"class_sessions\" violates check constraint \"class_sessions_time_order\""
+  },
+  {
+    "session": {
+      "day": "FRIDAY",
+      "startTime": "11:30 am",
+      "endTime": "12:15 am",
+      "className": "SILVERSNEAKERS® YOGA",
+      "location": "FG",
+      "instructor1": "TESS",
+      "instructor2": "",
+      "datePairs": [
+        {
+          "date": "5/3",
+          "attendance": 40
+        },
+        {
+          "date": "5/10",
+          "attendance": 40
+        },
+        {
+          "date": "5/17",
+          "attendance": 40
+        },
+        {
+          "date": "5/24",
+          "attendance": 40
+        },
+        {
+          "date": "5/31",
+          "attendance": 40
+        }
+      ]
+    },
+    "datePair": {
+      "date": "5/10",
+      "attendance": 40
+    },
+    "error": "new row for relation \"class_sessions\" violates check constraint \"class_sessions_time_order\""
+  },
+  {
+    "session": {
+      "day": "FRIDAY",
+      "startTime": "11:30 am",
+      "endTime": "12:15 am",
+      "className": "SILVERSNEAKERS® YOGA",
+      "location": "FG",
+      "instructor1": "TESS",
+      "instructor2": "",
+      "datePairs": [
+        {
+          "date": "5/3",
+          "attendance": 40
+        },
+        {
+          "date": "5/10",
+          "attendance": 40
+        },
+        {
+          "date": "5/17",
+          "attendance": 40
+        },
+        {
+          "date": "5/24",
+          "attendance": 40
+        },
+        {
+          "date": "5/31",
+          "attendance": 40
+        }
+      ]
+    },
+    "datePair": {
+      "date": "5/17",
+      "attendance": 40
+    },
+    "error": "new row for relation \"class_sessions\" violates check constraint \"class_sessions_time_order\""
+  },
+  {
+    "session": {
+      "day": "FRIDAY",
+      "startTime": "11:30 am",
+      "endTime": "12:15 am",
+      "className": "SILVERSNEAKERS® YOGA",
+      "location": "FG",
+      "instructor1": "TESS",
+      "instructor2": "",
+      "datePairs": [
+        {
+          "date": "5/3",
+          "attendance": 40
+        },
+        {
+          "date": "5/10",
+          "attendance": 40
+        },
+        {
+          "date": "5/17",
+          "attendance": 40
+        },
+        {
+          "date": "5/24",
+          "attendance": 40
+        },
+        {
+          "date": "5/31",
+          "attendance": 40
+        }
+      ]
+    },
+    "datePair": {
+      "date": "5/24",
+      "attendance": 40
+    },
+    "error": "new row for relation \"class_sessions\" violates check constraint \"class_sessions_time_order\""
+  },
+  {
+    "session": {
+      "day": "FRIDAY",
+      "startTime": "11:30 am",
+      "endTime": "12:15 am",
+      "className": "SILVERSNEAKERS® YOGA",
+      "location": "FG",
+      "instructor1": "TESS",
+      "instructor2": "",
+      "datePairs": [
+        {
+          "date": "5/3",
+          "attendance": 40
+        },
+        {
+          "date": "5/10",
+          "attendance": 40
+        },
+        {
+          "date": "5/17",
+          "attendance": 40
+        },
+        {
+          "date": "5/24",
+          "attendance": 40
+        },
+        {
+          "date": "5/31",
+          "attendance": 40
+        }
+      ]
+    },
+    "datePair": {
+      "date": "5/31",
+      "attendance": 40
+    },
+    "error": "new row for relation \"class_sessions\" violates check constraint \"class_sessions_time_order\""
+  },
+  {
+    "session": {
+      "day": "FRIDAY",
+      "startTime": "11:30 pm",
+      "endTime": "12:15 pm",
+      "className": "ZUMBA® GOLD",
+      "location": "S",
+      "instructor1": "MARIBEL",
+      "instructor2": "",
+      "datePairs": [
+        {
+          "date": "5/3",
+          "attendance": 18
+        },
+        {
+          "date": "5/10",
+          "attendance": 16
+        },
+        {
+          "date": "5/17",
+          "attendance": 20
+        },
+        {
+          "date": "5/24",
+          "attendance": 18
+        },
+        {
+          "date": "5/31",
+          "attendance": 18
+        }
+      ]
+    },
+    "datePair": {
+      "date": "5/3",
+      "attendance": 18
+    },
+    "error": "new row for relation \"class_sessions\" violates check constraint \"class_sessions_time_order\""
+  },
+  {
+    "session": {
+      "day": "FRIDAY",
+      "startTime": "11:30 pm",
+      "endTime": "12:15 pm",
+      "className": "ZUMBA® GOLD",
+      "location": "S",
+      "instructor1": "MARIBEL",
+      "instructor2": "",
+      "datePairs": [
+        {
+          "date": "5/3",
+          "attendance": 18
+        },
+        {
+          "date": "5/10",
+          "attendance": 16
+        },
+        {
+          "date": "5/17",
+          "attendance": 20
+        },
+        {
+          "date": "5/24",
+          "attendance": 18
+        },
+        {
+          "date": "5/31",
+          "attendance": 18
+        }
+      ]
+    },
+    "datePair": {
+      "date": "5/10",
+      "attendance": 16
+    },
+    "error": "new row for relation \"class_sessions\" violates check constraint \"class_sessions_time_order\""
+  },
+  {
+    "session": {
+      "day": "FRIDAY",
+      "startTime": "11:30 pm",
+      "endTime": "12:15 pm",
+      "className": "ZUMBA® GOLD",
+      "location": "S",
+      "instructor1": "MARIBEL",
+      "instructor2": "",
+      "datePairs": [
+        {
+          "date": "5/3",
+          "attendance": 18
+        },
+        {
+          "date": "5/10",
+          "attendance": 16
+        },
+        {
+          "date": "5/17",
+          "attendance": 20
+        },
+        {
+          "date": "5/24",
+          "attendance": 18
+        },
+        {
+          "date": "5/31",
+          "attendance": 18
+        }
+      ]
+    },
+    "datePair": {
+      "date": "5/17",
+      "attendance": 20
+    },
+    "error": "new row for relation \"class_sessions\" violates check constraint \"class_sessions_time_order\""
+  },
+  {
+    "session": {
+      "day": "FRIDAY",
+      "startTime": "11:30 pm",
+      "endTime": "12:15 pm",
+      "className": "ZUMBA® GOLD",
+      "location": "S",
+      "instructor1": "MARIBEL",
+      "instructor2": "",
+      "datePairs": [
+        {
+          "date": "5/3",
+          "attendance": 18
+        },
+        {
+          "date": "5/10",
+          "attendance": 16
+        },
+        {
+          "date": "5/17",
+          "attendance": 20
+        },
+        {
+          "date": "5/24",
+          "attendance": 18
+        },
+        {
+          "date": "5/31",
+          "attendance": 18
+        }
+      ]
+    },
+    "datePair": {
+      "date": "5/24",
+      "attendance": 18
+    },
+    "error": "new row for relation \"class_sessions\" violates check constraint \"class_sessions_time_order\""
+  },
+  {
+    "session": {
+      "day": "FRIDAY",
+      "startTime": "11:30 pm",
+      "endTime": "12:15 pm",
+      "className": "ZUMBA® GOLD",
+      "location": "S",
+      "instructor1": "MARIBEL",
+      "instructor2": "",
+      "datePairs": [
+        {
+          "date": "5/3",
+          "attendance": 18
+        },
+        {
+          "date": "5/10",
+          "attendance": 16
+        },
+        {
+          "date": "5/17",
+          "attendance": 20
+        },
+        {
+          "date": "5/24",
+          "attendance": 18
+        },
+        {
+          "date": "5/31",
+          "attendance": 18
+        }
+      ]
+    },
+    "datePair": {
+      "date": "5/31",
+      "attendance": 18
+    },
+    "error": "new row for relation \"class_sessions\" violates check constraint \"class_sessions_time_order\""
+  }
+]

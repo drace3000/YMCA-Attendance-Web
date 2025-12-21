@@ -1,0 +1,260 @@
+{
+  "schedule": "July 2024",
+  "timestamp": "2025-12-17T15:34:52.323Z",
+  "excelClassCount": 30,
+  "dbClassCount": 35,
+  "summary": {
+    "matches": 22,
+    "mismatches": 8,
+    "excelOnly": 0,
+    "dbOnly": 4
+  },
+  "details": {
+    "matches": [
+      {
+        "class": "ACTIVE YOGA",
+        "excelAvg": 19.13888889,
+        "dbAvg": 19.15,
+        "diff": 0.011111109999998092,
+        "sessions": 34
+      },
+      {
+        "class": "UPBEAT BARRE™",
+        "excelAvg": 18,
+        "dbAvg": 18,
+        "diff": 0,
+        "sessions": 8
+      },
+      {
+        "class": "AQUA IN MOTION",
+        "excelAvg": 14.125,
+        "dbAvg": 14.13,
+        "diff": 0.005000000000000782,
+        "sessions": 8
+      },
+      {
+        "class": "SILVERSNEAKERS® CIRCUIT",
+        "excelAvg": 60.375,
+        "dbAvg": 60.38,
+        "diff": 0.005000000000002558,
+        "sessions": 8
+      },
+      {
+        "class": "BODYCOMBAT™",
+        "excelAvg": 15.33333333,
+        "dbAvg": 15.15,
+        "diff": 0.18333332999999996,
+        "sessions": 27
+      },
+      {
+        "class": "LES MILLS CORE™",
+        "excelAvg": 11.14583333,
+        "dbAvg": 11,
+        "diff": 0.14583333000000032,
+        "sessions": 15
+      },
+      {
+        "class": "BODYPUMP™",
+        "excelAvg": 22.47222222,
+        "dbAvg": 22.48,
+        "diff": 0.0077777800000014,
+        "sessions": 33
+      },
+      {
+        "class": "WERQ™",
+        "excelAvg": 22.79166667,
+        "dbAvg": 22.86,
+        "diff": 0.06833332999999797,
+        "sessions": 7
+      },
+      {
+        "class": "GRIT - CARDIO™",
+        "excelAvg": 8.645833333,
+        "dbAvg": 8.71,
+        "diff": 0.06416666700000029,
+        "sessions": 14
+      },
+      {
+        "class": "BARRE",
+        "excelAvg": 18.61111111,
+        "dbAvg": 18.64,
+        "diff": 0.028888890000001055,
+        "sessions": 11
+      },
+      {
+        "class": "LES MILLS RPM™",
+        "excelAvg": 10.2,
+        "dbAvg": 10.17,
+        "diff": 0.02999999999999936,
+        "sessions": 18
+      },
+      {
+        "class": "AQUA ZUMBA®",
+        "excelAvg": 27.75,
+        "dbAvg": 27.75,
+        "diff": 0,
+        "sessions": 4
+      },
+      {
+        "class": "GENTLE YOGA",
+        "excelAvg": 26.16666667,
+        "dbAvg": 26.18,
+        "diff": 0.013333329999998256,
+        "sessions": 17
+      },
+      {
+        "class": "ZUMBA®",
+        "excelAvg": 16.83333333,
+        "dbAvg": 16.83,
+        "diff": 0.0033333300000002453,
+        "sessions": 12
+      },
+      {
+        "class": "GRIT - ATHLETIC™",
+        "excelAvg": 7.5,
+        "dbAvg": 7.5,
+        "diff": 0,
+        "sessions": 4
+      },
+      {
+        "class": "TRX BODY BLAST®",
+        "excelAvg": 13,
+        "dbAvg": 13,
+        "diff": 0,
+        "sessions": 4
+      },
+      {
+        "class": "STEP-INTERVAL",
+        "excelAvg": 15.5,
+        "dbAvg": 15.5,
+        "diff": 0,
+        "sessions": 4
+      },
+      {
+        "class": "RIDE STRONG",
+        "excelAvg": 11.5,
+        "dbAvg": 11.5,
+        "diff": 0,
+        "sessions": 4
+      },
+      {
+        "class": "TAI CHI",
+        "excelAvg": 10.25,
+        "dbAvg": 10.25,
+        "diff": 0,
+        "sessions": 4
+      },
+      {
+        "class": "SILVER CYCLE",
+        "excelAvg": 25.66666667,
+        "dbAvg": 25.67,
+        "diff": 0.0033333300000002453,
+        "sessions": 3
+      },
+      {
+        "class": "SILVERSNEAKERS® CLASSIC",
+        "excelAvg": 36.33333333,
+        "dbAvg": 36.33,
+        "diff": 0.003333330000003798,
+        "sessions": 3
+      },
+      {
+        "class": "STEP-CARDIO",
+        "excelAvg": 12,
+        "dbAvg": 12,
+        "diff": 0,
+        "sessions": 4
+      }
+    ],
+    "mismatches": [
+      {
+        "class": "CARDIO DANCE",
+        "excelAvg": 28.02777778,
+        "dbAvg": 28.7,
+        "diff": 0.6722222199999983,
+        "sessions": 10,
+        "note": ""
+      },
+      {
+        "class": "GROUP CYCLE",
+        "excelAvg": 18.08333333,
+        "dbAvg": 19.63,
+        "diff": 1.5466666700000005,
+        "sessions": 27,
+        "note": ""
+      },
+      {
+        "class": "AQUAFIT",
+        "excelAvg": 40.01666667,
+        "dbAvg": 41.28,
+        "diff": 1.2633333300000018,
+        "sessions": 18,
+        "note": ""
+      },
+      {
+        "class": "BODYBALANCE™",
+        "excelAvg": 15.15,
+        "dbAvg": 16.06,
+        "diff": 0.9099999999999984,
+        "sessions": 18,
+        "note": ""
+      },
+      {
+        "class": "SILVERSNEAKERS® YOGA",
+        "excelAvg": 57.61111111,
+        "dbAvg": 59.36,
+        "diff": 1.7488888899999964,
+        "sessions": 11,
+        "note": ""
+      },
+      {
+        "class": "PILATES",
+        "excelAvg": 28.94444444,
+        "dbAvg": 28.36,
+        "diff": 0.5844444400000022,
+        "sessions": 11,
+        "note": ""
+      },
+      {
+        "class": "FEELING FIT",
+        "excelAvg": 54.875,
+        "dbAvg": 55.57,
+        "diff": 0.6950000000000003,
+        "sessions": 7,
+        "note": ""
+      },
+      {
+        "class": "POWER YOGA",
+        "excelAvg": 20.125,
+        "dbAvg": 20.86,
+        "diff": 0.7349999999999994,
+        "sessions": 7,
+        "note": ""
+      }
+    ],
+    "excelOnly": [],
+    "dbOnly": [
+      {
+        "class": "AQUA CIRCUIT",
+        "dbAvg": 52,
+        "sessions": 3
+      },
+      {
+        "class": "GRIT - STRENGTH™",
+        "dbAvg": 9.92,
+        "sessions": 12
+      },
+      {
+        "class": "HIGH FITNESS®",
+        "dbAvg": 19,
+        "sessions": 4
+      },
+      {
+        "class": "TOTAL BODY STRONG",
+        "dbAvg": 30.71,
+        "sessions": 7
+      }
+    ],
+    "formulaIssues": []
+  }
+}

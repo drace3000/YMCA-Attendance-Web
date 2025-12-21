@@ -1,0 +1,432 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "../../node_modules/igniteui-webcomponents/themes/light/bootstrap.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+:root {
+  --radius: 0.625rem;
+  --brand: #01a490;
+  --brand-strong: #0a7f70;
+  --brand-soft: #36c0af;
+  --brand-rgb: 1 164 144;
+  --brand-soft-rgb: 54 192 175;
+  --brand-ink: #061013;
+  --background: #07161a;
+  --foreground: #eaf6f4;
+  --card: rgba(5, 16, 18, 0.5);
+  --card-foreground: #eaf6f4;
+  --popover: rgba(5, 16, 18, 0.6);
+  --popover-foreground: #eaf6f4;
+  --primary: var(--brand);
+  --primary-foreground: #061013;
+  --secondary: rgba(255, 255, 255, 0.08);
+  --secondary-foreground: #eaf6f4;
+  --muted: rgba(255, 255, 255, 0.08);
+  --muted-foreground: rgba(234, 246, 244, 0.8);
+  --accent: rgba(255, 255, 255, 0.08);
+  --accent-foreground: #eaf6f4;
+  --destructive: #b42318;
+  --border: rgba(255, 255, 255, 0.12);
+  --input: rgba(255, 255, 255, 0.12);
+  --ring: var(--brand);
+  --chart-1: #1d4ed8;
+  --chart-2: #0ea5e9;
+  --chart-3: #22c55e;
+  --chart-4: #f97316;
+  --chart-5: #e11d48;
+  --sidebar: rgba(0, 0, 0, 0.26);
+  --sidebar-foreground: #eaf6f4;
+  --sidebar-primary: var(--brand);
+  --sidebar-primary-foreground: #061013;
+  --sidebar-accent: rgba(255, 255, 255, 0.08);
+  --sidebar-accent-foreground: #eaf6f4;
+  --sidebar-border: rgba(255, 255, 255, 0.12);
+  --sidebar-ring: var(--brand);
+  --brand-gradient: linear-gradient(135deg, var(--brand), var(--brand-soft));
+  --brand-gradient-strong: linear-gradient(
+    135deg,
+    var(--brand-strong),
+    var(--brand)
+  );
+  --app-gradient: linear-gradient(
+    180deg,
+    var(--brand) 0%,
+    var(--brand-strong) 45%,
+    #07161a 100%
+  );
+  --panel-gradient: linear-gradient(
+    135deg,
+    rgba(1, 164, 144, 0.4),
+    rgba(6, 16, 19, 0.55)
+  );
+  --nav-gradient: linear-gradient(180deg, rgba(0, 0, 0, 0.38), rgba(0, 0, 0, 0.18));
+  --cta: #f6c400;
+  --cta-foreground: #061013;
+}
+
+.dark {
+  --background: #0b1215;
+  --foreground: #e9f3f1;
+  --card: #111a1f;
+  --card-foreground: #e9f3f1;
+  --popover: #111a1f;
+  --popover-foreground: #e9f3f1;
+  --primary: var(--brand-soft);
+  --primary-foreground: #0b1215;
+  --secondary: #1a242b;
+  --secondary-foreground: #e9f3f1;
+  --muted: #1a242b;
+  --muted-foreground: #c8d5d2;
+  --accent: #1a242b;
+  --accent-foreground: #e9f3f1;
+  --destructive: #ef4444;
+  --border: rgba(255, 255, 255, 0.08);
+  --input: rgba(255, 255, 255, 0.12);
+  --ring: var(--brand);
+  --chart-1: #60a5fa;
+  --chart-2: #38bdf8;
+  --chart-3: #34d399;
+  --chart-4: #fb923c;
+  --chart-5: #f472b6;
+  --sidebar: #111a1f;
+  --sidebar-foreground: #e9f3f1;
+  --sidebar-primary: var(--brand-strong);
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #1a242b;
+  --sidebar-accent-foreground: #e9f3f1;
+  --sidebar-border: rgba(255, 255, 255, 0.1);
+  --sidebar-ring: var(--brand);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+.bg-brand {
+  background: var(--brand);
+}
+
+.bg-brand-gradient {
+  background-image: var(--brand-gradient);
+}
+
+.bg-brand-gradient-strong {
+  background-image: var(--brand-gradient-strong);
+}
+
+.bg-app-gradient {
+  background-image: var(--app-gradient);
+}
+
+.bg-panel-gradient {
+  background-image: var(--panel-gradient);
+}
+
+.bg-nav-gradient {
+  background-image: var(--nav-gradient);
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+.btn-pill {
+  border-radius: 9999px;
+}
+
+.ymca-nav-header {
+  position: relative;
+  overflow: hidden;
+  box-shadow:
+    0 1px 0 rgb(var(--brand-rgb) / 0.22),
+    0 14px 28px rgb(0 0 0 / 0.28);
+}
+
+.ymca-nav-header::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    120% 140% at 15% 0%,
+    rgb(var(--brand-rgb) / 0.30) 0%,
+    transparent 55%
+  );
+  pointer-events: none;
+}
+
+.ymca-nav-header::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 1px;
+  background: rgb(255 255 255 / 0.22);
+  pointer-events: none;
+}
+
+@keyframes ymca-press {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+    filter: saturate(1);
+  }
+  50% {
+    transform: translateY(1px) scale(0.965);
+    filter: saturate(1.05);
+  }
+}
+
+.animate-ymca-press {
+  animation: ymca-press 2.4s ease-in-out infinite;
+}
+
+/* Reports scrollbar styling (theme-colored track) */
+.report-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(255 255 255 / 0.35) rgb(var(--brand-rgb) / 0.55);
+}
+
+.report-scroll::-webkit-scrollbar {
+  width: 12px;
+}
+
+.report-scroll::-webkit-scrollbar-track {
+  background: rgb(var(--brand-rgb) / 0.55);
+  border-radius: 9999px;
+}
+
+.report-scroll::-webkit-scrollbar-thumb {
+  background: rgb(255 255 255 / 0.35);
+  border-radius: 9999px;
+  border: 3px solid rgb(var(--brand-rgb) / 0.55);
+}
+
+.report-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgb(255 255 255 / 0.5);
+}
+
+/* Theme-colored native selects */
+.ymca-select {
+  background: rgb(var(--brand-rgb) / 0.95);
+  color: var(--brand-ink);
+  border: 1px solid var(--brand-strong);
+  border-radius: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  box-shadow: 0 1px 0 rgb(0 0 0 / 0.12);
+}
+
+.ymca-select:focus {
+  outline: none;
+  box-shadow:
+    0 0 0 2px rgb(var(--brand-rgb) / 0.35),
+    0 1px 0 rgb(0 0 0 / 0.12);
+}
+
+.ymca-select option {
+  background: rgb(var(--brand-rgb) / 0.95);
+  color: var(--brand-ink);
+}
+
+/* Note: styling option hover works in some browsers (not all native selects are fully stylable). */
+.ymca-select option:hover,
+.ymca-select option:focus {
+  background: var(--brand-strong);
+  color: #ffffff;
+}
+
+.ymca-select option:checked {
+  background: var(--brand-strong);
+  color: #ffffff;
+}
+
+/* Ignite UI combo themed to the YMCA brand */
+.ymca-ig-combo {
+  width: 100%;
+  display: block;
+  min-width: 0;
+  min-inline-size: 0;
+}
+
+.ymca-ig-combo::part(input) {
+  background: rgb(var(--brand-rgb) / 0.95);
+  border-radius: 0.75rem;
+  border: 1px solid var(--brand-strong);
+  box-shadow: 0 1px 0 rgb(0 0 0 / 0.12);
+  min-height: 2.5rem;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-inline-size: 0;
+}
+
+.ymca-ig-combo::part(native-input) {
+  background: transparent;
+  color: var(--brand-ink);
+  opacity: 1;
+  font-size: 1rem;
+  line-height: 1.5rem;
+  padding: 0.5rem 0.75rem;
+  font-family: inherit;
+  width: 100%;
+}
+
+.ymca-ig-combo::part(native-input)::placeholder {
+  color: rgb(6 16 19 / 0.75);
+  opacity: 1;
+}
+
+.ymca-ig-combo::part(input):focus-within {
+  outline: none;
+  box-shadow:
+    0 0 0 2px rgb(var(--brand-rgb) / 0.35),
+    0 1px 0 rgb(0 0 0 / 0.12);
+}
+
+.ymca-ig-combo::part(prefix),
+.ymca-ig-combo::part(suffix) {
+  color: var(--brand-ink);
+}
+
+.ymca-ig-combo::part(suffix) {
+  /* Match selected menu item / primary CTA (yellow) */
+  background: var(--cta);
+  border-left: 1px solid rgb(0 0 0 / 0.22);
+  border-top-right-radius: 0.75rem;
+  border-bottom-right-radius: 0.75rem;
+}
+
+/* Prefer targeting the actual buttons (when available) for consistent styling */
+.ymca-ig-combo::part(clear-button),
+.ymca-ig-combo::part(drop-down-button) {
+  background: var(--cta);
+  color: var(--brand-ink);
+}
+
+.ymca-ig-combo::part(clear-button):hover,
+.ymca-ig-combo::part(drop-down-button):hover {
+  filter: brightness(0.98);
+}
+
+.ymca-ig-combo::part(clear-button):active,
+.ymca-ig-combo::part(drop-down-button):active {
+  filter: brightness(0.95);
+}
+
+.ymca-ig-combo::part(search-input) {
+  /* Search entry should read like a standard input */
+  background: #ffffff;
+  color: var(--brand-ink);
+  opacity: 1;
+  font-size: 1rem;
+  line-height: 1.5rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--brand-strong);
+  box-shadow: 0 1px 0 rgb(0 0 0 / 0.12);
+  font-family: inherit;
+}
+
+.ymca-ig-combo::part(search-input)::placeholder {
+  color: rgb(6 16 19 / 0.75);
+  opacity: 1;
+}
+
+.ymca-ig-combo::part(label) {
+  color: var(--foreground);
+}
+
+.ymca-ig-combo::part(toggle-icon),
+.ymca-ig-combo::part(clear-icon) {
+  /* Make X and caret clearly visible */
+  color: var(--brand-ink);
+  opacity: 1;
+}
+
+.ymca-ig-combo::part(list-wrapper) {
+  border-radius: 0.75rem;
+  border: 1px solid var(--brand-strong);
+  box-shadow:
+    0 10px 30px rgb(0 0 0 / 0.25),
+    0 0 0 1px rgb(0 0 0 / 0.08);
+}
+
+.ymca-ig-combo::part(list) {
+  /* Dropdown list area: theme color with dark text (matches other selects) */
+  background: rgb(var(--brand-rgb) / 0.97);
+  color: var(--brand-ink);
+  border-radius: 0.75rem;
+  scrollbar-color: rgb(255 255 255 / 0.35) rgb(var(--brand-rgb) / 0.55);
+}
+
+.ymca-ig-combo::part(item) {
+  background: transparent;
+  color: var(--brand-ink);
+  font-size: 1rem;
+  line-height: 1.5rem;
+}
+
+/* Month combo is used as single-select; hide multiselect checkboxes */
+.ymca-ig-combo::part(checkbox),
+.ymca-ig-combo::part(checkbox-indicator) {
+  display: none;
+  width: 0;
+  height: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.ymca-ig-combo::part(item):hover,
+.ymca-ig-combo::part(item):focus,
+.ymca-ig-combo::part(active),
+.ymca-ig-combo::part(selected) {
+  background: var(--brand-strong);
+  color: #ffffff;
+}
+
+.ymca-ig-combo::part(checked) {
+  display: none;
+}

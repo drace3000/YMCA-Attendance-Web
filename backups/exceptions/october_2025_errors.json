@@ -1,0 +1,107 @@
+[
+  {
+    "session": {
+      "day": "MONDAY",
+      "startTime": "11:20-1230pm",
+      "endTime": "",
+      "className": "SILVERSNEAKERS® CIRCUIT",
+      "location": "FG",
+      "instructors": [
+        "SAM R"
+      ],
+      "datePairs": [
+        {
+          "date": "10/6",
+          "attendance": 60
+        },
+        {
+          "date": "10/13",
+          "attendance": 50
+        },
+        {
+          "date": "10/20",
+          "attendance": 66
+        },
+        {
+          "date": "10/27",
+          "attendance": 63
+        },
+        {
+          "date": "11/3",
+          "attendance": 67
+        }
+      ]
+    },
+    "error": "Invalid time: 11:20-1230pm - "
+  },
+  {
+    "session": {
+      "day": "MONDAY",
+      "startTime": "6:300-7:00pm",
+      "endTime": "",
+      "className": "GROUP CYCLE",
+      "location": "C",
+      "instructors": [
+        "MEREDITH"
+      ],
+      "datePairs": [
+        {
+          "date": "10/6",
+          "attendance": 12
+        },
+        {
+          "date": "10/13",
+          "attendance": 13
+        },
+        {
+          "date": "10/20",
+          "attendance": 13
+        },
+        {
+          "date": "10/27",
+          "attendance": 16
+        },
+        {
+          "date": "11/3",
+          "attendance": 19
+        }
+      ]
+    },
+    "error": "Invalid time: 6:300-7:00pm - "
+  },
+  {
+    "session": {
+      "day": "MONDAY",
+      "startTime": "7:45-815pm",
+      "endTime": "",
+      "className": "BODYBALANCE™",
+      "location": "S",
+      "instructors": [
+        "JENN W"
+      ],
+      "datePairs": [
+        {
+          "date": "10/6",
+          "attendance": 6
+        },
+        {
+          "date": "10/13",
+          "attendance": 7
+        },
+        {
+          "date": "10/20",
+          "attendance": 8
+        },
+        {
+          "date": "10/27",
+          "attendance": 8
+        },
+        {
+          "date": "11/3",
+          "attendance": 9
+        }
+      ]
+    },
+    "error": "Invalid time: 7:45-815pm - "
+  }
+]

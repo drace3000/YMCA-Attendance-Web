@@ -1,0 +1,64 @@
+[
+  {
+    "session": {
+      "day": "MONDAY",
+      "startTime": "10:15:11:00 AM",
+      "endTime": "",
+      "className": "AQUA IN MOTION",
+      "location": "EP",
+      "instructors": [
+        "SAM R"
+      ],
+      "datePairs": [
+        {
+          "date": "11/3",
+          "attendance": 16
+        },
+        {
+          "date": "11/10",
+          "attendance": 13
+        },
+        {
+          "date": "11/17",
+          "attendance": 12
+        },
+        {
+          "date": "11/24",
+          "attendance": 14
+        }
+      ]
+    },
+    "error": "Invalid time: 10:15:11:00 AM - "
+  },
+  {
+    "session": {
+      "day": "FRIDAY",
+      "startTime": "10:15:11:00 AM",
+      "endTime": "",
+      "className": "AQUA IN MOTION",
+      "location": "EP",
+      "instructors": [
+        "SAM R"
+      ],
+      "datePairs": [
+        {
+          "date": "11/7",
+          "attendance": 12
+        },
+        {
+          "date": "11/14",
+          "attendance": 12
+        },
+        {
+          "date": "11/21",
+          "attendance": 15
+        },
+        {
+          "date": "11/28",
+          "attendance": 8
+        }
+      ]
+    },
+    "error": "Invalid time: 10:15:11:00 AM - "
+  }
+]

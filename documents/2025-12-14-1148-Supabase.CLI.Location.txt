@@ -1,0 +1,18 @@
+TIPS
+
+CONVERT .DOCX to MD 
+node .\tools\convert-docx-to-md.mjs .\documents\YMCA_Attendance_Scheduling_PRD.docx .\documents\YMCA_Attendance_Scheduling_PRD.md
+
+ymca-attendance-staging
+
+Project ID: gchkarlboevsyxixeocd
+URL: https://gchkarlboevsyxixeocd.supabase.co
+ANON: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdjaGthcmxib2V2c3l4aXhlb2NkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUzMTcwNDMsImV4cCI6MjA4MDg5MzA0M30.GPrKC1czRhjgSAVwmrKiO1LZms4LJMT6W_Xoiy7qHYY
+
+import { createClient } from '@supabase/supabase-js'
+const supabaseUrl = 'https://gchkarlboevsyxixeocd.supabase.co'
+const supabaseKey = process.env.SUPABASE_KEY
+const supabase = createClient(supabaseUrl, supabaseKey)
+
+location of Supabase CLI
+c:/"program files"/"Supabase CLI"/supabase init

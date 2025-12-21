@@ -1,0 +1,26 @@
+{
+  "name": "ymca-attendance-web",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "jsdom": "^27.3.0",
+    "mammoth": "^1.11.0",
+    "scoop": "^0.0.2",
+    "turndown": "^7.2.2",
+    "turndown-plugin-gfm": "^1.0.2",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@supabase/supabase-js": "^2.88.0",
+    "pg": "^8.16.3",
+    "supabase": "^2.67.0"
+  }
+}
