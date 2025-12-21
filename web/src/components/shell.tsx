@@ -11,6 +11,7 @@ import {
   Menu,
   Moon,
   Settings,
+  Sparkles,
   Sun,
   TrendingUp,
   User,
@@ -32,6 +33,7 @@ const navItems: NavItem[] = [
   { label: "Trends", href: "/trends", icon: <TrendingUp className="h-4 w-4" /> },
   { label: "Scheduling", href: "/scheduling", icon: <Calendar className="h-4 w-4" /> },
   { label: "Maintenance", href: "/maintenance", icon: <Wrench className="h-4 w-4" /> },
+  { label: "Data Mining", href: "/data-mining", icon: <Sparkles className="h-4 w-4" /> },
   { label: "Settings", href: "/settings", icon: <Settings className="h-4 w-4" /> },
 ];
 
@@ -140,7 +142,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         <header
           className="ymca-nav-header sticky top-0 z-20 flex h-16 border-b border-border bg-nav-gradient"
         >
-          <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-4 sm:px-8">
+          <div className="flex w-full items-center justify-between px-4 sm:px-8">
             <div className="flex items-center gap-3">
               <button
                 className="rounded-xl border border-white/15 bg-black/20 p-2 text-foreground shadow-sm md:hidden"
@@ -209,7 +211,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
 function LiveDateTime() {
   const nowMs = useSyncExternalStore(subscribeNow, getNowSnapshot, getNowSnapshot);
-  if (!nowMs) return <span className="opacity-70">—</span>;
+  if (!nowMs) return <span className="opacity-70">�</span>;
   const now = new Date(nowMs);
 
   const datePart = new Intl.DateTimeFormat("en-US", {
