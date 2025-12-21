@@ -149,7 +149,7 @@ export default function Home() {
   // Handle dev login success confirmation
   const handleDevLoginConfirm = () => {
     setShowDevLoginSuccess(false);
-    devSignIn(); // This sets the mock user
+    devSignIn(email.trim() || undefined); // Pass entered email to mock user
     setEmail("");
     setPassword("");
   };

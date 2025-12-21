@@ -24,7 +24,7 @@ type AuthContextType = {
   loading: boolean;
   signOut: () => Promise<void>;
   refreshSession: () => Promise<void>;
-  devSignIn: () => void; // Dev bypass sign-in
+  devSignIn: (email?: string) => void; // Dev bypass sign-in with optional email
   isDevMode: boolean; // Flag to indicate dev bypass mode
 };
 
@@ -90,9 +90,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   // Dev bypass sign-in - sets mock user without Supabase
-  const devSignIn = useCallback(() => {
+  const devSignIn = useCallback((email?: string) => {
     if (DEV_AUTH_BYPASS) {
-      setUser(DEV_MOCK_USER);
+      const mockUser: User = {
+        ...DEV_MOCK_USER,
+        email: email || DEV_MOCK_USER.email,
+      };
+      setUser(mockUser);
       setSession(null); // No real session, but user is set
       setLoading(false);
     }
