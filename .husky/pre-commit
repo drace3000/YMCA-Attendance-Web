@@ -1,3 +1,5 @@
 #!/usr/bin/env sh
 npm run -s check:encoding
 
+
+

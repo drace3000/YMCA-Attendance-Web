@@ -14,6 +14,7 @@ import {
 import type { QueryAPIResponse, ResultFormat } from "@/types/queries";
 
 type SubmitState = "idle" | "loading" | "error" | "ready";
+type Branch = { id: string; name: string; theme_color?: string | null };
 
 const exampleQueries = [
   "Which classes had the highest attendance last week?",
@@ -130,9 +131,20 @@ export default function DataMiningPage() {
   const [response, setResponse] = useState<QueryAPIResponse | null>(null);
   const [showSql, setShowSql] = useState(false);
   const [selectedSample, setSelectedSample] = useState<ResultFormat | null>(null);
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [branchId, setBranchId] = useState<string | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
+    // Fetch branches for selection
+    fetch("/api/branches")
+      .then((res) => res.json())
+      .then((data: Branch[]) => {
+        setBranches(data);
+        if (data.length && !branchId) setBranchId(data[0].id);
+      })
+      .catch(() => {});
+
     return () => controllerRef.current?.abort();
   }, []);
 
@@ -141,6 +153,11 @@ export default function DataMiningPage() {
     const trimmed = query.trim();
     if (!trimmed) {
       setError("Enter a question to get started.");
+      setStatus("error");
+      return;
+    }
+    if (!branchId) {
+      setError("Select a branch before running the query.");
       setStatus("error");
       return;
     }
@@ -158,7 +175,7 @@ export default function DataMiningPage() {
       const res = await fetch("/api/data-mining", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: trimmed }),
+        body: JSON.stringify({ query: trimmed, branchId }),
         signal: controller.signal,
       });
 
@@ -258,12 +275,34 @@ export default function DataMiningPage() {
           </label>
 
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              <span>Choose sample:</span>
-              <SampleChip label="Table" active={selectedSample === "table"} onClick={() => handleSample("table")} />
-              <SampleChip label="Short list" active={selectedSample === "short_list"} onClick={() => handleSample("short_list")} />
-              <SampleChip label="Single value" active={selectedSample === "single_value"} onClick={() => handleSample("single_value")} />
-              <SampleChip label="Time series" active={selectedSample === "time_series"} onClick={() => handleSample("time_series")} />
+            <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-foreground">Branch:</span>
+                <select
+                  className="min-w-[180px] rounded-md border border-border bg-background/60 px-3 py-2 text-foreground shadow-sm outline-none ring-1 ring-transparent transition focus:ring-[var(--cta)]/70"
+                  value={branchId ?? ""}
+                  onChange={(e) => {
+                    setBranchId(e.target.value || null);
+                    if (status === "error") setStatus("idle");
+                    if (error) setError(null);
+                  }}
+                >
+                  {branches.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                  {!branches.length ? <option value="">Loading branches...</option> : null}
+                </select>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <span>Choose sample:</span>
+                <SampleChip label="Table" active={selectedSample === "table"} onClick={() => handleSample("table")} />
+                <SampleChip label="Short list" active={selectedSample === "short_list"} onClick={() => handleSample("short_list")} />
+                <SampleChip label="Single value" active={selectedSample === "single_value"} onClick={() => handleSample("single_value")} />
+                <SampleChip label="Time series" active={selectedSample === "time_series"} onClick={() => handleSample("time_series")} />
+              </div>
             </div>
             <button
               type="submit"
@@ -305,7 +344,7 @@ export default function DataMiningPage() {
           </div>
         ) : null}
 
-        {response && response.success ? (
+          {response && response.success ? (
           <div className="mt-4 flex flex-col gap-4">
             <div className="flex flex-wrap items-center gap-3">
               <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-semibold text-emerald-400">
@@ -489,3 +528,5 @@ function ResultRenderer({
     </div>
   );
 }
+
+

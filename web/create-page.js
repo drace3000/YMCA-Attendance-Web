@@ -32,3 +32,5 @@ const targetPath = path.join(__dirname, 'src/app/data-mining/page.tsx');
 fs.writeFileSync(targetPath, content, 'utf8');
 console.log('Created:', targetPath);
 
+
+

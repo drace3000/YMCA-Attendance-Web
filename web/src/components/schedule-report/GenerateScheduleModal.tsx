@@ -87,7 +87,7 @@ export function GenerateScheduleModal({
       />
       
       {/* Modal */}
-      <div className="relative z-10 w-full max-w-md rounded-2xl border border-white/10 bg-card/95 p-6 shadow-2xl backdrop-blur-md">
+      <div className="relative z-10 w-full max-w-md rounded-2xl border border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] p-6 shadow-2xl backdrop-blur-md">
         {/* Header */}
         <div className="mb-6 flex items-start justify-between">
           <div className="flex items-center gap-3">
@@ -95,34 +95,34 @@ export function GenerateScheduleModal({
               <FileText className="h-5 w-5 text-[var(--cta)]" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-foreground">Generate Schedule</h2>
-              <p className="text-sm text-muted-foreground">Create a printable PDF</p>
+              <h2 className="text-lg font-semibold text-[var(--brand-ink)]">Generate Schedule</h2>
+              <p className="text-sm text-[var(--brand-ink)]/70">Create a printable PDF</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="rounded-full p-1.5 text-muted-foreground hover:bg-white/10 hover:text-foreground"
+            className="rounded-full p-1.5 text-[var(--brand-ink)]/70 hover:bg-[var(--brand-strong)] hover:text-white"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
         {/* Schedule Info */}
-        <div className="mb-6 rounded-xl border border-white/10 bg-black/20 p-4">
+        <div className="mb-6 rounded-xl border border-[var(--brand-strong)] bg-[var(--brand-strong)]/20 p-4">
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Branch:</span>
-              <span className="font-medium text-foreground">{branch?.name || "Not selected"}</span>
+              <span className="text-[var(--brand-ink)]/70">Branch:</span>
+              <span className="font-medium text-[var(--brand-ink)]">{branch?.name || "Not selected"}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Schedule:</span>
-              <span className="font-medium text-foreground">
+              <span className="text-[var(--brand-ink)]/70">Schedule:</span>
+              <span className="font-medium text-[var(--brand-ink)]">
                 {schedule ? formatMonthYear(schedule.month_start) : "Not selected"}
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Sessions:</span>
-              <span className="font-medium text-foreground">{sessions.length} classes</span>
+              <span className="text-[var(--brand-ink)]/70">Sessions:</span>
+              <span className="font-medium text-[var(--brand-ink)]">{sessions.length} classes</span>
             </div>
           </div>
         </div>
@@ -146,7 +146,7 @@ export function GenerateScheduleModal({
           <button
             onClick={() => handleAction("preview")}
             disabled={!canGenerate || loading !== null}
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-foreground transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--brand-strong)] bg-[var(--brand-strong)]/30 px-4 py-3 text-sm font-medium text-[var(--brand-ink)] transition hover:bg-[var(--brand-strong)] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loading === "preview" ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -172,7 +172,7 @@ export function GenerateScheduleModal({
           <button
             onClick={() => handleAction("print")}
             disabled={!canGenerate || loading !== null}
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-foreground transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--brand-strong)] bg-[var(--brand-strong)]/30 px-4 py-3 text-sm font-medium text-[var(--brand-ink)] transition hover:bg-[var(--brand-strong)] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loading === "print" ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -184,7 +184,7 @@ export function GenerateScheduleModal({
         </div>
 
         {/* Footer note */}
-        <p className="mt-4 text-center text-xs text-muted-foreground">
+        <p className="mt-4 text-center text-xs text-[var(--brand-ink)]/70">
           PDF will be generated in landscape format for wall posting
         </p>
       </div>
