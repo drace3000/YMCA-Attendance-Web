@@ -1,8 +1,22 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { ArrowDownRight, ArrowUpRight, RefreshCcw, TrendingDown, TrendingUp } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowDownRight, ArrowUpRight, FileText, Loader2, RefreshCcw, TrendingDown, TrendingUp } from "lucide-react";
+import dynamic from "next/dynamic";
 import { TrendsLineChart, type TrendSeries } from "@/components/trends-line-chart";
+import type { TrendsReportData } from "@/components/trends-report-pdf";
+import { useThemeSettings } from "@/components/theme-settings-provider";
+
+type Branch = {
+  id: string;
+  name: string;
+  branch_manager_name?: string | null;
+};
+
+const GenerateTrendsReportModal = dynamic(
+  () => import("@/components/trends-report-pdf/GenerateTrendsReportModal").then((mod) => mod.GenerateTrendsReportModal),
+  { ssr: false }
+);
 
 // Colors aligned with chart legend order
 const SERIES_COLORS = ["#2563eb", "#16a34a", "#f97316", "#a855f7", "#ef4444"];
@@ -40,6 +54,36 @@ export default function TrendsPage() {
   const [data, setData] = useState<TrendsPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // PDF Export state
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [chartImages, setChartImages] = useState<{ trendingUp?: string; trendingDown?: string }>({});
+  const [capturingCharts, setCapturingCharts] = useState(false);
+  const chartUpRef = useRef<HTMLDivElement>(null);
+  const chartDownRef = useRef<HTMLDivElement>(null);
+
+  // Branch info for PDF
+  const { branch } = useThemeSettings();
+  const [branchDetails, setBranchDetails] = useState<Branch | null>(null);
+
+  // Fetch branch details including manager name
+  useEffect(() => {
+    const fetchBranchDetails = async () => {
+      try {
+        const res = await fetch("/api/branches");
+        if (res.ok) {
+          const branches: Branch[] = await res.json();
+          const found = branches.find((b) => b.id === branch.id);
+          if (found) {
+            setBranchDetails(found);
+          }
+        }
+      } catch (err) {
+        console.error("Error fetching branch details:", err);
+      }
+    };
+    fetchBranchDetails();
+  }, [branch.id]);
 
   const load = async (signal?: AbortSignal) => {
     setLoading(true);
@@ -89,6 +133,61 @@ export default function TrendsPage() {
     );
   }, [data, monthLabels]);
 
+  // Capture charts as images for PDF export
+  const captureChartsAndOpenModal = useCallback(async () => {
+    if (!data) return;
+    setCapturingCharts(true);
+
+    try {
+      // Dynamically import html2canvas
+      const html2canvas = (await import("html2canvas")).default;
+
+      const images: { trendingUp?: string; trendingDown?: string } = {};
+
+      if (chartUpRef.current) {
+        const canvas = await html2canvas(chartUpRef.current, {
+          backgroundColor: "#FFFFFF",
+          scale: 2,
+        });
+        images.trendingUp = canvas.toDataURL("image/png");
+      }
+
+      if (chartDownRef.current) {
+        const canvas = await html2canvas(chartDownRef.current, {
+          backgroundColor: "#FFFFFF",
+          scale: 2,
+        });
+        images.trendingDown = canvas.toDataURL("image/png");
+      }
+
+      setChartImages(images);
+      setExportModalOpen(true);
+    } catch (err) {
+      console.error("Failed to capture charts:", err);
+      // Open modal anyway, will show placeholder for charts
+      setExportModalOpen(true);
+    } finally {
+      setCapturingCharts(false);
+    }
+  }, [data]);
+
+  // Prepare data for PDF export
+  const pdfData: TrendsReportData | null = useMemo(() => {
+    if (!data) return null;
+    return {
+      year: data.year,
+      quarter: data.quarter,
+      periodLabel: data.meta.periodLabel,
+      periodStart: data.meta.periodStart,
+      periodEnd: data.meta.periodEnd,
+      topUp: data.topUp,
+      topDown: data.topDown,
+      computedAt: data.computedAt,
+      branchName: branchDetails?.name || branch.name,
+      branchManager: branchDetails?.branch_manager_name || undefined,
+    };
+  }, [data, branchDetails, branch.name]);
+
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
       <header className="rounded-3xl border border-border bg-panel-gradient p-6 shadow-sm ring-1 ring-white/10">
@@ -97,9 +196,24 @@ export default function TrendsPage() {
             <p className="text-sm font-semibold uppercase tracking-wide text-foreground/80">
               Trends
             </p>
-            <h1 className="mt-1 text-3xl font-bold tracking-tight text-foreground">
-              Class Attendance Trends
-            </h1>
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="text-3xl font-bold tracking-tight text-foreground">
+                Class Attendance Trends
+              </h1>
+              {/* Export PDF Button */}
+              <button
+                onClick={captureChartsAndOpenModal}
+                disabled={!data || capturingCharts}
+                className="btn-pill flex items-center gap-2 bg-[var(--cta)] px-4 py-2 text-sm font-medium text-[var(--cta-foreground)] shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {capturingCharts ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <FileText className="h-4 w-4" />
+                )}
+                {capturingCharts ? "Preparing PDF..." : "Export PDF"}
+              </button>
+            </div>
             <p className="mt-1 text-sm text-foreground/80">
               <span className="font-semibold">{periodLabel}</span> — Metric is{" "}
               <span className="font-semibold">average attendance per month</span> (average headcount
@@ -170,7 +284,7 @@ export default function TrendsPage() {
               Top 5 Trending Up
             </div>
           </div>
-          <div className="p-5">
+          <div ref={chartUpRef} className="p-5">
             {loading && !data ? (
               <div className="text-sm text-muted-foreground">Loading trends…</div>
             ) : data ? (
@@ -193,7 +307,7 @@ export default function TrendsPage() {
               Top 5 Trending Down
             </div>
           </div>
-          <div className="p-5">
+          <div ref={chartDownRef} className="p-5">
             {loading && !data ? (
               <div className="text-sm text-muted-foreground">Loading trends…</div>
             ) : data ? (
@@ -222,6 +336,16 @@ export default function TrendsPage() {
           <TrendTable title="Trending down (top 5)" tone="down" items={data.topDown} periodLabel={periodLabel} />
         </section>
       ) : null}
+
+      {/* Export PDF Modal */}
+      {pdfData && (
+        <GenerateTrendsReportModal
+          isOpen={exportModalOpen}
+          onClose={() => setExportModalOpen(false)}
+          data={pdfData}
+          chartImages={chartImages}
+        />
+      )}
     </div>
   );
 }

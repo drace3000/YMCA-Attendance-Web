@@ -3,74 +3,37 @@
 import { useState } from "react";
 import { X, FileText, Download, Printer, Eye, Loader2 } from "lucide-react";
 import {
-  downloadAttendanceReportPDF,
-  previewAttendanceReportPDF,
-  printAttendanceReportPDF,
-} from "@/lib/attendance-report-pdf-utils";
-import type { ReportData, FilterInfo, ReportSection } from "./AttendanceReportPDFDocument";
+  downloadTrendsReportPDF,
+  previewTrendsReportPDF,
+  printTrendsReportPDF,
+} from "@/lib/trends-report-pdf-utils";
+import type { TrendsReportData } from "./TrendsReportPDFDocument";
 
-export const REPORT_SECTION_LABELS: Record<ReportSection, string> = {
-  saturdayAverages: "Saturday Averages",
-  dayTotals: "Day Totals / Day Average",
-  sundayAverages: "Sunday Averages",
-  monthTotals: "Month Totals",
-  monthClassTypeAverage: "Month Class Type Average",
-  monthClassGroupAverage: "Month Class Group Average",
-  weekTotals: "Week Totals",
-};
-
-interface GenerateReportModalProps {
+interface GenerateTrendsReportModalProps {
   isOpen: boolean;
   onClose: () => void;
-  data: ReportData;
-  filters: FilterInfo;
-  selectedSections: ReportSection[];
+  data: TrendsReportData;
+  chartImages?: {
+    trendingUp?: string;
+    trendingDown?: string;
+  };
 }
 
 type ActionType = "preview" | "download" | "print" | null;
 
-function formatFilterSummary(filters: FilterInfo): string {
-  const parts: string[] = [filters.year];
-
-  if (filters.month !== "all") {
-    const monthNames = [
-      "January", "February", "March", "April", "May", "June",
-      "July", "August", "September", "October", "November", "December",
-    ];
-    const monthNum = parseInt(filters.month, 10);
-    parts.push(monthNames[monthNum - 1] || filters.month);
-  } else if (filters.quarter !== "all") {
-    parts.push(`Q${filters.quarter}`);
-  }
-
-  if (filters.week !== "all") {
-    parts.push(`Week ${filters.week}`);
-  }
-
-  if (filters.day !== "all") {
-    const dayName = filters.day.charAt(0) + filters.day.slice(1).toLowerCase();
-    parts.push(dayName);
-  }
-
-  return parts.join(" • ");
-}
-
-export function GenerateReportModal({
+export function GenerateTrendsReportModal({
   isOpen,
   onClose,
   data,
-  filters,
-  selectedSections,
-}: GenerateReportModalProps) {
+  chartImages,
+}: GenerateTrendsReportModalProps) {
   const [loading, setLoading] = useState<ActionType>(null);
   const [error, setError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
-  const canGenerate = selectedSections.length > 0;
-
   const handleAction = async (action: ActionType) => {
-    if (!action || selectedSections.length === 0) return;
+    if (!action) return;
 
     setLoading(action);
     setError(null);
@@ -78,13 +41,13 @@ export function GenerateReportModal({
     try {
       switch (action) {
         case "preview":
-          await previewAttendanceReportPDF(data, filters, selectedSections);
+          await previewTrendsReportPDF(data, chartImages);
           break;
         case "download":
-          await downloadAttendanceReportPDF(data, filters, selectedSections);
+          await downloadTrendsReportPDF(data, chartImages);
           break;
         case "print":
-          await printAttendanceReportPDF(data, filters, selectedSections);
+          await printTrendsReportPDF(data, chartImages);
           break;
       }
     } catch (err) {
@@ -103,7 +66,7 @@ export function GenerateReportModal({
         onClick={onClose}
       />
 
-      {/* Modal - Smart Scheduler styling */}
+      {/* Modal */}
       <div className="relative z-10 w-full max-w-md rounded-xl border border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] p-6 shadow-xl backdrop-blur-md">
         {/* Header */}
         <div className="mb-6 flex items-start justify-between">
@@ -113,7 +76,7 @@ export function GenerateReportModal({
             </div>
             <div>
               <h2 className="text-lg font-semibold text-[var(--brand-ink)]">
-                Export Report
+                Export Trends Report
               </h2>
               <p className="text-sm text-[var(--brand-ink)]/70">
                 Create a printable PDF
@@ -132,45 +95,51 @@ export function GenerateReportModal({
         <div className="mb-6 rounded-xl border border-[var(--brand-strong)] bg-[var(--brand-strong)]/20 p-4">
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
-              <span className="text-[var(--brand-ink)]/70">Filters:</span>
+              <span className="text-[var(--brand-ink)]/70">Period:</span>
               <span className="font-medium text-[var(--brand-ink)]">
-                {formatFilterSummary(filters)}
+                {data.periodLabel}
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-[var(--brand-ink)]/70">Reports:</span>
+              <span className="text-[var(--brand-ink)]/70">Year:</span>
               <span className="font-medium text-[var(--brand-ink)]">
-                {selectedSections.length} selected
+                {data.year}
+              </span>
+            </div>
+            {data.quarter && (
+              <div className="flex justify-between">
+                <span className="text-[var(--brand-ink)]/70">Quarter:</span>
+                <span className="font-medium text-[var(--brand-ink)]">
+                  Q{data.quarter}
+                </span>
+              </div>
+            )}
+            <div className="flex justify-between">
+              <span className="text-[var(--brand-ink)]/70">Date Range:</span>
+              <span className="font-medium text-[var(--brand-ink)]">
+                {data.periodStart} – {data.periodEnd}
               </span>
             </div>
           </div>
 
-          {/* Selected reports list */}
-          {selectedSections.length > 0 && (
-            <div className="mt-3 border-t border-[var(--brand-strong)]/50 pt-3">
-              <p className="mb-2 text-xs font-medium text-[var(--brand-ink)]/70">
-                Included in PDF:
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {selectedSections.map((section) => (
-                  <span
-                    key={section}
-                    className="rounded-full bg-[var(--brand-strong)]/40 px-2 py-0.5 text-xs text-[var(--brand-ink)]"
-                  >
-                    {REPORT_SECTION_LABELS[section]}
-                  </span>
-                ))}
-              </div>
+          {/* Content summary */}
+          <div className="mt-3 border-t border-[var(--brand-strong)]/50 pt-3">
+            <p className="mb-2 text-xs font-medium text-[var(--brand-ink)]/70">
+              Included in PDF:
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              <span className="rounded-full bg-[var(--brand-strong)]/40 px-2 py-0.5 text-xs text-[var(--brand-ink)]">
+                Trending Up Chart
+              </span>
+              <span className="rounded-full bg-[var(--brand-strong)]/40 px-2 py-0.5 text-xs text-[var(--brand-ink)]">
+                Trending Down Chart
+              </span>
+              <span className="rounded-full bg-[var(--brand-strong)]/40 px-2 py-0.5 text-xs text-[var(--brand-ink)]">
+                Trend Tables
+              </span>
             </div>
-          )}
-        </div>
-
-        {/* Warning if no sections selected */}
-        {selectedSections.length === 0 && (
-          <div className="mb-4 rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-200">
-            No reports selected. Please check at least one report to include in the PDF.
           </div>
-        )}
+        </div>
 
         {/* Error message */}
         {error && (
@@ -183,7 +152,7 @@ export function GenerateReportModal({
         <div className="space-y-3">
           <button
             onClick={() => handleAction("preview")}
-            disabled={!canGenerate || loading !== null}
+            disabled={loading !== null}
             className="flex w-full items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-medium transition text-[var(--brand-ink)] hover:bg-[var(--brand-strong)] hover:text-white border border-[var(--brand-strong)] bg-[var(--brand-strong)]/30 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loading === "preview" ? (
@@ -196,7 +165,7 @@ export function GenerateReportModal({
 
           <button
             onClick={() => handleAction("download")}
-            disabled={!canGenerate || loading !== null}
+            disabled={loading !== null}
             className="flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--cta)] px-4 py-3 text-sm font-medium text-[var(--cta-foreground)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loading === "download" ? (
@@ -209,7 +178,7 @@ export function GenerateReportModal({
 
           <button
             onClick={() => handleAction("print")}
-            disabled={!canGenerate || loading !== null}
+            disabled={loading !== null}
             className="flex w-full items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-medium transition text-[var(--brand-ink)] hover:bg-[var(--brand-strong)] hover:text-white border border-[var(--brand-strong)] bg-[var(--brand-strong)]/30 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loading === "print" ? (
@@ -230,8 +199,6 @@ export function GenerateReportModal({
   );
 }
 
-export default GenerateReportModal;
-
-
+export default GenerateTrendsReportModal;
 
 

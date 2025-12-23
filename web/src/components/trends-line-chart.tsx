@@ -65,7 +65,7 @@ export function TrendsLineChart({
     <div className="h-80 w-full">
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={data} margin={{ left: 10, right: 16, top: 12, bottom: 6 }}>
-          <CartesianGrid strokeDasharray="3 3" opacity={0.25} />
+          <CartesianGrid strokeDasharray="3 3" stroke="#666666" strokeOpacity={0.5} />
           <XAxis dataKey="month" tickMargin={10} />
           <YAxis tickMargin={10} />
           <Tooltip />
