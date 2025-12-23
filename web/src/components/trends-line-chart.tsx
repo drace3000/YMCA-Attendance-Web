@@ -26,13 +26,38 @@ const COLORS = ["#2563eb", "#16a34a", "#f97316", "#a855f7", "#ef4444"];
 export function TrendsLineChart({
   monthLabels,
   series,
+  monthsWithDataMask,
+  showAllMonths = false,
 }: {
   monthLabels: string[];
   series: TrendSeries[];
+  monthsWithDataMask?: boolean[];
+  showAllMonths?: boolean;
 }) {
-  const data = monthLabels.map((label, i) => {
-    const row: Record<string, string | number> = { month: label };
-    for (const s of series) row[s.classId] = s.monthlyAvg[i] ?? 0;
+  // Use the global mask if provided, otherwise calculate from this series only
+  const monthsToShow = monthLabels
+    .map((label, i) => ({
+      label,
+      index: i,
+      hasData: monthsWithDataMask 
+        ? monthsWithDataMask[i] 
+        : series.some((s) => (s.monthSessions[i] ?? 0) > 0),
+    }))
+    // For full year view, show all months; otherwise only months with data
+    .filter((m) => showAllMonths || m.hasData);
+
+  const data = monthsToShow.map(({ label, index }) => {
+    const row: Record<string, string | number | null> = { month: label };
+    for (const s of series) {
+      // Use the actual average value if this class has sessions in this month
+      const sessions = s.monthSessions[index] ?? 0;
+      if (sessions > 0) {
+        row[s.classId] = s.monthlyAvg[index];
+      } else {
+        // No data for this class in this month - use null (connectNulls will bridge)
+        row[s.classId] = null;
+      }
+    }
     return row;
   });
 
@@ -53,7 +78,9 @@ export function TrendsLineChart({
               name={s.className}
               stroke={COLORS[idx % COLORS.length]}
               strokeWidth={2}
-              dot={false}
+              dot={{ r: 3 }}
+              activeDot={{ r: 5 }}
+              connectNulls={true}
             />
           ))}
         </LineChart>

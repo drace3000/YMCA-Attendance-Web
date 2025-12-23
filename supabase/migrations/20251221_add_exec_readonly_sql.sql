@@ -95,3 +95,5 @@ GRANT EXECUTE ON FUNCTION public.execute_readonly_sql(TEXT, UUID) TO service_rol
 COMMENT ON FUNCTION public.execute_readonly_sql IS 'Executes a read-only SQL query with optional branch_id substitution. Returns JSON with data, row_count, and execution_time_ms.';
 
 
+
+

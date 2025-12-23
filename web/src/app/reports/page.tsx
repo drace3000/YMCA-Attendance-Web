@@ -5,9 +5,12 @@ import {
   Calendar,
   CalendarDays,
   CalendarRange,
+  FileText,
   Hash,
   PieChart,
   RotateCcw,
+  Square,
+  SquareCheck,
 } from "lucide-react";
 import {
   Popover,
@@ -17,6 +20,13 @@ import {
 } from "@/components/ui/popover";
 import { IgrCombo } from "igniteui-react";
 import type { IgrCombo as IgrComboElement } from "igniteui-react";
+import dynamic from "next/dynamic";
+import type { ReportSection } from "@/components/attendance-report-pdf";
+
+const GenerateReportModal = dynamic(
+  () => import("@/components/attendance-report-pdf/GenerateReportModal").then((mod) => mod.GenerateReportModal),
+  { ssr: false }
+);
 
 type FilterState = {
   year: string;
@@ -134,6 +144,16 @@ type ReportsData = {
 
 type InstructorOption = { id: string; display_name: string };
 
+const ALL_REPORT_SECTIONS: ReportSection[] = [
+  "saturdayAverages",
+  "dayTotals",
+  "sundayAverages",
+  "monthTotals",
+  "monthClassTypeAverage",
+  "monthClassGroupAverage",
+  "weekTotals",
+];
+
 export default function ReportsPage() {
   const [resetPopoverOpen, setResetPopoverOpen] = useState(false);
   const monthComboRef = useRef<IgrComboElement | null>(null);
@@ -146,6 +166,32 @@ export default function ReportsPage() {
     day: "all",
     instructor: "all",
   });
+  
+  // PDF export state
+  const [selectedSections, setSelectedSections] = useState<Set<ReportSection>>(
+    new Set(ALL_REPORT_SECTIONS)
+  );
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+
+  const toggleSection = (section: ReportSection) => {
+    setSelectedSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(section)) {
+        next.delete(section);
+      } else {
+        next.add(section);
+      }
+      return next;
+    });
+  };
+
+  const toggleAllSections = () => {
+    if (selectedSections.size === ALL_REPORT_SECTIONS.length) {
+      setSelectedSections(new Set());
+    } else {
+      setSelectedSections(new Set(ALL_REPORT_SECTIONS));
+    }
+  };
 
   useEffect(() => {
     const cleanupMonth = installSelectAllOnValueClick(monthComboRef.current);
@@ -273,6 +319,22 @@ export default function ReportsPage() {
             <span className="rounded-full bg-[var(--brand-soft)]/30 px-3 py-1 text-xs font-semibold text-[var(--brand-strong)]">
               Live
             </span>
+            
+            {/* Export PDF Button */}
+            <button
+              onClick={() => setExportModalOpen(true)}
+              disabled={selectedSections.size === 0}
+              className="btn-pill flex items-center gap-2 bg-[var(--cta)] px-4 py-2 text-sm font-medium text-[var(--cta-foreground)] shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <FileText className="h-4 w-4" />
+              Export PDF
+              {selectedSections.size > 0 && (
+                <span className="rounded-full bg-white/20 px-1.5 py-0.5 text-xs">
+                  {selectedSections.size}
+                </span>
+              )}
+            </button>
+            
             <Popover open={resetPopoverOpen} onOpenChange={setResetPopoverOpen}>
               <PopoverTrigger asChild>
                 <button
@@ -494,8 +556,27 @@ export default function ReportsPage() {
         </div>
       ) : null}
 
+      {/* Report selection controls */}
+      <div className="-my-4 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={toggleAllSections}
+          className="rounded border border-[var(--brand-strong)] bg-[var(--brand-strong)]/20 px-3 py-1 text-xs font-medium text-foreground transition hover:bg-[var(--brand-strong)]/40"
+        >
+          {selectedSections.size === ALL_REPORT_SECTIONS.length ? "Deselect All" : "Select All"}
+        </button>
+        <span className="text-sm text-muted-foreground">
+          {selectedSections.size} of {ALL_REPORT_SECTIONS.length} reports selected
+        </span>
+      </div>
+
       <section className="grid gap-4 lg:grid-cols-3">
-        <Section title="Saturday Avgs" tone="muted">
+        <Section
+          title="Saturday Avgs"
+          tone="muted"
+          checked={selectedSections.has("saturdayAverages")}
+          onToggle={() => toggleSection("saturdayAverages")}
+        >
           <Table
             columns={["Location", "Avg"]}
             rows={[
@@ -508,7 +589,12 @@ export default function ReportsPage() {
           />
         </Section>
 
-        <Section title="Day Totals / Day Average" tone="muted">
+        <Section
+          title="Day Totals / Day Average"
+          tone="muted"
+          checked={selectedSections.has("dayTotals")}
+          onToggle={() => toggleSection("dayTotals")}
+        >
           <CompactMatrix
             perDay={dayTotals.perDay}
             total={dayTotals.total}
@@ -516,7 +602,12 @@ export default function ReportsPage() {
           />
         </Section>
 
-        <Section title="Sunday Avgs" tone="muted">
+        <Section
+          title="Sunday Avgs"
+          tone="muted"
+          checked={selectedSections.has("sundayAverages")}
+          onToggle={() => toggleSection("sundayAverages")}
+        >
           <Table
             columns={["Location", "Avg"]}
             rows={[
@@ -531,7 +622,12 @@ export default function ReportsPage() {
       </section>
 
       <section className="grid gap-4 lg:grid-cols-3">
-        <Section title="Month Totals" tone="muted">
+        <Section
+          title="Month Totals"
+          tone="muted"
+          checked={selectedSections.has("monthTotals")}
+          onToggle={() => toggleSection("monthTotals")}
+        >
           <Table
             columns={["Metric", "Value"]}
             rows={[
@@ -545,7 +641,12 @@ export default function ReportsPage() {
           />
         </Section>
 
-        <Section title="Month Class Type Average" tone="muted">
+        <Section
+          title="Month Class Type Average"
+          tone="muted"
+          checked={selectedSections.has("monthClassTypeAverage")}
+          onToggle={() => toggleSection("monthClassTypeAverage")}
+        >
           <Table
             columns={["Class Type", "Avg"]}
             rows={monthClassTypeAverage.map((r) => [r.name, r.avg.toFixed(2)])}
@@ -553,7 +654,12 @@ export default function ReportsPage() {
         </Section>
 
         <div className="flex flex-col gap-4">
-          <Section title="Month Class Group Average" tone="muted">
+          <Section
+            title="Month Class Group Average"
+            tone="muted"
+            checked={selectedSections.has("monthClassGroupAverage")}
+            onToggle={() => toggleSection("monthClassGroupAverage")}
+          >
             <Table
               columns={["Group", "Avg"]}
               rows={monthClassGroupAverage.map((r) => [
@@ -562,7 +668,12 @@ export default function ReportsPage() {
               ])}
             />
           </Section>
-          <Section title="Week Totals" tone="muted">
+          <Section
+            title="Week Totals"
+            tone="muted"
+            checked={selectedSections.has("weekTotals")}
+            onToggle={() => toggleSection("weekTotals")}
+          >
             <Table
               columns={["Week", "Total"]}
               rows={weekTotals.map((w) => [w.label, w.total.toString()])}
@@ -570,6 +681,15 @@ export default function ReportsPage() {
           </Section>
         </div>
       </section>
+
+      {/* Export PDF Modal */}
+      <GenerateReportModal
+        isOpen={exportModalOpen}
+        onClose={() => setExportModalOpen(false)}
+        data={data}
+        filters={filters}
+        selectedSections={Array.from(selectedSections)}
+      />
     </div>
   );
 }
@@ -578,11 +698,15 @@ function Section({
   title,
   tone = "muted",
   className = "",
+  checked,
+  onToggle,
   children,
 }: {
   title: string;
   tone?: "primary" | "muted";
   className?: string;
+  checked?: boolean;
+  onToggle?: () => void;
   children: React.ReactNode;
 }) {
   const headerClasses =
@@ -595,6 +719,20 @@ function Section({
     >
       <div className={`flex items-center justify-between rounded-t-xl px-4 py-2 ${headerClasses}`}>
         <h2 className="text-base font-semibold">{title}</h2>
+        {onToggle && (
+          <button
+            type="button"
+            onClick={onToggle}
+            className="flex h-6 w-6 items-center justify-center rounded transition hover:bg-white/20"
+            aria-label={checked ? "Deselect for PDF export" : "Select for PDF export"}
+          >
+            {checked ? (
+              <SquareCheck className="h-5 w-5 text-[var(--cta)] drop-shadow-[0_0_4px_var(--cta)]" />
+            ) : (
+              <Square className="h-5 w-5 opacity-60" />
+            )}
+          </button>
+        )}
       </div>
       <div className="p-4">{children}</div>
     </div>

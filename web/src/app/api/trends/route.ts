@@ -10,36 +10,55 @@ type TrendRow = {
     | null;
 };
 
+type TrendSeriesItem = {
+  classId: string;
+  className: string;
+  monthlyAvg: number[];
+  monthSessions: number[];
+  slope: number;
+  delta: number;
+  totalSessions: number;
+};
+
 type TrendsPayload = {
   year: number;
+  quarter?: number;
+  month?: number;
   months: { index: number; label: string; isoMonth: string }[];
-  topUp: {
-    classId: string;
-    className: string;
-    monthlyAvg: number[];
-    monthSessions: number[];
-    slope: number;
-    delta: number;
-    totalSessions: number;
-  }[];
-  topDown: {
-    classId: string;
-    className: string;
-    monthlyAvg: number[];
-    monthSessions: number[];
-    slope: number;
-    delta: number;
-    totalSessions: number;
-  }[];
+  topUp: TrendSeriesItem[];
+  topDown: TrendSeriesItem[];
   computedAt: string;
   meta: {
     periodStart: string;
     periodEnd: string;
+    periodLabel: string;
     rowsInPeriod: number;
     rowsInYear?: number;
     firstDateInYear?: string | null;
     lastDateInYear?: string | null;
   };
+};
+
+const ALL_MONTHS = [
+  { index: 0, label: "Jan", isoMonth: "01" },
+  { index: 1, label: "Feb", isoMonth: "02" },
+  { index: 2, label: "Mar", isoMonth: "03" },
+  { index: 3, label: "Apr", isoMonth: "04" },
+  { index: 4, label: "May", isoMonth: "05" },
+  { index: 5, label: "Jun", isoMonth: "06" },
+  { index: 6, label: "Jul", isoMonth: "07" },
+  { index: 7, label: "Aug", isoMonth: "08" },
+  { index: 8, label: "Sep", isoMonth: "09" },
+  { index: 9, label: "Oct", isoMonth: "10" },
+  { index: 10, label: "Nov", isoMonth: "11" },
+  { index: 11, label: "Dec", isoMonth: "12" },
+];
+
+const QUARTER_MONTHS: Record<number, number[]> = {
+  1: [0, 1, 2],   // Q1: Jan, Feb, Mar
+  2: [3, 4, 5],   // Q2: Apr, May, Jun
+  3: [6, 7, 8],   // Q3: Jul, Aug, Sep
+  4: [9, 10, 11], // Q4: Oct, Nov, Dec
 };
 
 function toIsoDate(d: Date) {
@@ -67,16 +86,25 @@ function linearRegressionSlope(y: number[]) {
   return (n * sumXY - sumX * sumY) / denom;
 }
 
-function isMonthIndexValid(m: number) {
-  return Number.isFinite(m) && m >= 0 && m <= 7;
-}
-
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const year = Number(searchParams.get("year") ?? "2025");
+  const quarterParam = searchParams.get("quarter");
+  const monthParam = searchParams.get("month");
+
+  const quarter = quarterParam ? Number(quarterParam) : undefined;
+  const month = monthParam ? Number(monthParam) : undefined;
 
   if (!Number.isFinite(year) || year < 2000 || year > 2100) {
     return NextResponse.json({ error: "Invalid year" }, { status: 400 });
+  }
+
+  if (quarter !== undefined && (quarter < 1 || quarter > 4)) {
+    return NextResponse.json({ error: "Invalid quarter (must be 1-4)" }, { status: 400 });
+  }
+
+  if (month !== undefined && (month < 1 || month > 12)) {
+    return NextResponse.json({ error: "Invalid month (must be 1-12)" }, { status: 400 });
   }
 
   // This endpoint aggregates across all sessions and is expected to bypass RLS.
@@ -91,33 +119,82 @@ export async function GET(req: Request) {
     );
   }
 
-  // Jan 1 (inclusive) -> Sep 1 (exclusive) to cover Jan..Aug.
-  const start = new Date(Date.UTC(year, 0, 1));
-  const end = new Date(Date.UTC(year, 8, 1));
+  // Determine date range and months based on filters
+  let start: Date;
+  let end: Date;
+  let months: TrendsPayload["months"];
+  let periodLabel: string;
+  let validMonthIndices: number[];
 
-  const months: TrendsPayload["months"] = [
-    { index: 0, label: "Jan", isoMonth: "01" },
-    { index: 1, label: "Feb", isoMonth: "02" },
-    { index: 2, label: "Mar", isoMonth: "03" },
-    { index: 3, label: "Apr", isoMonth: "04" },
-    { index: 4, label: "May", isoMonth: "05" },
-    { index: 5, label: "Jun", isoMonth: "06" },
-    { index: 6, label: "Jul", isoMonth: "07" },
-    { index: 7, label: "Aug", isoMonth: "08" },
-  ];
+  if (month !== undefined) {
+    // Single month selected - show weeks within that month
+    const monthIndex = month - 1; // 0-based
+    start = new Date(Date.UTC(year, monthIndex, 1));
+    end = new Date(Date.UTC(year, monthIndex + 1, 1)); // First day of next month
+    months = [ALL_MONTHS[monthIndex]];
+    periodLabel = `${ALL_MONTHS[monthIndex].label} ${year}`;
+    validMonthIndices = [monthIndex];
+  } else if (quarter !== undefined) {
+    // Quarter selected
+    const quarterMonths = QUARTER_MONTHS[quarter];
+    const startMonth = quarterMonths[0];
+    const endMonth = quarterMonths[2];
+    start = new Date(Date.UTC(year, startMonth, 1));
+    end = new Date(Date.UTC(year, endMonth + 1, 1)); // First day after quarter
+    months = quarterMonths.map((m) => ALL_MONTHS[m]);
+    periodLabel = `Q${quarter} ${year} (${ALL_MONTHS[startMonth].label}–${ALL_MONTHS[endMonth].label})`;
+    validMonthIndices = quarterMonths;
+  } else {
+    // Full year - Jan to Dec
+    start = new Date(Date.UTC(year, 0, 1));
+    end = new Date(Date.UTC(year + 1, 0, 1)); // Jan 1 of next year
+    months = ALL_MONTHS;
+    periodLabel = `${year} (Jan–Dec)`;
+    validMonthIndices = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+  }
 
   const supabase = createSupabaseServerClient();
-  const { data, error } = await supabase
+  
+  const { count: totalCount } = await supabase
     .from("class_sessions")
-    .select(
-      `
-        session_date,
-        headcount,
-        class:class_id(id,name)
-      `,
-    )
+    .select("*", { count: "exact", head: true })
     .gte("session_date", toIsoDate(start))
     .lt("session_date", toIsoDate(end));
+  
+  // Fetch in pages to bypass 1000 row cap
+  const batchSize = 1000;
+  const total = totalCount ?? 0;
+  const pages = Math.max(1, Math.ceil(total / batchSize));
+  const allRows: TrendRow[] = [];
+  
+  for (let page = 0; page < pages; page++) {
+    const from = page * batchSize;
+    const to = Math.min(from + batchSize - 1, total === 0 ? batchSize - 1 : total - 1);
+    
+    const { data: pageData, error: pageError } = await supabase
+      .from("class_sessions")
+      .select(
+        `
+          session_date,
+          headcount,
+          class:class_id(id,name)
+        `,
+      )
+      .gte("session_date", toIsoDate(start))
+      .lt("session_date", toIsoDate(end))
+      .range(from, to);
+    
+    if (pageError) {
+      return NextResponse.json({ error: pageError.message }, { status: 500 });
+    }
+    
+    const pageRows: TrendRow[] = (pageData ?? []) as unknown as TrendRow[];
+    allRows.push(...pageRows);
+    
+  }
+  
+  const data = allRows;
+  const error = null;
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -125,6 +202,9 @@ export async function GET(req: Request) {
 
   const rows: TrendRow[] = (data ?? []) as unknown as TrendRow[];
   const rowsInPeriod = rows.length;
+  
+  // Number of buckets = number of months we're tracking
+  const numBuckets = validMonthIndices.length;
 
   const byClass = new Map<
     string,
@@ -146,14 +226,17 @@ export async function GET(req: Request) {
 
     const d = new Date(r.session_date.slice(0, 10) + "T00:00:00Z");
     const monthIndex = d.getUTCMonth(); // Jan=0
-    if (!isMonthIndexValid(monthIndex)) continue;
+
+    // Map the absolute month index to our bucket index
+    const bucketIndex = validMonthIndices.indexOf(monthIndex);
+    if (bucketIndex === -1) continue;
 
     let existing = byClass.get(classId);
     if (!existing) {
       existing = {
         className,
-        monthTotals: Array.from({ length: 8 }, () => 0),
-        monthSessions: Array.from({ length: 8 }, () => 0),
+        monthTotals: Array.from({ length: numBuckets }, () => 0),
+        monthSessions: Array.from({ length: numBuckets }, () => 0),
         totalSessions: 0,
         nonEmptyMonths: 0,
       };
@@ -161,14 +244,37 @@ export async function GET(req: Request) {
     }
 
     // Track non-empty months (only once)
-    if (existing.monthSessions[monthIndex] === 0) {
+    if (existing.monthSessions[bucketIndex] === 0) {
       existing.nonEmptyMonths += 1;
     }
 
-    existing.monthTotals[monthIndex] += r.headcount;
-    existing.monthSessions[monthIndex] += 1;
+    existing.monthTotals[bucketIndex] += r.headcount;
+    existing.monthSessions[bucketIndex] += 1;
     existing.totalSessions += 1;
+  }
 
+  // Dynamic filter thresholds based on period length
+  // More relaxed criteria: just need some sessions and at least 2 data points for trend
+  const minSessions = numBuckets >= 6 ? 4 : numBuckets >= 3 ? 2 : 1;
+  const minNonEmptyMonths = numBuckets >= 2 ? 2 : 1;
+
+  // Find the last month index where ANY class has data
+  // This is used to filter out discontinued classes (classes that stopped before the last month with data)
+  // Determine the last month with "meaningful" data across ALL classes
+  // We consider a month meaningful if total sessions with headcount >= threshold
+  const monthTotalSessions: number[] = Array.from({ length: numBuckets }, () => 0);
+  for (const [, s] of byClass) {
+    for (let i = 0; i < numBuckets; i++) {
+      monthTotalSessions[i] += s.monthSessions[i] ?? 0;
+    }
+  }
+  const lastMonthSessionThreshold = 5; // configurable threshold
+  let lastMonthWithAnyData = -1;
+  for (let i = numBuckets - 1; i >= 0; i--) {
+    if (monthTotalSessions[i] >= lastMonthSessionThreshold) {
+      lastMonthWithAnyData = i;
+      break;
+    }
   }
 
   const series = Array.from(byClass.entries())
@@ -177,8 +283,34 @@ export async function GET(req: Request) {
         const sessions = s.monthSessions[idx] ?? 0;
         return sessions ? total / sessions : 0;
       });
-      const slope = linearRegressionSlope(monthlyAvg);
-      const delta = (monthlyAvg[7] ?? 0) - (monthlyAvg[0] ?? 0);
+      
+      // Find first and last non-empty buckets
+      let firstNonEmptyIdx = 0;
+      let lastNonEmptyIdx = numBuckets - 1;
+      for (let i = 0; i < numBuckets; i++) {
+        if ((s.monthSessions[i] ?? 0) > 0) {
+          firstNonEmptyIdx = i;
+          break;
+        }
+      }
+      for (let i = numBuckets - 1; i >= 0; i--) {
+        if ((s.monthSessions[i] ?? 0) > 0) {
+          lastNonEmptyIdx = i;
+          break;
+        }
+      }
+      
+      // Only calculate slope on months that have actual data (exclude zeros)
+      // Extract only the data points that have sessions for accurate trend calculation
+      const dataPointsForSlope: number[] = [];
+      for (let i = 0; i < numBuckets; i++) {
+        if ((s.monthSessions[i] ?? 0) > 0) {
+          dataPointsForSlope.push(monthlyAvg[i]);
+        }
+      }
+      const slope = linearRegressionSlope(dataPointsForSlope);
+      
+      const delta = (monthlyAvg[lastNonEmptyIdx] ?? 0) - (monthlyAvg[firstNonEmptyIdx] ?? 0);
       return {
         classId,
         className: s.className,
@@ -190,23 +322,28 @@ export async function GET(req: Request) {
         nonEmptyMonths: s.nonEmptyMonths,
       };
     })
-    // Filter out sparse / discontinuous classes so "Jan → Aug" trend is meaningful.
-    // - Needs at least a few sessions overall
-    // - Must have data in BOTH Jan and Aug
+    // Only filter by minimum sessions and requiring at least 2 months of data for meaningful trends
+    // Also exclude discontinued classes (must have data in the last month where ANY class has data)
     .filter(
       (s) =>
-        s.totalSessions >= 6 &&
-        s.nonEmptyMonths >= 3 &&
-        (s.monthSessions[0] ?? 0) > 0 &&
-        (s.monthSessions[7] ?? 0) > 0,
+        s.totalSessions >= minSessions &&
+        s.nonEmptyMonths >= minNonEmptyMonths &&
+        // Exclude discontinued: must have data in the last month where any class has data
+        (lastMonthWithAnyData < 0 || (s.monthSessions[lastMonthWithAnyData] ?? 0) > 0),
     );
 
   const stripNonEmptyMonths = (
     item: (typeof series)[number],
-  ): Omit<(typeof series)[number], "nonEmptyMonths"> => {
-    const copy = { ...item } as (typeof series)[number] & Record<string, unknown>;
-    delete copy.nonEmptyMonths;
-    return copy;
+  ): TrendSeriesItem => {
+    return {
+      classId: item.classId,
+      className: item.className,
+      monthlyAvg: item.monthlyAvg,
+      monthSessions: item.monthSessions,
+      slope: item.slope,
+      delta: item.delta,
+      totalSessions: item.totalSessions,
+    };
   };
 
   const topUp = [...series]
@@ -221,6 +358,8 @@ export async function GET(req: Request) {
 
   const payload: TrendsPayload = {
     year,
+    quarter,
+    month,
     months,
     topUp,
     topDown,
@@ -228,6 +367,7 @@ export async function GET(req: Request) {
     meta: {
       periodStart: toIsoDate(start),
       periodEnd: toIsoDate(end),
+      periodLabel,
       rowsInPeriod,
     },
   };
