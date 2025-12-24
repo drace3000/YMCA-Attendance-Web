@@ -1,9 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-// #region agent log
-fetch('http://127.0.0.1:7242/ingest/507bda22-2ab8-4c67-b245-8738a4525e56',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'supabaseServer.ts:module-init',message:'Module loading - checking env vars',data:{hasUrl:!!process.env.NEXT_PUBLIC_SUPABASE_URL,hasAnonKey:!!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,hasServiceKey:!!process.env.SUPABASE_SERVICE_ROLE_KEY,urlValue:process.env.NEXT_PUBLIC_SUPABASE_URL?.substring(0,30)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-// #endregion
-
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const USING_SERVICE_ROLE = !!process.env.SUPABASE_SERVICE_ROLE_KEY;
 const SUPABASE_KEY =

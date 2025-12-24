@@ -12,6 +12,7 @@ type RecipientRow = {
   city: string | null;
   state: string | null;
   zip_code: string | null;
+  on_hold: boolean;
   created_at: string;
 };
 
@@ -25,6 +26,19 @@ type CreateRecipientPayload = {
   city?: string;
   state?: string;
   zip_code?: string;
+};
+
+type UpdateRecipientPayload = {
+  id: string;
+  email?: string;
+  first_name?: string;
+  last_name?: string;
+  phone?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  zip_code?: string;
+  on_hold?: boolean;
 };
 
 // Validation patterns
@@ -62,8 +76,9 @@ export async function GET(req: Request) {
 
   const { data, error } = await supabase
     .from("branch_schedule_recipients")
-    .select("id, branch_id, email, first_name, last_name, phone, address, city, state, zip_code, created_at")
+    .select("id, branch_id, email, first_name, last_name, phone, address, city, state, zip_code, on_hold, created_at")
     .eq("branch_id", branchId)
+    .order("on_hold", { ascending: true })
     .order("email", { ascending: true });
 
   if (error) {
@@ -148,6 +163,131 @@ export async function POST(req: Request) {
   }
 
   return NextResponse.json(data, { status: 201 });
+}
+
+// PUT - Update an existing recipient (modify contact details or on_hold)
+export async function PUT(req: Request) {
+  const supabase = createSupabaseServerClient();
+
+  let body: UpdateRecipientPayload;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  const { id, email, first_name, last_name, phone, address, city, state, zip_code, on_hold } = body;
+
+  if (!id) {
+    return NextResponse.json({ error: "id is required" }, { status: 400 });
+  }
+
+  // Load existing recipient to get branch for duplicate checks
+  const { data: existingRow, error: fetchError } = await supabase
+    .from("branch_schedule_recipients")
+    .select("id, branch_id, email")
+    .eq("id", id)
+    .single();
+
+  if (fetchError || !existingRow) {
+    return NextResponse.json({ error: fetchError?.message || "Recipient not found" }, { status: 404 });
+  }
+
+  const updates: Partial<RecipientRow> = {};
+
+  if (email !== undefined) {
+    if (!email.trim()) {
+      return NextResponse.json({ error: "Email is required" }, { status: 400 });
+    }
+    if (!validateEmail(email)) {
+      return NextResponse.json({ error: "Invalid email format (e.g., name@example.com)" }, { status: 400 });
+    }
+    updates.email = email.trim().toLowerCase();
+
+    // Check duplicates within same branch, excluding current id
+    const { data: dupCheck } = await supabase
+      .from("branch_schedule_recipients")
+      .select("id")
+      .eq("branch_id", existingRow.branch_id)
+      .ilike("email", email.trim())
+      .neq("id", id);
+
+    if (dupCheck && dupCheck.length > 0) {
+      return NextResponse.json(
+        { error: "This email is already added for this branch" },
+        { status: 409 }
+      );
+    }
+  }
+
+  if (phone !== undefined) {
+    if (phone && !validatePhone(phone)) {
+      return NextResponse.json({ error: "Invalid phone format. Use (1234) 567-8901 or (1234) 567-8901 ext 12345" }, { status: 400 });
+    }
+    updates.phone = phone?.trim() || null;
+  }
+
+  if (zip_code !== undefined) {
+    if (zip_code && !validateZip(zip_code)) {
+      return NextResponse.json({ error: "Invalid ZIP code format. Use 12345 or 12345-6789" }, { status: 400 });
+    }
+    updates.zip_code = zip_code?.trim() || null;
+  }
+
+  if (first_name !== undefined) updates.first_name = first_name?.trim() || null;
+  if (last_name !== undefined) updates.last_name = last_name?.trim() || null;
+  if (address !== undefined) updates.address = address?.trim() || null;
+  if (city !== undefined) updates.city = city?.trim() || null;
+  if (state !== undefined) updates.state = state?.trim().toUpperCase() || null;
+  if (on_hold !== undefined) updates.on_hold = !!on_hold;
+
+  if (Object.keys(updates).length === 0) {
+    return NextResponse.json({ error: "No fields to update" }, { status: 400 });
+  }
+
+  const { error } = await supabase
+    .from("branch_schedule_recipients")
+    .update(updates)
+    .eq("id", id);
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ success: true });
+}
+
+// PATCH - Toggle on_hold only
+export async function PATCH(req: Request) {
+  const supabase = createSupabaseServerClient();
+
+  let body: { id?: string; on_hold?: boolean };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  const { id, on_hold } = body;
+
+  if (!id) {
+    return NextResponse.json({ error: "id is required" }, { status: 400 });
+  }
+
+  if (on_hold === undefined) {
+    return NextResponse.json({ error: "on_hold is required" }, { status: 400 });
+  }
+
+  const { error } = await supabase
+    .from("branch_schedule_recipients")
+    .update({ on_hold: !!on_hold })
+    .eq("id", id);
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ success: true });
 }
 
 // DELETE - Remove a recipient

@@ -159,27 +159,28 @@ export async function GET(req: Request) {
     .lt("session_date", toIsoDate(ltDate))
     .eq("session_instructors.instructor_id", instructor);
 
-  const { data, error } =
-    instructor !== "all" ? await instructorQuery : await baseQuery;
+  try {
+    const { data, error } =
+      instructor !== "all" ? await instructorQuery : await baseQuery;
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
 
-  const rows: ReportRow[] = (data ?? []) as unknown as ReportRow[];
+    const rows: ReportRow[] = (data ?? []) as unknown as ReportRow[];
 
-  const filteredByDay =
-    day === "ALL"
-      ? rows
-      : rows.filter((r) => {
-          const dow = new Date(r.session_date + "T00:00:00Z").toLocaleDateString(
-            "en-US",
-            { weekday: "long", timeZone: "UTC" },
-          );
-          return dow.toUpperCase() === day;
-        });
+    const filteredByDay =
+      day === "ALL"
+        ? rows
+        : rows.filter((r) => {
+            const dow = new Date(r.session_date + "T00:00:00Z").toLocaleDateString(
+              "en-US",
+              { weekday: "long", timeZone: "UTC" },
+            );
+            return dow.toUpperCase() === day;
+          });
 
-  const withHeadcount = filteredByDay.filter((r) => r.headcount !== null);
+    const withHeadcount = filteredByDay.filter((r) => r.headcount !== null);
   const totalsSessionsWithHeadcount = withHeadcount.length;
   const avgHeadcount =
     totalsSessionsWithHeadcount === 0
@@ -369,7 +370,10 @@ export async function GET(req: Request) {
     weekTotals,
   };
 
-  return NextResponse.json(payload);
+    return NextResponse.json(payload);
+  } catch (e) {
+    return NextResponse.json({ error: "Internal error" }, { status: 500 });
+  }
 }
 
 

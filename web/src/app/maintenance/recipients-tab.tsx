@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Mail, Plus, Trash2, AlertCircle, ChevronDown, ChevronUp } from "lucide-react";
+import { Mail, Plus, Trash2, AlertCircle, ChevronDown, ChevronUp, Pencil, PauseCircle, PlayCircle } from "lucide-react";
 import { useThemeSettings } from "@/components/theme-settings-provider";
 
 type Recipient = {
@@ -15,6 +15,7 @@ type Recipient = {
   city: string | null;
   state: string | null;
   zip_code: string | null;
+  on_hold: boolean;
   created_at: string;
 };
 
@@ -78,15 +79,18 @@ export function RecipientsTab() {
 
   // Form state
   const [formData, setFormData] = useState<FormData>(emptyForm);
+  const [formOnHold, setFormOnHold] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   // Validation errors
   const [validationErrors, setValidationErrors] = useState<Partial<Record<keyof FormData, string>>>({});
 
   // Delete confirmation
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [holdUpdatingId, setHoldUpdatingId] = useState<string | null>(null);
 
   // Expanded rows for mobile view
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -136,7 +140,7 @@ export function RecipientsTab() {
     return Object.keys(errors).length === 0;
   };
 
-  const handleAdd = async () => {
+  const handleSave = async () => {
     if (!validateForm()) {
       setFormError("Please fix the validation errors below");
       return;
@@ -146,36 +150,86 @@ export function RecipientsTab() {
     setFormError(null);
 
     try {
+      const method = editingId ? "PUT" : "POST";
+      const payload: Record<string, unknown> = {
+        branch_id: branch.id,
+        email: formData.email.trim(),
+        first_name: formData.first_name.trim() || undefined,
+        last_name: formData.last_name.trim() || undefined,
+        phone: formData.phone.trim() || undefined,
+        address: formData.address.trim() || undefined,
+        city: formData.city.trim() || undefined,
+        state: formData.state.trim() || undefined,
+        zip_code: formData.zip_code.trim() || undefined,
+      };
+
+      if (editingId) {
+        payload.id = editingId;
+        payload.on_hold = formOnHold;
+      }
+
       const res = await fetch("/api/maintenance/recipients", {
-        method: "POST",
+        method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          branch_id: branch.id,
-          email: formData.email.trim(),
-          first_name: formData.first_name.trim() || undefined,
-          last_name: formData.last_name.trim() || undefined,
-          phone: formData.phone.trim() || undefined,
-          address: formData.address.trim() || undefined,
-          city: formData.city.trim() || undefined,
-          state: formData.state.trim() || undefined,
-          zip_code: formData.zip_code.trim() || undefined,
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.error || "Failed to add recipient");
+        throw new Error(data.error || "Failed to save recipient");
       }
 
       setFormData(emptyForm);
+      setFormOnHold(false);
+      setEditingId(null);
       setValidationErrors({});
       setShowForm(false);
       await loadRecipients();
     } catch (e) {
-      setFormError(e instanceof Error ? e.message : "Failed to add");
+      setFormError(e instanceof Error ? e.message : "Failed to save");
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleToggleHold = async (recipient: Recipient) => {
+    setHoldUpdatingId(recipient.id);
+    try {
+      const res = await fetch("/api/maintenance/recipients", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: recipient.id, on_hold: !recipient.on_hold }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to update hold status");
+      }
+
+      await loadRecipients();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to update hold status");
+    } finally {
+      setHoldUpdatingId(null);
+    }
+  };
+
+  const startEdit = (recipient: Recipient) => {
+    setEditingId(recipient.id);
+    setShowForm(true);
+    setFormData({
+      email: recipient.email || "",
+      first_name: recipient.first_name || "",
+      last_name: recipient.last_name || "",
+      phone: recipient.phone || "",
+      address: recipient.address || "",
+      city: recipient.city || "",
+      state: recipient.state || "",
+      zip_code: recipient.zip_code || "",
+    });
+    setFormOnHold(!!recipient.on_hold);
+    setFormError(null);
+    setValidationErrors({});
   };
 
   const handleDelete = async (id: string) => {
@@ -231,7 +285,18 @@ export function RecipientsTab() {
         </div>
         <button
           type="button"
-          onClick={() => setShowForm(!showForm)}
+          onClick={() => {
+            if (showForm) {
+              setShowForm(false);
+              setEditingId(null);
+              setFormData(emptyForm);
+              setFormOnHold(false);
+              setValidationErrors({});
+              setFormError(null);
+            } else {
+              setShowForm(true);
+            }
+          }}
           className="btn-pill inline-flex items-center gap-2 bg-[var(--cta)] px-4 py-2 text-sm font-semibold text-[var(--cta-foreground)] shadow-sm hover:opacity-90"
         >
           {showForm ? (
@@ -251,6 +316,11 @@ export function RecipientsTab() {
       {/* Add Form */}
       {showForm && (
         <div className="border-b border-border bg-card/50 px-5 py-4">
+          {editingId && (
+            <div className="mb-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+              Editing existing recipient ({formData.email || "email"})
+            </div>
+          )}
           <div className="space-y-4">
             {/* Row 1: Email and Phone */}
             <div className="grid gap-4 sm:grid-cols-2">
@@ -402,7 +472,9 @@ export function RecipientsTab() {
                 type="button"
                 onClick={() => {
                   setShowForm(false);
+                  setEditingId(null);
                   setFormData(emptyForm);
+                  setFormOnHold(false);
                   setValidationErrors({});
                   setFormError(null);
                 }}
@@ -412,14 +484,28 @@ export function RecipientsTab() {
               </button>
               <button
                 type="button"
-                onClick={handleAdd}
+                onClick={handleSave}
                 disabled={saving}
                 className="btn-pill inline-flex items-center gap-2 bg-[var(--cta)] px-4 py-2 text-sm font-semibold text-[var(--cta-foreground)] shadow-sm hover:opacity-90 disabled:opacity-50"
               >
                 <Plus className="h-4 w-4" />
-                {saving ? "Adding..." : "Add Recipient"}
+                {saving ? "Saving..." : editingId ? "Save Changes" : "Add Recipient"}
               </button>
             </div>
+            {editingId && (
+              <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm">
+                <input
+                  id="on-hold"
+                  type="checkbox"
+                  checked={formOnHold}
+                  onChange={(e) => setFormOnHold(e.target.checked)}
+                  className="h-4 w-4 accent-[var(--brand)]"
+                />
+                <label htmlFor="on-hold" className="text-foreground/90">
+                  Put this recipient on hold (they will not receive schedule emails)
+                </label>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -474,7 +560,16 @@ export function RecipientsTab() {
                                 <ChevronDown className="h-4 w-4 text-muted-foreground" />
                               )}
                             </span>
-                            {recipient.email}
+                            <div className="flex items-center gap-2">
+                              <span className={recipient.on_hold ? "text-muted-foreground line-through" : ""}>
+                                {recipient.email}
+                              </span>
+                              {recipient.on_hold && (
+                                <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-200">
+                                  On hold
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </td>
                         <td className="px-4 py-2 text-foreground">
@@ -487,34 +582,53 @@ export function RecipientsTab() {
                           {displayAddress || <span className="text-muted-foreground">—</span>}
                         </td>
                         <td className="px-4 py-2 text-right" onClick={(e) => e.stopPropagation()}>
-                          {deletingId === recipient.id ? (
-                            <div className="flex items-center justify-end gap-2">
-                              <span className="text-xs text-foreground/70">Delete?</span>
-                              <button
-                                type="button"
-                                onClick={() => handleDelete(recipient.id)}
-                                className="rounded-lg bg-red-500/20 px-2 py-1 text-xs font-medium text-red-300 hover:bg-red-500/30"
-                              >
-                                Yes
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setDeletingId(null)}
-                                className="rounded-lg bg-white/10 px-2 py-1 text-xs font-medium text-foreground hover:bg-white/20"
-                              >
-                                No
-                              </button>
-                            </div>
-                          ) : (
+                          <div className="flex items-center justify-end gap-2">
                             <button
                               type="button"
-                              onClick={() => setDeletingId(recipient.id)}
-                              className="rounded-lg p-1.5 text-red-400 hover:bg-red-500/20"
-                              title="Remove recipient"
+                              onClick={() => startEdit(recipient)}
+                              className="rounded-lg p-1.5 text-[var(--brand)] hover:bg-[var(--brand-soft)]/30"
+                              title="Edit recipient"
                             >
-                              <Trash2 className="h-4 w-4" />
+                              <Pencil className="h-4 w-4" />
                             </button>
-                          )}
+                            <button
+                              type="button"
+                              onClick={() => handleToggleHold(recipient)}
+                              disabled={holdUpdatingId === recipient.id}
+                              className="rounded-lg p-1.5 text-amber-300 hover:bg-amber-500/20 disabled:opacity-50"
+                              title={recipient.on_hold ? "Resume recipient" : "Put on hold"}
+                            >
+                              {recipient.on_hold ? <PlayCircle className="h-4 w-4" /> : <PauseCircle className="h-4 w-4" />}
+                            </button>
+                            {deletingId === recipient.id ? (
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-foreground/70">Delete?</span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDelete(recipient.id)}
+                                  className="rounded-lg bg-red-500/20 px-2 py-1 text-xs font-medium text-red-300 hover:bg-red-500/30"
+                                >
+                                  Yes
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setDeletingId(null)}
+                                  className="rounded-lg bg-white/10 px-2 py-1 text-xs font-medium text-foreground hover:bg-white/20"
+                                >
+                                  No
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setDeletingId(recipient.id)}
+                                className="rounded-lg p-1.5 text-red-400 hover:bg-red-500/20"
+                                title="Remove recipient"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                       {/* Mobile expanded details */}

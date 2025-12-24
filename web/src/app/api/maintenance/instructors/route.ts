@@ -58,9 +58,6 @@ function generateNicknameSuggestions(firstName: string, lastName: string): strin
 
 // GET - List all instructors or check nickname availability
 export async function GET(req: Request) {
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/507bda22-2ab8-4c67-b245-8738a4525e56',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'instructors/route.ts:GET-entry',message:'GET handler entered',data:{url:req.url},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-  // #endregion
   const { searchParams } = new URL(req.url);
   const checkNickname = searchParams.get("check_nickname");
   const branchId = searchParams.get("branch_id");
@@ -122,9 +119,6 @@ export async function GET(req: Request) {
   }
 
   // Regular list query
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/507bda22-2ab8-4c67-b245-8738a4525e56',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'instructors/route.ts:before-query',message:'About to execute query',data:{includeInactive},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'C'})}).catch(()=>{});
-  // #endregion
   let query = supabase
     .from("instructors")
     .select("id, branch_id, raw_name, first_name, last_name, nickname, is_active, created_at")
@@ -135,9 +129,6 @@ export async function GET(req: Request) {
   }
 
   const { data, error } = await query;
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/507bda22-2ab8-4c67-b245-8738a4525e56',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'instructors/route.ts:after-query',message:'Query completed',data:{hasError:!!error,errorMsg:error?.message,errorCode:error?.code,rowCount:data?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'D'})}).catch(()=>{});
-  // #endregion
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
