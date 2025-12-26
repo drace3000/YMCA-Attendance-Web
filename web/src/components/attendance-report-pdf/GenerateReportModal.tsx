@@ -1,13 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { X, FileText, Download, Printer, Eye, Loader2 } from "lucide-react";
+import { X, FileText, Download, Printer, Eye, Loader2, Mail } from "lucide-react";
 import {
   downloadAttendanceReportPDF,
   previewAttendanceReportPDF,
   printAttendanceReportPDF,
+  generateAttendanceReportPDFBlob,
 } from "@/lib/attendance-report-pdf-utils";
 import type { ReportData, FilterInfo, ReportSection } from "./AttendanceReportPDFDocument";
+import { EmailPdfModal } from "@/components/email-pdf-modal";
 
 export const REPORT_SECTION_LABELS: Record<ReportSection, string> = {
   saturdayAverages: "Saturday Averages",
@@ -25,9 +27,10 @@ interface GenerateReportModalProps {
   data: ReportData;
   filters: FilterInfo;
   selectedSections: ReportSection[];
+  branchId?: string;
 }
 
-type ActionType = "preview" | "download" | "print" | null;
+type ActionType = "preview" | "download" | "print" | "email" | null;
 
 function formatFilterSummary(filters: FilterInfo): string {
   const parts: string[] = [filters.year];
@@ -61,13 +64,38 @@ export function GenerateReportModal({
   data,
   filters,
   selectedSections,
+  branchId,
 }: GenerateReportModalProps) {
   const [loading, setLoading] = useState<ActionType>(null);
   const [error, setError] = useState<string | null>(null);
+  const [emailModalOpen, setEmailModalOpen] = useState(false);
+  const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
 
   if (!isOpen) return null;
 
   const canGenerate = selectedSections.length > 0;
+
+  // Generate filename
+  const today = new Date().toISOString().slice(0, 10);
+  const fileNameParts = ["Attendance_Report", filters.year];
+  if (filters.month !== "all") {
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const monthNum = parseInt(filters.month, 10);
+    fileNameParts.push(monthNames[monthNum - 1] || filters.month);
+  } else if (filters.quarter !== "all") {
+    fileNameParts.push(`Q${filters.quarter}`);
+  }
+  const defaultFileName = `${today}-${fileNameParts.join("_")}.pdf`;
+
+  // Default email content
+  const filterSummary = formatFilterSummary(filters);
+  const defaultSubject = `Attendance Report - ${filterSummary}`;
+  const defaultMessage = `Please find attached the Attendance Report for ${filterSummary}.
+
+This report includes attendance totals, averages by location, and class performance metrics.
+
+Sections included:
+${selectedSections.map(s => `• ${REPORT_SECTION_LABELS[s]}`).join("\n")}`;
 
   const handleAction = async (action: ActionType) => {
     if (!action || selectedSections.length === 0) return;
@@ -85,6 +113,11 @@ export function GenerateReportModal({
           break;
         case "print":
           await printAttendanceReportPDF(data, filters, selectedSections);
+          break;
+        case "email":
+          const blob = await generateAttendanceReportPDFBlob(data, filters, selectedSections);
+          setPdfBlob(blob);
+          setEmailModalOpen(true);
           break;
       }
     } catch (err) {
@@ -219,6 +252,22 @@ export function GenerateReportModal({
             )}
             Print
           </button>
+
+          {/* Email PDF Button */}
+          {branchId && (
+            <button
+              onClick={() => handleAction("email")}
+              disabled={!canGenerate || loading !== null}
+              className="flex w-full items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-medium transition text-white bg-[var(--brand-strong)] hover:bg-[var(--brand-ink)] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {loading === "email" ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Mail className="h-4 w-4" />
+              )}
+              Email PDF
+            </button>
+          )}
         </div>
 
         {/* Footer note */}
@@ -226,11 +275,26 @@ export function GenerateReportModal({
           PDF will be generated in 8.5 × 11 inch portrait format
         </p>
       </div>
+
+      {/* Email Modal */}
+      {branchId && (
+        <EmailPdfModal
+          isOpen={emailModalOpen}
+          onClose={() => setEmailModalOpen(false)}
+          pdfBlob={pdfBlob}
+          defaultSubject={defaultSubject}
+          defaultMessage={defaultMessage}
+          defaultFileName={defaultFileName}
+          branchId={branchId}
+        />
+      )}
     </div>
   );
 }
 
 export default GenerateReportModal;
+
+
 
 
 

@@ -13,6 +13,7 @@ import {
 } from "@react-pdf/renderer";
 
 const THEME_COLOR = "#01A490";
+const NUMBER_FORMAT = new Intl.NumberFormat("en-US");
 
 const ALL_SECTION_COUNT = 7;
 
@@ -128,6 +129,11 @@ const styles = StyleSheet.create({
     color: "#666666",
     marginTop: 2,
   },
+  printedOn: {
+    fontSize: 7,
+    color: "#888888",
+    marginTop: 3,
+  },
   // Content area - no special styling needed, page padding handles spacing
   content: {
   },
@@ -188,21 +194,9 @@ const styles = StyleSheet.create({
     maxWidth: 250,
     textAlign: "right",
   },
-  // Two-column layout
-  twoColumnRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 15,
-  },
-  halfWidthSection: {
-    width: "48%",
-  },
   // Section container
   section: {
-    marginBottom: 15,
-  },
-  sectionCompact: {
-    marginBottom: 0,
+    marginBottom: 20,
   },
   sectionTitle: {
     fontSize: 11,
@@ -223,13 +217,14 @@ const styles = StyleSheet.create({
     backgroundColor: "#E8E8E8",
     borderBottomWidth: 1,
     borderBottomColor: "#CCCCCC",
-    minHeight: 22,
+    minHeight: 24,
+    alignItems: "center",
   },
   tableRow: {
     flexDirection: "row",
     borderBottomWidth: 1,
     borderBottomColor: "#EEEEEE",
-    minHeight: 20,
+    minHeight: 22,
     alignItems: "center",
   },
   tableRowAlt: {
@@ -237,7 +232,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#EEEEEE",
     backgroundColor: "#FAFAFA",
-    minHeight: 20,
+    minHeight: 22,
     alignItems: "center",
   },
   tableCell: {
@@ -266,19 +261,48 @@ const styles = StyleSheet.create({
     textAlign: "right",
     color: "#333333",
   },
+  // Compact 2-column table styles (for narrow tables)
+  tableCellCompact: {
+    fontSize: 9,
+    padding: 5,
+    width: 150,
+  },
+  tableCellHeaderCompact: {
+    fontSize: 9,
+    fontFamily: "Helvetica-Bold",
+    padding: 5,
+    width: 150,
+    color: "#333333",
+  },
+  tableCellCompactRight: {
+    fontSize: 9,
+    padding: 5,
+    width: 80,
+    textAlign: "right",
+  },
+  tableCellHeaderCompactRight: {
+    fontSize: 9,
+    fontFamily: "Helvetica-Bold",
+    padding: 5,
+    width: 80,
+    textAlign: "right",
+    color: "#333333",
+  },
   // Day matrix specific
   matrixHeader: {
     flexDirection: "row",
     backgroundColor: "#E8E8E8",
     borderBottomWidth: 1,
     borderBottomColor: "#CCCCCC",
-    minHeight: 22,
+    minHeight: 24,
+    alignItems: "center",
   },
   matrixCell: {
     fontSize: 8,
     padding: 4,
     width: 52,
     textAlign: "center",
+    minHeight: 20,
   },
   matrixCellHeader: {
     fontSize: 8,
@@ -287,6 +311,7 @@ const styles = StyleSheet.create({
     width: 52,
     textAlign: "center",
     color: "#333333",
+    minHeight: 20,
   },
   matrixLabelCell: {
     fontSize: 9,
@@ -294,6 +319,7 @@ const styles = StyleSheet.create({
     padding: 4,
     width: 75,
     color: "#333333",
+    minHeight: 20,
   },
   // Footer - positioned at bottom
   footer: {
@@ -332,29 +358,49 @@ function formatPrintDateTime(): string {
 
 function formatFilterDisplay(filters: FilterInfo): { label: string; value: string }[] {
   const items: { label: string; value: string }[] = [];
+  const monthNames = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December"
+  ];
   
+  // Year - always shown
   items.push({ label: "Year:", value: filters.year });
   
+  // Quarter
   if (filters.quarter !== "all") {
     items.push({ label: "Quarter:", value: `Q${filters.quarter}` });
+  } else {
+    items.push({ label: "Quarter:", value: "All Quarters" });
   }
+  
+  // Month
   if (filters.month !== "all") {
-    const monthNames = [
-      "January", "February", "March", "April", "May", "June",
-      "July", "August", "September", "October", "November", "December"
-    ];
     const monthNum = parseInt(filters.month, 10);
     items.push({ label: "Month:", value: monthNames[monthNum - 1] || filters.month });
+  } else {
+    items.push({ label: "Month:", value: "All Months" });
   }
+  
+  // Week
   if (filters.week !== "all") {
     items.push({ label: "Week:", value: `Week ${filters.week}` });
+  } else {
+    items.push({ label: "Week:", value: "All Weeks" });
   }
+  
+  // Day
   if (filters.day !== "all") {
     const dayName = filters.day.charAt(0) + filters.day.slice(1).toLowerCase();
     items.push({ label: "Day:", value: dayName });
+  } else {
+    items.push({ label: "Day:", value: "All Days" });
   }
+  
+  // Instructor
   if (filters.instructor !== "all") {
     items.push({ label: "Instructor:", value: "Filtered" });
+  } else {
+    items.push({ label: "Instructor:", value: "All Instructors" });
   }
   
   return items;
@@ -392,16 +438,39 @@ function ReportTable({
   columns, 
   rows,
   rightAlignLast = true,
-  compact = false,
 }: { 
   title: string;
   columns: string[];
   rows: string[][];
   rightAlignLast?: boolean;
-  compact?: boolean;
 }) {
+  // Use compact layout for 2-column tables
+  const isCompact = columns.length === 2;
+  
+  const getHeaderStyle = (index: number) => {
+    if (isCompact) {
+      return rightAlignLast && index === columns.length - 1
+        ? styles.tableCellHeaderCompactRight
+        : styles.tableCellHeaderCompact;
+    }
+    return rightAlignLast && index === columns.length - 1
+      ? styles.tableCellHeaderRight
+      : styles.tableCellHeader;
+  };
+  
+  const getCellStyle = (index: number, rowLength: number) => {
+    if (isCompact) {
+      return rightAlignLast && index === rowLength - 1
+        ? styles.tableCellCompactRight
+        : styles.tableCellCompact;
+    }
+    return rightAlignLast && index === rowLength - 1
+      ? styles.tableCellRight
+      : styles.tableCell;
+  };
+
   return (
-    <View style={compact ? styles.sectionCompact : styles.section}>
+    <View style={styles.section}>
       {/* Section title - shows (continued) if not first occurrence on page */}
       <Text 
         style={styles.sectionTitle}
@@ -417,10 +486,7 @@ function ReportTable({
           {columns.map((col, i) => (
             <Text 
               key={i} 
-              style={rightAlignLast && i === columns.length - 1 
-                ? styles.tableCellHeaderRight 
-                : styles.tableCellHeader
-              }
+              style={getHeaderStyle(i)}
             >
               {col}
             </Text>
@@ -436,10 +502,7 @@ function ReportTable({
             {row.map((cell, i) => (
               <Text 
                 key={i} 
-                style={rightAlignLast && i === row.length - 1 
-                  ? styles.tableCellRight 
-                  : styles.tableCell
-                }
+                style={getCellStyle(i, row.length)}
               >
                 {cell}
               </Text>
@@ -451,27 +514,11 @@ function ReportTable({
   );
 }
 
-// Two-column row wrapper
-function TwoColumnRow({ 
-  left, 
-  right 
-}: { 
-  left: React.ReactNode; 
-  right?: React.ReactNode;
-}) {
-  return (
-    <View style={styles.twoColumnRow}>
-      <View style={styles.halfWidthSection}>{left}</View>
-      {right && <View style={styles.halfWidthSection}>{right}</View>}
-    </View>
-  );
-}
-
 // Report section components using the ReportTable
-function SaturdayAveragesSection({ data, compact = false }: { data: ReportData; compact?: boolean }) {
+function SaturdayAveragesSection({ data }: { data: ReportData }) {
   const rows = [
-    ...data.saturdayAverages.locations.map((r) => [r.location, r.avg.toFixed(2)]),
-    ["Total Class Avg", data.saturdayAverages.totalClassAvg.toFixed(2)],
+    ...data.saturdayAverages.locations.map((r) => [r.location, NUMBER_FORMAT.format(r.avg)]),
+    ["Total Class Avg", NUMBER_FORMAT.format(data.saturdayAverages.totalClassAvg)],
   ];
   
   return (
@@ -479,15 +526,14 @@ function SaturdayAveragesSection({ data, compact = false }: { data: ReportData; 
       title="Saturday Averages"
       columns={["Location", "Average"]}
       rows={rows}
-      compact={compact}
     />
   );
 }
 
-function SundayAveragesSection({ data, compact = false }: { data: ReportData; compact?: boolean }) {
+function SundayAveragesSection({ data }: { data: ReportData }) {
   const rows = [
-    ...data.sundayAverages.locations.map((r) => [r.location, r.avg.toFixed(2)]),
-    ["Total Class Avg", data.sundayAverages.totalClassAvg.toFixed(2)],
+    ...data.sundayAverages.locations.map((r) => [r.location, NUMBER_FORMAT.format(r.avg)]),
+    ["Total Class Avg", NUMBER_FORMAT.format(data.sundayAverages.totalClassAvg)],
   ];
   
   return (
@@ -495,7 +541,6 @@ function SundayAveragesSection({ data, compact = false }: { data: ReportData; co
       title="Sunday Averages"
       columns={["Location", "Average"]}
       rows={rows}
-      compact={compact}
     />
   );
 }
@@ -541,29 +586,29 @@ function DayTotalsSection({ data }: { data: ReportData }) {
               {d.total}
             </Text>
           ))}
-          <Text style={styles.matrixCell}>{data.dayTotals.total}</Text>
-          <Text style={styles.matrixCell}>{data.dayTotals.overallAvg.toFixed(2)}</Text>
+          <Text style={styles.matrixCell}>{NUMBER_FORMAT.format(data.dayTotals.total)}</Text>
+          <Text style={styles.matrixCell}>{NUMBER_FORMAT.format(data.dayTotals.overallAvg)}</Text>
         </View>
         <View style={styles.tableRowAlt} wrap={false}>
           <Text style={styles.matrixLabelCell}>Day Average</Text>
           {days.map((d) => (
             <Text key={d.day} style={styles.matrixCell}>
-              {d.avg.toFixed(2)}
+              {NUMBER_FORMAT.format(d.avg)}
             </Text>
           ))}
           <Text style={styles.matrixCell}></Text>
-          <Text style={styles.matrixCell}>{data.dayTotals.overallAvg.toFixed(2)}</Text>
+          <Text style={styles.matrixCell}>{NUMBER_FORMAT.format(data.dayTotals.overallAvg)}</Text>
         </View>
       </View>
     </View>
   );
 }
 
-function MonthTotalsSection({ data, compact = false }: { data: ReportData; compact?: boolean }) {
+function MonthTotalsSection({ data }: { data: ReportData }) {
   const rows = [
-    ["All Classes", data.monthTotals.totalAttendance.toString()],
-    ...data.monthTotals.locationAverages.map((r) => [`${r.location} Avg`, r.avg.toFixed(2)]),
-    ["Total Class Avg", data.monthTotals.overallAvg.toFixed(2)],
+    ["All Classes", NUMBER_FORMAT.format(data.monthTotals.totalAttendance)],
+    ...data.monthTotals.locationAverages.map((r) => [`${r.location} Avg`, NUMBER_FORMAT.format(r.avg)]),
+    ["Total Class Avg", NUMBER_FORMAT.format(data.monthTotals.overallAvg)],
   ];
   
   return (
@@ -571,46 +616,42 @@ function MonthTotalsSection({ data, compact = false }: { data: ReportData; compa
       title="Month Totals"
       columns={["Metric", "Value"]}
       rows={rows}
-      compact={compact}
     />
   );
 }
 
-function MonthClassTypeAverageSection({ data, compact = false }: { data: ReportData; compact?: boolean }) {
-  const rows = data.monthClassTypeAverage.map((r) => [r.name, r.avg.toFixed(2)]);
+function MonthClassTypeAverageSection({ data }: { data: ReportData }) {
+  const rows = data.monthClassTypeAverage.map((r) => [r.name, NUMBER_FORMAT.format(r.avg)]);
   
   return (
     <ReportTable
       title="Month Class Type Average"
       columns={["Class Type", "Average"]}
       rows={rows}
-      compact={compact}
     />
   );
 }
 
-function MonthClassGroupAverageSection({ data, compact = false }: { data: ReportData; compact?: boolean }) {
-  const rows = data.monthClassGroupAverage.map((r) => [r.group, r.avg.toFixed(2)]);
+function MonthClassGroupAverageSection({ data }: { data: ReportData }) {
+  const rows = data.monthClassGroupAverage.map((r) => [r.group, NUMBER_FORMAT.format(r.avg)]);
   
   return (
     <ReportTable
       title="Month Class Group Average"
       columns={["Group", "Average"]}
       rows={rows}
-      compact={compact}
     />
   );
 }
 
-function WeekTotalsSection({ data, compact = false }: { data: ReportData; compact?: boolean }) {
-  const rows = data.weekTotals.map((r) => [r.label, r.total.toString()]);
+function WeekTotalsSection({ data }: { data: ReportData }) {
+  const rows = data.weekTotals.map((r) => [r.label, NUMBER_FORMAT.format(r.total)]);
   
   return (
     <ReportTable
       title="Week Totals"
       columns={["Week", "Total"]}
       rows={rows}
-      compact={compact}
     />
   );
 }
@@ -623,79 +664,59 @@ export function AttendanceReportPDFDocument({
   const printDateTime = formatPrintDateTime();
   const filterItems = formatFilterDisplay(filters);
   const reportPeriod = formatReportPeriod(filters);
-  const isFullReport = selectedSections.length === ALL_SECTION_COUNT;
+  
+  // Check if any filters are applied (not "all")
+  const hasFiltersApplied = 
+    filters.quarter !== "all" ||
+    filters.month !== "all" ||
+    filters.week !== "all" ||
+    filters.day !== "all" ||
+    filters.instructor !== "all";
+  
+  // Full report = all sections selected AND no filters applied
+  const isFullReport = selectedSections.length === ALL_SECTION_COUNT && !hasFiltersApplied;
   const includedSectionNames = selectedSections.map(s => SECTION_LABELS[s]).join(", ");
 
   // Check which sections are selected
   const has = (section: ReportSection) => selectedSections.includes(section);
   
-  // Render sections in optimized two-column layout
+  // Render sections in simple stacked layout (single column for reliability)
   const renderSections = () => {
     const elements: React.ReactNode[] = [];
     
-    // Row 1: Saturday + Sunday Averages (side by side)
-    if (has("saturdayAverages") || has("sundayAverages")) {
-      if (has("saturdayAverages") && has("sundayAverages")) {
-        elements.push(
-          <TwoColumnRow
-            key="row-sat-sun"
-            left={<SaturdayAveragesSection data={data} compact />}
-            right={<SundayAveragesSection data={data} compact />}
-          />
-        );
-      } else if (has("saturdayAverages")) {
-        elements.push(
-          <TwoColumnRow
-            key="row-sat"
-            left={<SaturdayAveragesSection data={data} compact />}
-          />
-        );
-      } else {
-        elements.push(
-          <TwoColumnRow
-            key="row-sun"
-            left={<SundayAveragesSection data={data} compact />}
-          />
-        );
-      }
+    // Saturday Averages
+    if (has("saturdayAverages")) {
+      elements.push(<SaturdayAveragesSection key="saturdayAverages" data={data} />);
     }
     
-    // Row 2: Day Totals (full width - wide matrix)
+    // Sunday Averages
+    if (has("sundayAverages")) {
+      elements.push(<SundayAveragesSection key="sundayAverages" data={data} />);
+    }
+    
+    // Day Totals (full width matrix)
     if (has("dayTotals")) {
       elements.push(<DayTotalsSection key="dayTotals" data={data} />);
     }
     
-    // Row 3: Month Totals | (Month Class Group Average + Week Totals stacked)
-    if (has("monthTotals") || has("monthClassGroupAverage") || has("weekTotals")) {
-      const rightColumn = (
-        <>
-          {has("monthClassGroupAverage") && <MonthClassGroupAverageSection data={data} compact />}
-          {has("weekTotals") && <WeekTotalsSection data={data} compact />}
-        </>
-      );
-      const hasRightContent = has("monthClassGroupAverage") || has("weekTotals");
-      
-      if (has("monthTotals")) {
-        elements.push(
-          <TwoColumnRow
-            key="row-month-group-week"
-            left={<MonthTotalsSection data={data} compact />}
-            right={hasRightContent ? rightColumn : undefined}
-          />
-        );
-      } else if (hasRightContent) {
-        elements.push(
-          <TwoColumnRow
-            key="row-group-week"
-            left={rightColumn}
-          />
-        );
-      }
+    // Month Totals
+    if (has("monthTotals")) {
+      elements.push(<MonthTotalsSection key="monthTotals" data={data} />);
     }
     
-    // Row 5: Month Class Type Average (full width - potentially many rows)
+    // Month Class Group Average
+    if (has("monthClassGroupAverage")) {
+      elements.push(<MonthClassGroupAverageSection key="monthClassGroupAverage" data={data} />);
+    }
+    
+    // Week Totals
+    if (has("weekTotals")) {
+      elements.push(<WeekTotalsSection key="weekTotals" data={data} />);
+    }
+    
+    // Month Class Type Average (potentially many rows)
     if (has("monthClassTypeAverage")) {
-      elements.push(<MonthClassTypeAverageSection key="monthClassType" data={data} />);
+      elements.push(<MonthClassTypeAverageSection key="monthClassTypeAverage" data={data} />);
     }
     
     return elements;
@@ -710,12 +731,13 @@ export function AttendanceReportPDFDocument({
             <Image style={styles.logo} src="/assets/images/ymca-logo.v2.png" />
             <View style={styles.headerTitleBlock}>
               <Text style={styles.headerTitle}>Attendance Insights Report</Text>
-              <Text style={styles.headerSubtitle}>YMCA Attendance System</Text>
+              <Text style={styles.headerSubtitle}>YMCA Scheduling & Attendance System</Text>
+              <Text style={styles.printedOn}>Printed on: {printDateTime.replace(" at ", " @ ")}</Text>
             </View>
           </View>
           <View style={styles.headerRight}>
             <Text style={styles.reportType}>
-              {isFullReport ? "Full Report" : `Partial Report (${selectedSections.length} of ${ALL_SECTION_COUNT})`}
+              {isFullReport ? "Full Report" : "Partial Report"}
             </Text>
             <Text style={styles.reportPeriod}>{reportPeriod}</Text>
           </View>
@@ -737,13 +759,14 @@ export function AttendanceReportPDFDocument({
           <View style={styles.reportSummary}>
             <View style={styles.summaryLeft}>
               <Text style={styles.summaryTitle}>
-                {isFullReport ? "Complete Attendance Report" : "Selected Reports Summary"}
+                {isFullReport ? "Complete Attendance Report" : "Filtered Report Summary"}
               </Text>
               <Text style={styles.summaryDetail}>
                 {selectedSections.length} report section{selectedSections.length !== 1 ? "s" : ""} included
+                {hasFiltersApplied ? " • Filters applied" : ""}
               </Text>
             </View>
-            {!isFullReport && (
+            {selectedSections.length < ALL_SECTION_COUNT && (
               <View style={styles.summaryRight}>
                 <Text style={styles.sectionsList}>
                   Includes: {includedSectionNames}

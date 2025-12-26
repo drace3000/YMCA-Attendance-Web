@@ -3,7 +3,8 @@ import { createSupabaseServerClient } from "@/lib/supabaseServer";
 
 type ReportRow = {
   id: string;
-  session_date: string;
+  session_date: string | null;
+  effective_month: string;
   day_of_week?: string | null;
   headcount: number | null;
   // Supabase/PostgREST can type joined relations as arrays even for many-to-one.
@@ -16,6 +17,11 @@ type ReportRow = {
     | { name: string | null; code?: string | null }[]
     | null;
 };
+
+// Helper to get the effective date for a row (session_date or effective_month)
+function getRowDate(row: ReportRow): string {
+  return row.session_date ?? row.effective_month;
+}
 
 type ReportsPayload = {
   monthTotals: {
@@ -41,6 +47,27 @@ type ReportsPayload = {
   monthClassGroupAverage: { group: string; avg: number }[];
   weekTotals: { label: string; total: number }[];
 };
+
+async function fetchAllRows(
+  query: ReturnType<ReturnType<typeof createSupabaseServerClient>["from"]>,
+  pageSize = 2000,
+) {
+  let from = 0;
+  const all: ReportRow[] = [];
+
+  while (true) {
+    const { data, error } = await query.range(from, from + pageSize - 1);
+    if (error) {
+      throw error;
+    }
+    if (!data || data.length === 0) break;
+    all.push(...(data as unknown as ReportRow[]));
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+
+  return all;
+}
 
 function startOfMonth(year: number, month: number) {
   return new Date(Date.UTC(year, month - 1, 1));
@@ -127,20 +154,36 @@ export async function GET(req: Request) {
     ltDate = new Date(gteDate.getTime() + 7 * 86400000);
   }
 
+  // Use effective_month for filtering if week is "all", otherwise use session_date
+  // This handles cases where session_date may be NULL for older data
+  const useSessionDateFilter = week !== "all";
+  
   const baseQuery = supabase
     .from("class_sessions")
     .select(
       `
         id,
         session_date,
+        effective_month,
         day_of_week,
         headcount,
         class:class_id(name,category),
         location:location_id(name,code)
       `,
-    )
-    .gte("session_date", toIsoDate(gteDate))
-    .lt("session_date", toIsoDate(ltDate));
+      { count: "exact" },
+    );
+  
+  // Apply date filter based on whether we need precise session_date or can use effective_month
+  if (useSessionDateFilter) {
+    baseQuery
+      .gte("session_date", toIsoDate(gteDate))
+      .lt("session_date", toIsoDate(ltDate));
+  } else {
+    baseQuery
+      .gte("effective_month", toIsoDate(gteDate))
+      .lt("effective_month", toIsoDate(ltDate));
+  }
+  baseQuery.order("session_date", { ascending: true, nullsFirst: false });
 
   const instructorQuery = supabase
     .from("class_sessions")
@@ -148,32 +191,41 @@ export async function GET(req: Request) {
       `
         id,
         session_date,
+        effective_month,
         day_of_week,
         headcount,
         class:class_id(name,category),
         location:location_id(name,code),
         session_instructors!inner(instructor_id)
       `,
-    )
-    .gte("session_date", toIsoDate(gteDate))
-    .lt("session_date", toIsoDate(ltDate))
-    .eq("session_instructors.instructor_id", instructor);
+      { count: "exact" },
+    );
+    
+  if (useSessionDateFilter) {
+    instructorQuery
+      .gte("session_date", toIsoDate(gteDate))
+      .lt("session_date", toIsoDate(ltDate));
+  } else {
+    instructorQuery
+      .gte("effective_month", toIsoDate(gteDate))
+      .lt("effective_month", toIsoDate(ltDate));
+  }
+  instructorQuery
+    .eq("session_instructors.instructor_id", instructor)
+    .order("session_date", { ascending: true, nullsFirst: false });
 
   try {
-    const { data, error } =
-      instructor !== "all" ? await instructorQuery : await baseQuery;
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
-    const rows: ReportRow[] = (data ?? []) as unknown as ReportRow[];
+    const rows =
+      instructor !== "all"
+        ? await fetchAllRows(instructorQuery)
+        : await fetchAllRows(baseQuery);
 
     const filteredByDay =
       day === "ALL"
         ? rows
         : rows.filter((r) => {
-            const dow = new Date(r.session_date + "T00:00:00Z").toLocaleDateString(
+            const dateStr = getRowDate(r);
+            const dow = new Date(dateStr + "T00:00:00Z").toLocaleDateString(
               "en-US",
               { weekday: "long", timeZone: "UTC" },
             );
@@ -192,7 +244,8 @@ export async function GET(req: Request) {
 
   const getDayKey = (r: ReportRow) => {
     if (r.day_of_week) return r.day_of_week.toUpperCase();
-    const dow = new Date(r.session_date + "T00:00:00Z").toLocaleDateString("en-US", {
+    const dateStr = getRowDate(r);
+    const dow = new Date(dateStr + "T00:00:00Z").toLocaleDateString("en-US", {
       weekday: "long",
       timeZone: "UTC",
     });
@@ -316,7 +369,7 @@ export async function GET(req: Request) {
     const endIso = toIsoDate(end);
     const total = filteredByDay.reduce((sum, r) => {
       if (r.headcount == null) return sum;
-      const d = r.session_date.slice(0, 10);
+      const d = getRowDate(r).slice(0, 10);
       if (d >= startIso && d < endIso) return sum + r.headcount;
       return sum;
     }, 0);
@@ -326,6 +379,17 @@ export async function GET(req: Request) {
 
   const sat = byDayLocationAverages("SATURDAY");
   const sun = byDayLocationAverages("SUNDAY");
+
+  // #region agent log - debug row counts
+  console.log("[Reports API]", {
+    dateRange: `${toIsoDate(gteDate)} to ${toIsoDate(ltDate)}`,
+    filterColumn: useSessionDateFilter ? "session_date" : "effective_month",
+    totalRows: rows.length,
+    withHeadcount: withHeadcount.length,
+    totalAttendance,
+    sampleRow: rows[0] ? { id: rows[0].id, session_date: rows[0].session_date, effective_month: rows[0].effective_month } : null,
+  });
+  // #endregion
 
   const payload: ReportsPayload = {
     monthTotals: {
@@ -372,6 +436,7 @@ export async function GET(req: Request) {
 
     return NextResponse.json(payload);
   } catch (e) {
+    console.error("[Reports API] Error", e);
     return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }
 }

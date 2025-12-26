@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { Mail, Plus, Trash2, AlertCircle, ChevronDown, ChevronUp, Pencil, PauseCircle, PlayCircle } from "lucide-react";
 import { useThemeSettings } from "@/components/theme-settings-provider";
 
@@ -545,9 +545,8 @@ export function RecipientsTab() {
                   const isExpanded = expandedId === recipient.id;
 
                   return (
-                    <>
+                    <Fragment key={recipient.id}>
                       <tr
-                        key={recipient.id}
                         className="hover:bg-muted/50 transition-colors cursor-pointer md:cursor-default"
                         onClick={() => setExpandedId(isExpanded ? null : recipient.id)}
                       >
@@ -655,7 +654,7 @@ export function RecipientsTab() {
                           </td>
                         </tr>
                       )}
-                    </>
+                    </Fragment>
                   );
                 })}
               </tbody>

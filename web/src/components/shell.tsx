@@ -17,7 +17,7 @@ import {
   User,
   Wrench,
 } from "lucide-react";
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { useThemeSettings } from "./theme-settings-provider";
 import { useAuth } from "./auth-provider";
 
@@ -48,6 +48,14 @@ export function Shell({ children }: { children: React.ReactNode }) {
   } = useThemeSettings();
   const { user, signOut } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [mounted, setMounted] = useState(false);
+
+  // Avoid hydration mismatch between server (default light) and client (stored theme)
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const displayMode = mounted ? mode : "light";
 
   const placementClass =
     sidebarPosition === "left" ? "md:flex-row" : "md:flex-row-reverse";
@@ -181,7 +189,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
                   onClick={toggleMode}
                   className="btn-pill flex items-center gap-2 border border-white/15 bg-black/20 px-3 py-1 text-xs font-semibold text-foreground shadow-sm hover:bg-black/30"
                 >
-                  {mode === "light" ? (
+                  {displayMode === "light" ? (
                     <>
                       <Sun className="h-4 w-4" /> Light
                     </>

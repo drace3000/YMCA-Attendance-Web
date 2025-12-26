@@ -22,6 +22,7 @@ import { IgrCombo } from "igniteui-react";
 import type { IgrCombo as IgrComboElement } from "igniteui-react";
 import dynamic from "next/dynamic";
 import type { ReportSection } from "@/components/attendance-report-pdf";
+import { useThemeSettings } from "@/components/theme-settings-provider";
 
 const GenerateReportModal = dynamic(
   () => import("@/components/attendance-report-pdf/GenerateReportModal").then((mod) => mod.GenerateReportModal),
@@ -155,6 +156,7 @@ const ALL_REPORT_SECTIONS: ReportSection[] = [
 ];
 
 export default function ReportsPage() {
+  const { branch } = useThemeSettings();
   const [resetPopoverOpen, setResetPopoverOpen] = useState(false);
   const monthComboRef = useRef<IgrComboElement | null>(null);
   const instructorComboRef = useRef<IgrComboElement | null>(null);
@@ -305,6 +307,105 @@ export default function ReportsPage() {
     [instructors],
   );
 
+  // Filter months based on selected quarter
+  const filteredMonths = useMemo(() => {
+    if (filters.quarter === "all") {
+      return monthComboOptions; // All 12 months (excluding "all" which is handled by placeholder)
+    }
+
+    const q = Number(filters.quarter);
+    // Q1: Jan-Mar (01-03), Q2: Apr-Jun (04-06), Q3: Jul-Sep (07-09), Q4: Oct-Dec (10-12)
+    const quarterMonthRanges: Record<number, [number, number]> = {
+      1: [1, 3],
+      2: [4, 6],
+      3: [7, 9],
+      4: [10, 12],
+    };
+    const [startMonth, endMonth] = quarterMonthRanges[q] || [1, 12];
+
+    return monthComboOptions.filter((m) => {
+      const mNum = Number(m.value);
+      return mNum >= startMonth && mNum <= endMonth;
+    });
+  }, [filters.quarter]);
+
+  // Filter weeks based on selected month (most specific) or quarter
+  const filteredWeeks = useMemo(() => {
+    const year = Number(filters.year);
+
+    // Calculate ISO week number for a date
+    const getIsoWeek = (date: Date) => {
+      const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+      d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+      const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+      return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+    };
+
+    // If month is selected, filter weeks by month (takes priority over quarter)
+    if (filters.month !== "all") {
+      const m = Number(filters.month);
+      // Get first and last day of month
+      const firstDay = new Date(Date.UTC(year, m - 1, 1));
+      const lastDay = new Date(Date.UTC(year, m, 0));
+      
+      const startWeek = getIsoWeek(firstDay);
+      const endWeek = getIsoWeek(lastDay);
+      
+      return [
+        { value: "all", label: "All weeks" },
+        ...weeks.slice(1).filter((w) => {
+          const wNum = Number(w.value);
+          return wNum >= startWeek && wNum <= endWeek;
+        }),
+      ];
+    }
+
+    // If only quarter is selected (no month), filter weeks by quarter
+    if (filters.quarter !== "all") {
+      const q = Number(filters.quarter);
+      // Approximate week ranges by quarter
+      const quarterWeekRanges: Record<number, [number, number]> = {
+        1: [1, 13],
+        2: [14, 26],
+        3: [27, 39],
+        4: [40, 53],
+      };
+      const [startWeek, endWeek] = quarterWeekRanges[q] || [1, 53];
+      return [
+        { value: "all", label: "All weeks" },
+        ...weeks.slice(1).filter((w) => {
+          const wNum = Number(w.value);
+          return wNum >= startWeek && wNum <= endWeek;
+        }),
+      ];
+    }
+
+    // No filters - show all weeks
+    return weeks;
+  }, [filters.quarter, filters.month, filters.year]);
+
+  // Show all days - don't dynamically filter based on data results
+  // This prevents dropdown from flashing/collapsing when data refreshes
+  const filteredDays = days;
+
+  // Reset month/week if current value is no longer in filtered options (due to quarter change)
+  useEffect(() => {
+    const monthValues = filteredMonths.map((m) => m.value);
+    const weekValues = filteredWeeks.map((w) => w.value);
+    
+    const needsMonthReset = filters.month !== "all" && !monthValues.includes(filters.month);
+    const needsWeekReset = filters.week !== "all" && !weekValues.includes(filters.week);
+    
+    // Only update if something actually needs to change
+    if (needsMonthReset || needsWeekReset) {
+      setFilters((f) => ({
+        ...f,
+        month: needsMonthReset ? "all" : f.month,
+        week: needsWeekReset ? "all" : f.week,
+      }));
+    }
+  }, [filteredMonths, filteredWeeks, filters.month, filters.week]);
+
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
       <header className="flex flex-col gap-3 rounded-2xl border border-border bg-card/80 p-5 shadow-sm backdrop-blur">
@@ -417,7 +518,7 @@ export default function ReportsPage() {
             </span>
             <IgrCombo
               className="ymca-ig-combo mt-1 text-sm"
-              data={monthComboOptions}
+              data={filteredMonths}
               valueKey="value"
               displayKey="label"
               outlined={false}
@@ -446,14 +547,14 @@ export default function ReportsPage() {
 
                 const month = typeof monthFromValue === "string" ? monthFromValue : "all";
 
-                setFilters((f) => ({
-                  ...f,
-                  month,
-                  quarter: "all",
-                  week: "all",
-                  // Day-of-week is intended to pair with a specific month.
-                  day: month === "all" ? "all" : f.day,
-                }));
+                setFilters((f) => {
+                  // Skip if month hasn't actually changed (prevents unnecessary re-renders)
+                  if (f.month === month) {
+                    return f;
+                  }
+                  // Keep quarter and week as-is - useEffect will reset week if it's outside the month's range
+                  return { ...f, month };
+                });
 
                 // Close immediately after a selection (single-select UX).
                 queueMicrotask(() => {
@@ -475,12 +576,11 @@ export default function ReportsPage() {
               setFilters((f) => ({
                 ...f,
                 week,
-                quarter: "all",
-                month: "all",
+                // Keep quarter and month as-is, only reset day
                 day: "all",
               }))
             }
-            options={weeks}
+            options={filteredWeeks}
           />
           <Select
             label={
@@ -490,7 +590,7 @@ export default function ReportsPage() {
             }
             value={filters.day}
             onChange={(day) => setFilters((f) => ({ ...f, day }))}
-            options={days}
+            options={filteredDays}
           />
           <label className="flex w-[181px] flex-none min-w-0 flex-col text-sm font-medium text-foreground">
             <span className="inline-flex items-center gap-2">
@@ -528,7 +628,13 @@ export default function ReportsPage() {
                       ? ((firstValue as Record<string, unknown>).id as string)
                       : "all";
 
-                setFilters((f) => ({ ...f, instructor: instructorId }));
+                setFilters((f) => {
+                  // Skip if instructor hasn't actually changed
+                  if (f.instructor === instructorId) {
+                    return f;
+                  }
+                  return { ...f, instructor: instructorId };
+                });
 
                 // Close immediately after a selection (single-select UX).
                 queueMicrotask(() => {
@@ -689,6 +795,7 @@ export default function ReportsPage() {
         data={data}
         filters={filters}
         selectedSections={Array.from(selectedSections)}
+        branchId={branch?.id}
       />
     </div>
   );

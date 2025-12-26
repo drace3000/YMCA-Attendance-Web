@@ -1,13 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { X, FileText, Download, Printer, Eye, Loader2 } from "lucide-react";
+import { X, FileText, Download, Printer, Eye, Loader2, Mail } from "lucide-react";
 import {
   downloadTrendsReportPDF,
   previewTrendsReportPDF,
   printTrendsReportPDF,
+  generateTrendsReportPDFBlob,
 } from "@/lib/trends-report-pdf-utils";
 import type { TrendsReportData } from "./TrendsReportPDFDocument";
+import { EmailPdfModal } from "@/components/email-pdf-modal";
 
 interface GenerateTrendsReportModalProps {
   isOpen: boolean;
@@ -17,20 +19,43 @@ interface GenerateTrendsReportModalProps {
     trendingUp?: string;
     trendingDown?: string;
   };
+  branchId?: string;
 }
 
-type ActionType = "preview" | "download" | "print" | null;
+type ActionType = "preview" | "download" | "print" | "email" | null;
 
 export function GenerateTrendsReportModal({
   isOpen,
   onClose,
   data,
   chartImages,
+  branchId,
 }: GenerateTrendsReportModalProps) {
   const [loading, setLoading] = useState<ActionType>(null);
   const [error, setError] = useState<string | null>(null);
+  const [emailModalOpen, setEmailModalOpen] = useState(false);
+  const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
 
   if (!isOpen) return null;
+
+  // Generate filename
+  const today = new Date().toISOString().slice(0, 10);
+  const branchPart = data.branchName?.replace(/\s+/g, "_") || "YMCA";
+  const fileNameParts = [branchPart, "Trends_Report", String(data.year)];
+  if (data.quarter) fileNameParts.push(`Q${data.quarter}`);
+  const defaultFileName = `${today}-${fileNameParts.join("_")}.pdf`;
+
+  // Default email content
+  const defaultSubject = `Class Attendance Trends - ${data.year}${data.quarter ? ` Q${data.quarter}` : ""}`;
+  const defaultMessage = `Please find attached the Class Attendance Trends report showing the top trending classes for ${data.periodLabel}.
+
+This report highlights classes with increasing and decreasing attendance patterns, helping identify opportunities for growth and areas that may need attention.
+
+Key metrics included:
+• Top 5 classes trending upward
+• Top 5 classes trending downward
+• Slope analysis and percentage changes
+• Session counts for the period`;
 
   const handleAction = async (action: ActionType) => {
     if (!action) return;
@@ -48,6 +73,12 @@ export function GenerateTrendsReportModal({
           break;
         case "print":
           await printTrendsReportPDF(data, chartImages);
+          break;
+        case "email":
+          // Generate PDF blob for email attachment
+          const blob = await generateTrendsReportPDFBlob(data, chartImages);
+          setPdfBlob(blob);
+          setEmailModalOpen(true);
           break;
       }
     } catch (err) {
@@ -188,6 +219,22 @@ export function GenerateTrendsReportModal({
             )}
             Print
           </button>
+
+          {/* Email PDF Button */}
+          {branchId && (
+            <button
+              onClick={() => handleAction("email")}
+              disabled={loading !== null}
+              className="flex w-full items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-medium transition text-white bg-[var(--brand-strong)] hover:bg-[var(--brand-ink)] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {loading === "email" ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Mail className="h-4 w-4" />
+              )}
+              Email PDF
+            </button>
+          )}
         </div>
 
         {/* Footer note */}
@@ -195,11 +242,26 @@ export function GenerateTrendsReportModal({
           PDF will be generated in 8.5 × 11 inch portrait format
         </p>
       </div>
+
+      {/* Email Modal */}
+      {branchId && (
+        <EmailPdfModal
+          isOpen={emailModalOpen}
+          onClose={() => setEmailModalOpen(false)}
+          pdfBlob={pdfBlob}
+          defaultSubject={defaultSubject}
+          defaultMessage={defaultMessage}
+          defaultFileName={defaultFileName}
+          branchId={branchId}
+        />
+      )}
     </div>
   );
 }
 
 export default GenerateTrendsReportModal;
+
+
 
 
 

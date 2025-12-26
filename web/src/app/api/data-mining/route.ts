@@ -15,24 +15,6 @@ type SqlExecutionResult = {
   execution_time_ms: number;
 };
 
-// #region agent log
-function debugLog(hypothesisId: string, location: string, message: string, data: Record<string, unknown>) {
-  fetch("http://127.0.0.1:7242/ingest/507bda22-2ab8-4c67-b245-8738a4525e56", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      sessionId: "debug-session",
-      runId: "pre-fix",
-      hypothesisId,
-      location,
-      message,
-      data,
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-}
-// #endregion
-
 const FALLBACK_SAMPLE_ROWS = [
   { class_name: "Power Yoga", instructor: "Alex Kim", avg_attendance: 32 },
   { class_name: "Cycle 45", instructor: "Jordan Lee", avg_attendance: 29 },
@@ -81,14 +63,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const query = typeof body?.query === "string" ? body.query.trim() : "";
     const branchId = typeof body?.branchId === "string" ? body.branchId : null;
-    debugLog("H1", "route.ts:entry", "POST /api/data-mining", {
-      queryLen: query.length,
-      hasQuery: !!query,
-      hasBranchId: !!branchId,
-    });
-
     if (!query) {
-      debugLog("H1", "route.ts:bad_request", "Missing query", {});
       return NextResponse.json(
         { success: false, error: "Query is required." },
         { status: 400 },
@@ -107,18 +82,7 @@ export async function POST(req: NextRequest) {
     
     const shouldUseAnthropic = provider === "anthropic" && apiKey;
     const shouldUseOpenAI = provider === "openai" && openaiKey;
-    debugLog("H2", "route.ts:provider", "Provider config", {
-      provider,
-      hasApiKey: !!apiKey,
-      hasOpenAIKey: !!openaiKey,
-      model,
-      temperature,
-      shouldUseAnthropic: !!shouldUseAnthropic,
-      shouldUseOpenAI: !!shouldUseOpenAI,
-    });
-
     if (!shouldUseAnthropic && !shouldUseOpenAI) {
-      debugLog("H2", "route.ts:mock", "Returning mock response", {});
       return NextResponse.json(buildMockResponse(query, "table"), { status: 200 });
     }
 
@@ -127,7 +91,6 @@ export async function POST(req: NextRequest) {
     if (shouldUseAnthropic) {
       const aiResponse = await callAnthropic({ apiKey: apiKey!, model, temperature, query });
       if (!aiResponse) {
-        debugLog("H3", "route.ts:anthropic_null", "Anthropic returned null", {});
         return NextResponse.json(buildMockResponse(query, "table"), { status: 200 });
       }
       aiText = aiResponse.content?.[0]?.text ?? null;
@@ -139,14 +102,12 @@ export async function POST(req: NextRequest) {
         query,
       });
       if (!aiText) {
-        debugLog("H3", "route.ts:openai_null", "OpenAI returned null", {});
         return NextResponse.json(buildMockResponse(query, "table"), { status: 200 });
       }
     }
 
     const parsed = parseAssistantJson(aiText ?? "");
     if (!parsed) {
-      debugLog("H4", "route.ts:parse_fail", "Failed to parse AI JSON", {});
       return NextResponse.json(buildMockResponse(query, "table"), { status: 200 });
     }
 
@@ -176,25 +137,6 @@ export async function POST(req: NextRequest) {
     // Require branch_id if the SQL expects it
     const needsBranch = sanitizedSql.includes(":branch_id");
     if (needsBranch && !branchId) {
-      // #region agent log
-      fetch("http://127.0.0.1:7242/ingest/507bda22-2ab8-4c67-b245-8738a4525e56", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionId: "debug-session",
-          runId: "debug1",
-          hypothesisId: "D",
-          location: "route.ts:missing_branch",
-          message: "branchId missing but SQL requires :branch_id",
-          data: {
-            sanitizedLen: sanitizedSql.length,
-            sqlHead: sanitizedSql.slice(0, 200),
-          },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
-
       return NextResponse.json(
         {
           success: false,
@@ -204,38 +146,9 @@ export async function POST(req: NextRequest) {
         { status: 200 },
       );
     }
-    // #region agent log
-    fetch("http://127.0.0.1:7242/ingest/507bda22-2ab8-4c67-b245-8738a4525e56", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sessionId: "debug-session",
-        runId: "debug1",
-        hypothesisId: "A",
-        location: "route.ts:sanitize",
-        message: "SQL sanitize before execution",
-        data: {
-          rawLen: parsed.sql.length,
-          sanitizedLen: sanitizedSql.length,
-          semicolonCount,
-          generateSeriesRewrites,
-          branchIdProvided: !!branchId,
-          rawHead: parsed.sql.slice(0, 180),
-          sanitizedHead: sqlWithGenerateSeriesFix.slice(0, 180),
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
 
     // Execute the SQL against the database
     const sqlResult = await executeSql(sqlWithGenerateSeriesFix, branchId);
-    debugLog("H3", "route.ts:sql_result", "SQL execution result", {
-      success: sqlResult.success,
-      rowCount: sqlResult.row_count,
-      executionTimeMs: sqlResult.execution_time_ms,
-      error: sqlResult.error,
-    });
 
     // If SQL execution failed, return error but include the generated SQL
     if (!sqlResult.success) {
@@ -265,17 +178,9 @@ export async function POST(req: NextRequest) {
       summary: parsed.summary || parsed.explanation || "AI generated summary.",
     };
 
-    debugLog("H3", "route.ts:success", "Returning AI response with real data", {
-      resultFormat,
-      sqlLen: parsed.sql.length,
-      rowCount: sqlResult.row_count,
-    });
     return NextResponse.json(response, { status: 200 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unexpected error";
-    debugLog("H5", "route.ts:exception", "Unhandled exception", {
-      message,
-    });
     return NextResponse.json(
       { success: false, error: message || "Failed to process query." },
       { status: 500 },
@@ -342,19 +247,8 @@ async function callAnthropic(params: {
     });
 
     if (!res.ok) {
-      const text = await res.text();
-      debugLog("H3", "route.ts:anthropic_http_error", "Anthropic HTTP error", {
-        status: res.status,
-        statusText: res.statusText,
-        body: text.slice(0, 500),
-        model,
-      });
-
       // Retry once with a known fallback model if the model is not found.
       if (res.status === 404 && model !== FALLBACK_ANTHROPIC_MODEL) {
-        debugLog("H3", "route.ts:anthropic_retry_model", "Retrying with fallback model", {
-          retryModel: FALLBACK_ANTHROPIC_MODEL,
-        });
         return callAnthropic({
           apiKey,
           model: FALLBACK_ANTHROPIC_MODEL,
@@ -367,14 +261,10 @@ async function callAnthropic(params: {
 
     const data = (await res.json()) as AnthropicResponse;
     if (!data?.content?.length) {
-      debugLog("H4", "route.ts:anthropic_empty", "Anthropic empty content", {});
       return null;
     }
     return data;
   } catch (err) {
-    debugLog("H5", "route.ts:anthropic_fetch_error", "Anthropic fetch exception", {
-      message: err instanceof Error ? err.message : String(err),
-    });
     return null;
   }
 }
@@ -404,14 +294,10 @@ async function callOpenAI(params: {
 
     const text = res.choices?.[0]?.message?.content ?? "";
     if (!text) {
-      debugLog("H4", "route.ts:openai_empty", "OpenAI empty content", {});
       return null;
     }
     return text;
   } catch (err) {
-    debugLog("H5", "route.ts:openai_error", "OpenAI error", {
-      message: err instanceof Error ? err.message : String(err),
-    });
     return null;
   }
 }
@@ -439,59 +325,12 @@ async function executeSql(sql: string, branchId: string | null): Promise<SqlExec
   try {
     const supabase = createSupabaseServerClient();
 
-    // #region agent log
-    fetch("http://127.0.0.1:7242/ingest/507bda22-2ab8-4c67-b245-8738a4525e56", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sessionId: "debug-session",
-        runId: "debug1",
-        hypothesisId: "B",
-        location: "route.ts:executeSql:pre_rpc",
-        message: "About to call execute_readonly_sql",
-        data: {
-          sqlLen: sql.length,
-          sqlHead: sql.slice(0, 180),
-          branchIdProvided: !!branchId,
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
-
     const { data, error } = await supabase.rpc("execute_readonly_sql", {
       p_sql: sql,
       p_branch_id: branchId,
     });
 
     if (error) {
-      // #region agent log
-      fetch("http://127.0.0.1:7242/ingest/507bda22-2ab8-4c67-b245-8738a4525e56", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionId: "debug-session",
-          runId: "debug1",
-          hypothesisId: "C",
-          location: "route.ts:executeSql:rpc_error",
-          message: "Supabase RPC error",
-          data: {
-            errorMessage: error.message,
-            errorCode: error.code,
-            sqlLen: sql.length,
-            sqlHead: sql.slice(0, 180),
-            sqlTail: sql.slice(-180),
-            semicolons: (sql.match(/;/g) || []).length,
-            branchIdProvided: !!branchId,
-          },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
-      debugLog("H4", "route.ts:rpc_error", "Supabase RPC error", {
-        message: error.message,
-        code: error.code,
-      });
       return {
         success: false,
         error: error.message,
@@ -505,9 +344,6 @@ async function executeSql(sql: string, branchId: string | null): Promise<SqlExec
     const result = data as SqlExecutionResult;
     return result;
   } catch (err) {
-    debugLog("H5", "route.ts:exec_sql_error", "SQL execution exception", {
-      message: err instanceof Error ? err.message : String(err),
-    });
     return {
       success: false,
       error: err instanceof Error ? err.message : "Failed to execute SQL",
@@ -517,6 +353,9 @@ async function executeSql(sql: string, branchId: string | null): Promise<SqlExec
     };
   }
 }
+
+
+
 
 
 

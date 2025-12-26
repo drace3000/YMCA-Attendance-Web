@@ -344,6 +344,7 @@ export default function TrendsPage() {
           onClose={() => setExportModalOpen(false)}
           data={pdfData}
           chartImages={chartImages}
+          branchId={branch.id}
         />
       )}
     </div>
