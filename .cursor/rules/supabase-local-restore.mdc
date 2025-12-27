@@ -1,0 +1,79 @@
+---
+description: Rules for restoring local Supabase Postgres from a pg_dump custom-format archive. Ensures restores are safe/repeatable by restoring ONLY the public schema (app DB) and avoiding Supabase-managed schemas that cause ownership/permission failures.
+globs: backups/**/*.dump, backups/**/*.backup, scripts/*.ps1, documents/**/*restore*.md, supabase/config.toml
+alwaysApply: true
+---
+
+# Local Supabase Restore Rules (pg_restore)
+
+These rules apply when restoring local Supabase Postgres from a `.dump` / `pg_dump -Fc` archive.
+
+## Core rule: “Full restore” means `public` schema only
+
+- **Default restore scope is `--schema=public`**.
+- Do **NOT** attempt to restore Supabase-managed schemas by default: `auth`, `storage`, `realtime`, `extensions`, event triggers, etc.
+  - Those commonly fail with:
+    - `must be owner of relation ...`
+    - `permission denied for schema storage`
+    - event trigger errors requiring a superuser-owned function
+
+If the user explicitly requests an “all schemas” restore, explain the risks and require explicit confirmation + credentials (superuser) before attempting it.
+
+## Always identify the DB container first
+
+Use one of:
+
+```bash
+supabase status
+docker ps --filter "name=supabase_db" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+```
+
+Use the resulting container name (often like `supabase_db_<project_id>`).
+
+## Prefer restoring from inside the container (not PowerShell redirection)
+
+### Recommended workflow
+
+1) (Optional) safety backup via repo script:
+
+```powershell
+cd .\scripts
+.\backup_dev.ps1
+```
+
+2) Copy the dump file into the container:
+
+```powershell
+docker cp <path-to-dump> "<dbContainer>:/tmp/restore.dump"
+```
+
+3) If necessary, terminate PostgREST idle sessions (`authenticator`) to reduce locking issues:
+
+```powershell
+docker exec -i <dbContainer> psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c `
+  "select pg_terminate_backend(pid) from pg_stat_activity where datname='postgres' and usename='authenticator';"
+```
+
+4) Restore **public** schema:
+
+```powershell
+docker exec -i <dbContainer> pg_restore -U postgres -d postgres `
+  --clean --if-exists --no-owner --no-acl --verbose `
+  --schema=public `
+  /tmp/restore.dump
+```
+
+5) Cleanup:
+
+```powershell
+docker exec <dbContainer> rm -f /tmp/restore.dump
+```
+
+## Verification (required)
+
+After a restore, run at least one sanity query (row counts or a spot check) via `psql` to confirm the restore actually applied.
+
+## Do not run destructive “reset” workflows unless the user asks
+
+Even though `supabase db reset` can rebuild local DB from migrations, it is destructive. Treat it as a separate action and request confirmation before running it.
+

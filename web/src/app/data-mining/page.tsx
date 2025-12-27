@@ -45,13 +45,6 @@ interface SavedQuery {
   created_at: string;
 }
 
-const exampleQueries = [
-  "Which classes had the highest attendance last week?",
-  "Show attendance by branch for the past 4 weeks.",
-  "List sessions that are near capacity today.",
-  "What was the average attendance for yoga on Saturdays last month?",
-];
-
 const sampleSuccess: QueryAPIResponse = {
   success: true,
   query: {
@@ -169,6 +162,9 @@ export default function DataMiningPage() {
   const [queryName, setQueryName] = useState("");
   const [savingQuery, setSavingQuery] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [selectedSavedQueryId, setSelectedSavedQueryId] = useState<string | null>(null);
+  const [updateModalOpen, setUpdateModalOpen] = useState(false);
+  const [updatingQuery, setUpdatingQuery] = useState(false);
   const controllerRef = useRef<AbortController | null>(null);
 
   // Load saved queries when branch changes
@@ -425,6 +421,38 @@ export default function DataMiningPage() {
     }
   };
 
+  const handleUpdateQuery = async () => {
+    if (!selectedSavedQueryId || !response?.query?.queryText) return;
+
+    setUpdatingQuery(true);
+
+    try {
+      const res = await fetch("/api/saved-queries", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: selectedSavedQueryId,
+          queryText: response.query.queryText,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        console.error("Failed to update query:", data.error);
+        return;
+      }
+
+      // Update in local state
+      setSavedQueries(prev => prev.map(q => q.id === selectedSavedQueryId ? data : q));
+      setUpdateModalOpen(false);
+    } catch (err) {
+      console.error("Failed to update query:", err);
+    } finally {
+      setUpdatingQuery(false);
+    }
+  };
+
   const handleDeleteQuery = async (id: string) => {
     try {
       const res = await fetch(`/api/saved-queries?id=${id}`, {
@@ -548,27 +576,47 @@ export default function DataMiningPage() {
                 value={query}
                 onChange={(e) => {
                   setQuery(e.target.value);
+                  setSelectedSavedQueryId(null);
                   if (status === "error") setStatus("idle");
                   if (error) setError(null);
                 }}
               />
             </div>
-            <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-              {exampleQueries.map((example) => (
-                <button
-                  key={example}
-                  type="button"
-                  className="btn-pill border border-border bg-muted/60 px-3 py-1 text-xs text-foreground shadow-sm transition hover:-translate-y-px hover:shadow"
-                  onClick={() => {
-                    setQuery(example);
-                    setStatus("idle");
-                    setError(null);
-                  }}
-                >
-                  {example}
-                </button>
-              ))}
-            </div>
+            {/* Recent Saved Queries (last 10) */}
+            {savedQueries.length > 0 && (
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1 text-xs font-medium text-yellow-500">
+                  <Bookmark className="h-3.5 w-3.5" />
+                  Recent:
+                </span>
+                {[...savedQueries]
+                  .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                  .slice(0, 10)
+                  .map((sq) => {
+                    const isSelected = selectedSavedQueryId === sq.id;
+                    return (
+                      <button
+                        key={sq.id}
+                        type="button"
+                        className={`btn-pill px-3 py-1 text-xs shadow-sm transition hover:-translate-y-px hover:shadow ${
+                          isSelected
+                            ? "border border-[var(--cta)] bg-[var(--cta)]/20 text-[var(--cta)] ring-1 ring-[var(--cta)]/50"
+                            : "border border-yellow-600/40 bg-yellow-600/10 text-yellow-400 hover:bg-yellow-600/20"
+                        }`}
+                        onClick={() => {
+                          setQuery(sq.query_text);
+                          setSelectedSavedQueryId(sq.id);
+                          setStatus("idle");
+                          setError(null);
+                        }}
+                        title={sq.query_text}
+                      >
+                        {sq.name}
+                      </button>
+                    );
+                  })}
+              </div>
+            )}
 
             {/* Saved Queries Dropdown */}
             {savedQueries.length > 0 && (
@@ -703,18 +751,29 @@ export default function DataMiningPage() {
                     Export Excel
                   </button>
                 )}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setQueryName("");
-                    setSaveError(null);
-                    setSaveModalOpen(true);
-                  }}
-                  className="inline-flex items-center gap-2 rounded-lg border border-yellow-600/50 bg-yellow-600/10 px-3 py-1.5 text-xs font-medium text-yellow-500 transition hover:bg-yellow-600/20"
-                >
-                  <Save className="h-4 w-4" />
-                  Save Query
-                </button>
+                {selectedSavedQueryId ? (
+                  <button
+                    type="button"
+                    onClick={() => setUpdateModalOpen(true)}
+                    className="inline-flex items-center gap-2 rounded-lg border border-blue-600/50 bg-blue-600/10 px-3 py-1.5 text-xs font-medium text-blue-400 transition hover:bg-blue-600/20"
+                  >
+                    <Save className="h-4 w-4" />
+                    Update Query
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQueryName("");
+                      setSaveError(null);
+                      setSaveModalOpen(true);
+                    }}
+                    className="inline-flex items-center gap-2 rounded-lg border border-yellow-600/50 bg-yellow-600/10 px-3 py-1.5 text-xs font-medium text-yellow-500 transition hover:bg-yellow-600/20"
+                  >
+                    <Save className="h-4 w-4" />
+                    Save Query
+                  </button>
+                )}
               </div>
             </div>
 
@@ -960,6 +1019,91 @@ export default function DataMiningPage() {
                   <>
                     <Save className="h-4 w-4" />
                     Save Query
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Update Query Confirmation Modal */}
+      {updateModalOpen && selectedSavedQueryId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          {/* Backdrop */}
+          <div 
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => setUpdateModalOpen(false)}
+          />
+          
+          {/* Modal */}
+          <div className="relative z-10 w-full max-w-md rounded-2xl border border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] p-6 shadow-2xl backdrop-blur-md">
+            {/* Header */}
+            <div className="mb-6 flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600/20">
+                  <AlertTriangle className="h-5 w-5 text-blue-400" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-[var(--brand-ink)]">Update Query</h2>
+                  <p className="text-sm text-[var(--brand-ink)]/70">Confirm overwrite</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setUpdateModalOpen(false)}
+                className="rounded-full p-1.5 text-[var(--brand-ink)]/70 hover:bg-[var(--brand-strong)] hover:text-white"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Warning Message */}
+            <div className="mb-6 rounded-xl border border-blue-600/30 bg-blue-600/10 p-4">
+              <p className="text-sm text-[var(--brand-ink)]">
+                Are you sure you want to overwrite the existing saved query{" "}
+                <span className="font-semibold">
+                  &quot;{savedQueries.find(q => q.id === selectedSavedQueryId)?.name}&quot;
+                </span>
+                {" "}with the current query text?
+              </p>
+              <p className="mt-3 text-xs text-[var(--brand-ink)]/70">
+                This action cannot be undone.
+              </p>
+            </div>
+
+            {/* New Query Preview */}
+            <div className="mb-6 rounded-xl border border-[var(--brand-strong)] bg-[var(--brand-strong)]/20 p-4">
+              <p className="text-xs font-semibold uppercase text-[var(--brand-ink)]/60 mb-2">New query text:</p>
+              <p className="text-sm text-[var(--brand-ink)] italic line-clamp-3">
+                &quot;{response?.query?.queryText}&quot;
+              </p>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setUpdateModalOpen(false)}
+                disabled={updatingQuery}
+                className="flex-1 rounded-xl border border-[var(--brand-strong)] bg-[var(--brand-strong)]/30 px-4 py-3 text-sm font-medium text-[var(--brand-ink)] transition hover:bg-[var(--brand-strong)] hover:text-white disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleUpdateQuery}
+                disabled={updatingQuery}
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {updatingQuery ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Updating...
+                  </>
+                ) : (
+                  <>
+                    <Save className="h-4 w-4" />
+                    Yes, Update
                   </>
                 )}
               </button>

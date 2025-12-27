@@ -48,6 +48,7 @@ RULES:
 - Only produce SELECT statements (no INSERT/UPDATE/DELETE/DDL).
 - Use the placeholder :branch_id for branch filtering when relevant.
 - Use explicit JOINs and column aliases for clarity.
+- When the user specifies a column alias with "as XYZ", use double-quoted aliases to preserve case (e.g., AS "Instructor" not AS Instructor). This ensures capitalization appears correctly in results and reports.
 - Return a concise explanation, a resultFormat (table | short_list | single_value | time_series | aggregation | yes_no), and a reportTitle.
 - Keep answers short and operational.
 

@@ -53,3 +53,4 @@ CREATE INDEX IF NOT EXISTS idx_saved_queries_branch_id ON public.saved_queries(b
 
 COMMIT;
 
+

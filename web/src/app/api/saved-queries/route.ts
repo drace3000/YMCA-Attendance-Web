@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createSupabaseServerClient } from "@/lib/supabaseServer";
 
 interface SavedQuery {
   id: string;
@@ -22,7 +22,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const supabase = await createClient();
+    const supabase = createSupabaseServerClient();
     
     const { data, error } = await supabase
       .from("saved_queries")
@@ -76,7 +76,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const supabase = await createClient();
+    const supabase = createSupabaseServerClient();
 
     const { data, error } = await supabase
       .from("saved_queries")
@@ -113,6 +113,46 @@ export async function POST(request: Request) {
   }
 }
 
+// PUT - Update an existing query
+export async function PUT(request: Request) {
+  try {
+    const body = await request.json();
+    const { id, queryText } = body;
+
+    if (!id || !queryText) {
+      return NextResponse.json(
+        { error: "id and queryText are required" },
+        { status: 400 }
+      );
+    }
+
+    const supabase = createSupabaseServerClient();
+
+    const { data, error } = await supabase
+      .from("saved_queries")
+      .update({ query_text: queryText.trim() })
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Error updating query:", error);
+      return NextResponse.json(
+        { error: error.message },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json(data as SavedQuery);
+  } catch (err) {
+    console.error("Unexpected error:", err);
+    return NextResponse.json(
+      { error: "Failed to update query" },
+      { status: 500 }
+    );
+  }
+}
+
 // DELETE - Delete a saved query
 export async function DELETE(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -126,7 +166,7 @@ export async function DELETE(request: Request) {
   }
 
   try {
-    const supabase = await createClient();
+    const supabase = createSupabaseServerClient();
 
     const { error } = await supabase
       .from("saved_queries")
@@ -150,4 +190,5 @@ export async function DELETE(request: Request) {
     );
   }
 }
+
 

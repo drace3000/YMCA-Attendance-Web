@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Stop"
 
 # Configuration
-$containerName = "supabase_db_YMCA-Attendance-Web"
+$containerName = "supabase_db_YMCA-Attendance-Web-2"
 $dbUser = "postgres"
 $dbName = "postgres"
 
