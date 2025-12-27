@@ -1,0 +1,175 @@
+---
+description: Rules for writing Supabase database migrations. Enforces proper file naming, RLS policies, and safe SQL practices. Triggers when working in supabase/migrations directory.
+globs: supabase/migrations/**/*.sql
+alwaysApply: false
+---
+
+# Supabase Migrations Rules
+
+You are a Postgres Expert who loves creating secure database schemas.
+
+This project uses the migrations provided by the Supabase CLI.
+
+## Creating a Migration File
+
+Given the context of the user's message, create a database migration file inside the folder `supabase/migrations/`.
+
+The file MUST be named in the format `YYYYMMDDHHmmss_short_description.sql` with proper casing for months, minutes, and seconds in UTC time:
+
+1. `YYYY` - Four digits for the year (e.g., `2024`)
+2. `MM` - Two digits for the month (01 to 12)
+3. `DD` - Two digits for the day of the month (01 to 31)
+4. `HH` - Two digits for the hour in 24-hour format (00 to 23)
+5. `mm` - Two digits for the minute (00 to 59)
+6. `ss` - Two digits for the second (00 to 59)
+7. Add an appropriate description for the migration
+
+Example: `20240906123045_create_profiles.sql`
+
+## SQL Guidelines
+
+Write Postgres-compatible SQL code for Supabase migration files that:
+
+- Includes a header comment with metadata about the migration, such as the purpose, affected tables/columns, and any special considerations
+- Includes thorough comments explaining the purpose and expected behavior of each migration step
+- Write all SQL in lowercase
+- Add copious comments for any destructive SQL commands, including truncating, dropping, or column alterations
+- When creating a new table, you MUST enable Row Level Security (RLS) even if the table is intended for public access
+
+## RLS Policy Rules
+
+When creating RLS Policies:
+
+- Ensure the policies cover all relevant access scenarios (select, insert, update, delete) based on the table's purpose and data sensitivity
+- If the table is intended for public access the policy can simply return `true`
+- RLS Policies should be granular: one policy for `select`, one for `insert`, etc.) and for each Supabase role (`anon` and `authenticated`)
+- DO NOT combine Policies even if the functionality is the same for both roles
+- Include comments explaining the rationale and intended behavior of each security policy
+
+## Migration Template
+
+```sql
+-- Migration: [Brief description]
+-- Purpose: [Detailed explanation]
+-- Tables affected: [List tables]
+-- Created: [UTC timestamp]
+
+-- ============================================
+-- [SECTION: Table Creation / Modification]
+-- ============================================
+
+-- Create table with RLS enabled
+create table if not exists public.example_table (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id) on delete cascade,
+  name text not null,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+-- Enable RLS (required for all tables)
+alter table public.example_table enable row level security;
+
+-- ============================================
+-- [SECTION: RLS Policies]
+-- ============================================
+
+-- Policy: Allow anonymous users to read public data
+create policy "anon_select_example_table"
+  on public.example_table
+  for select
+  to anon
+  using (true);
+
+-- Policy: Allow authenticated users to read their own data
+create policy "authenticated_select_example_table"
+  on public.example_table
+  for select
+  to authenticated
+  using (auth.uid() = user_id);
+
+-- Policy: Allow authenticated users to insert their own data
+create policy "authenticated_insert_example_table"
+  on public.example_table
+  for insert
+  to authenticated
+  with check (auth.uid() = user_id);
+
+-- Policy: Allow authenticated users to update their own data
+create policy "authenticated_update_example_table"
+  on public.example_table
+  for update
+  to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+-- Policy: Allow authenticated users to delete their own data
+create policy "authenticated_delete_example_table"
+  on public.example_table
+  for delete
+  to authenticated
+  using (auth.uid() = user_id);
+
+-- ============================================
+-- [SECTION: Indexes]
+-- ============================================
+
+create index if not exists idx_example_table_user_id 
+  on public.example_table(user_id);
+
+-- ============================================
+-- [SECTION: Triggers]
+-- ============================================
+
+-- Auto-update updated_at timestamp
+create or replace function public.handle_updated_at()
+returns trigger as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$ language plpgsql;
+
+create trigger on_example_table_updated
+  before update on public.example_table
+  for each row
+  execute function public.handle_updated_at();
+```
+
+## Adding Columns Safely
+
+```sql
+-- Safe column addition with IF NOT EXISTS
+alter table public.table_name
+add column if not exists new_column text;
+
+-- Adding NOT NULL column (two-step process)
+alter table public.table_name
+add column if not exists status text;
+
+update public.table_name 
+set status = 'active' 
+where status is null;
+
+alter table public.table_name
+alter column status set not null;
+```
+
+## Destructive Operations (REQUIRE CONFIRMATION)
+
+```sql
+-- ⚠️ WARNING: DESTRUCTIVE OPERATION
+-- This will permanently delete the column and all its data
+-- Action required: Confirm with user before executing
+-- Affected data: [describe what will be lost]
+
+-- drop column column_name;
+
+-- ⚠️ WARNING: DESTRUCTIVE OPERATION  
+-- This will permanently delete the table and all its data
+-- Action required: Confirm with user before executing
+
+-- drop table if exists public.table_name cascade;
+```
+
+The generated SQL code should be production-ready, well-documented, and aligned with Supabase's best practices.

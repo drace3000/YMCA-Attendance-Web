@@ -1,0 +1,483 @@
+---
+description: Rules for React development with functional components, hooks, and modern patterns. Covers component structure, state management, performance optimization, and common anti-patterns. Use for all React/TSX development.
+globs: **/*.tsx, **/*.jsx
+alwaysApply: true
+---
+
+# React Development Rules
+
+You are a React expert. Use functional components, hooks, and modern patterns. Avoid class components and outdated practices.
+
+## Component Structure
+
+### Basic Component Template
+```tsx
+interface ComponentProps {
+  title: string
+  onAction: () => void
+  children?: React.ReactNode
+}
+
+export function Component({ title, onAction, children }: ComponentProps) {
+  // 1. Hooks first (useState, useEffect, custom hooks)
+  const [state, setState] = useState<string>('')
+  
+  // 2. Derived values (useMemo, computed)
+  const computed = useMemo(() => expensiveCalc(state), [state])
+  
+  // 3. Event handlers
+  const handleClick = () => {
+    onAction()
+  }
+  
+  // 4. Effects last
+  useEffect(() => {
+    // side effects
+  }, [])
+  
+  // 5. Early returns for loading/error states
+  if (!data) return <Loading />
+  
+  // 6. Main render
+  return (
+    <div>
+      <h1>{title}</h1>
+      {children}
+    </div>
+  )
+}
+```
+
+### File Organization
+```
+components/
+├── Button/
+│   ├── Button.tsx        # Component
+│   ├── Button.test.tsx   # Tests
+│   └── index.ts          # Export
+├── Schedule/
+│   ├── ScheduleGrid.tsx
+│   ├── ScheduleItem.tsx
+│   ├── useSchedule.ts    # Custom hook
+│   └── index.ts
+```
+
+## Hooks
+
+### useState
+```tsx
+// Primitive
+const [count, setCount] = useState(0)
+
+// Object - always spread to update
+const [form, setForm] = useState({ name: '', email: '' })
+setForm(prev => ({ ...prev, name: 'John' }))
+
+// Array
+const [items, setItems] = useState<Item[]>([])
+setItems(prev => [...prev, newItem])
+
+// Lazy initialization for expensive defaults
+const [data, setData] = useState(() => computeExpensiveDefault())
+```
+
+### useEffect
+```tsx
+// Run once on mount
+useEffect(() => {
+  initialize()
+}, [])
+
+// Run when dependency changes
+useEffect(() => {
+  fetchUser(userId)
+}, [userId])
+
+// Cleanup on unmount
+useEffect(() => {
+  const subscription = subscribe()
+  return () => subscription.unsubscribe()
+}, [])
+
+// Async in useEffect
+useEffect(() => {
+  let cancelled = false
+  
+  async function fetchData() {
+    const result = await api.getData()
+    if (!cancelled) setData(result)
+  }
+  
+  fetchData()
+  return () => { cancelled = true }
+}, [])
+```
+
+### useCallback & useMemo
+```tsx
+// useCallback - memoize functions passed to children
+const handleSubmit = useCallback((data: FormData) => {
+  onSubmit(data)
+}, [onSubmit])
+
+// useMemo - memoize expensive calculations
+const sortedItems = useMemo(() => 
+  items.sort((a, b) => a.name.localeCompare(b.name)),
+  [items]
+)
+
+// Don't overuse - only when:
+// 1. Passed to memoized child components
+// 2. Used in other hooks' dependency arrays
+// 3. Actually expensive calculations
+```
+
+### useRef
+```tsx
+// DOM reference
+const inputRef = useRef<HTMLInputElement>(null)
+inputRef.current?.focus()
+
+// Mutable value that doesn't trigger re-render
+const renderCount = useRef(0)
+renderCount.current += 1
+
+// Previous value
+const prevValue = useRef(value)
+useEffect(() => {
+  prevValue.current = value
+}, [value])
+```
+
+### Custom Hooks
+```tsx
+// Extract reusable logic
+function useLocalStorage<T>(key: string, initialValue: T) {
+  const [value, setValue] = useState<T>(() => {
+    const stored = localStorage.getItem(key)
+    return stored ? JSON.parse(stored) : initialValue
+  })
+
+  useEffect(() => {
+    localStorage.setItem(key, JSON.stringify(value))
+  }, [key, value])
+
+  return [value, setValue] as const
+}
+
+// Usage
+const [theme, setTheme] = useLocalStorage('theme', 'light')
+```
+
+## You Might NOT Need useEffect
+
+### ❌ Don't: Derived State
+```tsx
+// BAD - unnecessary effect and extra render
+const [items, setItems] = useState<Item[]>([])
+const [filteredItems, setFilteredItems] = useState<Item[]>([])
+
+useEffect(() => {
+  setFilteredItems(items.filter(i => i.active))
+}, [items])
+
+// GOOD - calculate during render
+const [items, setItems] = useState<Item[]>([])
+const filteredItems = items.filter(i => i.active)
+
+// Or useMemo if expensive
+const filteredItems = useMemo(
+  () => items.filter(i => i.active),
+  [items]
+)
+```
+
+### ❌ Don't: Reset State on Prop Change
+```tsx
+// BAD
+useEffect(() => {
+  setLocalState(props.initialValue)
+}, [props.initialValue])
+
+// GOOD - use key to reset entire component
+<EditForm key={itemId} initialValue={item.value} />
+```
+
+### ❌ Don't: Handle Events
+```tsx
+// BAD
+const [submitted, setSubmitted] = useState(false)
+useEffect(() => {
+  if (submitted) {
+    sendAnalytics('form_submit')
+  }
+}, [submitted])
+
+// GOOD - do it in the handler
+const handleSubmit = () => {
+  submitForm()
+  sendAnalytics('form_submit')
+}
+```
+
+### ✅ DO Use useEffect For:
+- Fetching data
+- Setting up subscriptions (WebSocket, event listeners)
+- Syncing with external systems (DOM, third-party libraries)
+- Cleanup on unmount
+
+## State Management
+
+### Local State (useState)
+Use for: Component-specific UI state
+
+### Lifted State
+Use for: Shared state between siblings
+```tsx
+// Parent owns state, passes down
+function Parent() {
+  const [selected, setSelected] = useState<string | null>(null)
+  
+  return (
+    <>
+      <List items={items} onSelect={setSelected} />
+      <Detail itemId={selected} />
+    </>
+  )
+}
+```
+
+### Context
+Use for: Theme, auth, deeply nested props
+```tsx
+const ThemeContext = createContext<Theme>('light')
+
+export function ThemeProvider({ children }: { children: React.ReactNode }) {
+  const [theme, setTheme] = useState<Theme>('light')
+  
+  return (
+    <ThemeContext.Provider value={{ theme, setTheme }}>
+      {children}
+    </ThemeContext.Provider>
+  )
+}
+
+export const useTheme = () => useContext(ThemeContext)
+```
+
+### Server State (React Query / SWR)
+Use for: Data from APIs
+```tsx
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+
+function useUsers() {
+  return useQuery({
+    queryKey: ['users'],
+    queryFn: () => supabase.from('users').select('*'),
+  })
+}
+
+function useCreateUser() {
+  const queryClient = useQueryClient()
+  
+  return useMutation({
+    mutationFn: (newUser: User) => 
+      supabase.from('users').insert(newUser),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] })
+    },
+  })
+}
+```
+
+## Performance
+
+### React.memo
+```tsx
+// Only re-render if props change
+const ExpensiveList = memo(function ExpensiveList({ items }: Props) {
+  return items.map(item => <Item key={item.id} {...item} />)
+})
+
+// Custom comparison
+const MemoComponent = memo(Component, (prevProps, nextProps) => {
+  return prevProps.id === nextProps.id
+})
+```
+
+### Code Splitting
+```tsx
+// Lazy load routes/heavy components
+const AdminDashboard = lazy(() => import('./AdminDashboard'))
+
+function App() {
+  return (
+    <Suspense fallback={<Loading />}>
+      <AdminDashboard />
+    </Suspense>
+  )
+}
+```
+
+### Virtualization for Long Lists
+```tsx
+import { useVirtualizer } from '@tanstack/react-virtual'
+
+function VirtualList({ items }: { items: Item[] }) {
+  const parentRef = useRef<HTMLDivElement>(null)
+  
+  const virtualizer = useVirtualizer({
+    count: items.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 50,
+  })
+
+  return (
+    <div ref={parentRef} style={{ height: 400, overflow: 'auto' }}>
+      <div style={{ height: virtualizer.getTotalSize() }}>
+        {virtualizer.getVirtualItems().map((virtualRow) => (
+          <div
+            key={virtualRow.key}
+            style={{
+              position: 'absolute',
+              top: virtualRow.start,
+              height: virtualRow.size,
+            }}
+          >
+            {items[virtualRow.index].name}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+```
+
+## Event Handling
+
+```tsx
+// Form submit
+const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  e.preventDefault()
+  const formData = new FormData(e.currentTarget)
+}
+
+// Input change
+const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  setValue(e.target.value)
+}
+
+// Click with data
+const handleClick = (id: string) => () => {
+  selectItem(id)
+}
+
+// Or use data attributes
+<button data-id={item.id} onClick={handleClick}>
+const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+  const id = e.currentTarget.dataset.id
+}
+```
+
+## Conditional Rendering
+
+```tsx
+// Ternary for simple conditions
+{isLoading ? <Spinner /> : <Content />}
+
+// && for presence check (careful with 0!)
+{items.length > 0 && <List items={items} />}
+
+// Early return for cleaner code
+if (isLoading) return <Spinner />
+if (error) return <Error message={error} />
+return <Content data={data} />
+```
+
+## Anti-Patterns to Avoid
+
+```tsx
+// ❌ Don't mutate state
+setItems(items => {
+  items.push(newItem)  // MUTATION!
+  return items
+})
+
+// ✅ Return new array
+setItems(items => [...items, newItem])
+
+// ❌ Don't use index as key for dynamic lists
+{items.map((item, index) => <Item key={index} />)}
+
+// ✅ Use stable unique ID
+{items.map(item => <Item key={item.id} />)}
+
+// ❌ Don't call hooks conditionally
+if (condition) {
+  const [state, setState] = useState()  // WRONG
+}
+
+// ✅ Hooks at top level, always called
+const [state, setState] = useState()
+if (condition) { /* use state */ }
+
+// ❌ Don't create components inside components
+function Parent() {
+  function Child() { return <div /> }  // Recreated every render!
+  return <Child />
+}
+
+// ✅ Define outside or use useMemo for render props
+function Child() { return <div /> }
+function Parent() {
+  return <Child />
+}
+
+// ❌ Don't fetch in useEffect without handling race conditions
+useEffect(() => {
+  fetchData().then(setData)  // Race condition if id changes fast
+}, [id])
+
+// ✅ Use cleanup or React Query
+useEffect(() => {
+  let cancelled = false
+  fetchData().then(d => !cancelled && setData(d))
+  return () => { cancelled = true }
+}, [id])
+```
+
+## Patterns for Supabase + React
+
+```tsx
+// Real-time subscription
+useEffect(() => {
+  const channel = supabase
+    .channel('changes')
+    .on('postgres_changes', 
+      { event: '*', schema: 'public', table: 'schedules' },
+      (payload) => {
+        queryClient.invalidateQueries({ queryKey: ['schedules'] })
+      }
+    )
+    .subscribe()
+
+  return () => { supabase.removeChannel(channel) }
+}, [])
+
+// Auth state
+function useAuth() {
+  const [user, setUser] = useState<User | null>(null)
+  
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => setUser(data.user))
+    
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => setUser(session?.user ?? null)
+    )
+    
+    return () => subscription.unsubscribe()
+  }, [])
+  
+  return user
+}
+```

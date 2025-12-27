@@ -1,0 +1,451 @@
+---
+description: Rules for react-hook-form with zod validation. Covers form setup, validation schemas, error handling, and integration patterns. Use when building forms.
+globs: **/*form*.tsx, **/*Form*.tsx, **/forms/**/*.tsx, **/*.schema.ts
+alwaysApply: false
+---
+
+# React Hook Form + Zod Rules
+
+You are an expert in react-hook-form with zod validation. Use this combination for all forms - never uncontrolled forms with manual validation.
+
+## Basic Setup
+
+```tsx
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { z } from 'zod'
+
+// 1. Define schema
+const formSchema = z.object({
+  email: z.string().email('Invalid email address'),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
+})
+
+// 2. Infer type from schema
+type FormData = z.infer<typeof formSchema>
+
+// 3. Use in component
+function LoginForm() {
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<FormData>({
+    resolver: zodResolver(formSchema),
+  })
+
+  const onSubmit = async (data: FormData) => {
+    // data is fully typed and validated
+    await login(data)
+  }
+
+  return (
+    <form onSubmit={handleSubmit(onSubmit)}>
+      <input {...register('email')} />
+      {errors.email && <span>{errors.email.message}</span>}
+
+      <input type="password" {...register('password')} />
+      {errors.password && <span>{errors.password.message}</span>}
+
+      <button type="submit" disabled={isSubmitting}>
+        {isSubmitting ? 'Submitting...' : 'Submit'}
+      </button>
+    </form>
+  )
+}
+```
+
+## Zod Schema Patterns
+
+### Basic Types
+```tsx
+const schema = z.object({
+  // Strings
+  name: z.string().min(1, 'Required'),
+  email: z.string().email(),
+  phone: z.string().regex(/^\d{10}$/, 'Must be 10 digits'),
+  
+  // Numbers
+  age: z.coerce.number().min(0).max(120),  // coerce from string input
+  quantity: z.coerce.number().int().positive(),
+  
+  // Booleans
+  agreed: z.boolean().refine(val => val === true, 'Must agree to terms'),
+  
+  // Dates
+  startDate: z.coerce.date(),
+  
+  // Enums
+  status: z.enum(['active', 'inactive', 'pending']),
+  
+  // Optional fields
+  nickname: z.string().optional(),
+  bio: z.string().nullable(),
+})
+```
+
+### Conditional Validation
+```tsx
+const schema = z.object({
+  hasDiscount: z.boolean(),
+  discountCode: z.string().optional(),
+}).refine(
+  (data) => !data.hasDiscount || data.discountCode,
+  {
+    message: 'Discount code required when discount is enabled',
+    path: ['discountCode'],
+  }
+)
+```
+
+### Reusable Schema Parts
+```tsx
+// Common fields
+const emailSchema = z.string().email('Invalid email')
+const passwordSchema = z.string()
+  .min(8, 'At least 8 characters')
+  .regex(/[A-Z]/, 'Must contain uppercase')
+  .regex(/[0-9]/, 'Must contain number')
+
+// Compose schemas
+const loginSchema = z.object({
+  email: emailSchema,
+  password: z.string().min(1, 'Required'),
+})
+
+const registerSchema = z.object({
+  email: emailSchema,
+  password: passwordSchema,
+  confirmPassword: z.string(),
+}).refine(data => data.password === data.confirmPassword, {
+  message: 'Passwords must match',
+  path: ['confirmPassword'],
+})
+```
+
+### Array Fields
+```tsx
+const schema = z.object({
+  instructors: z.array(
+    z.object({
+      id: z.string().uuid(),
+      name: z.string().min(1),
+      email: z.string().email(),
+    })
+  ).min(1, 'At least one instructor required'),
+})
+```
+
+## Form Components with Tailwind
+
+### Text Input
+```tsx
+interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
+  label: string
+  error?: string
+}
+
+const Input = React.forwardRef<HTMLInputElement, InputProps>(
+  ({ label, error, ...props }, ref) => (
+    <div className="space-y-1">
+      <label className="block text-sm font-medium text-gray-700">
+        {label}
+      </label>
+      <input
+        ref={ref}
+        className={`
+          w-full px-3 py-2 border rounded-lg
+          focus:ring-2 focus:ring-blue-500 focus:border-transparent
+          ${error ? 'border-red-500' : 'border-gray-300'}
+        `}
+        {...props}
+      />
+      {error && <p className="text-sm text-red-500">{error}</p>}
+    </div>
+  )
+)
+
+// Usage
+<Input
+  label="Email"
+  {...register('email')}
+  error={errors.email?.message}
+/>
+```
+
+### Select Input
+```tsx
+interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
+  label: string
+  error?: string
+  options: { value: string; label: string }[]
+}
+
+const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
+  ({ label, error, options, ...props }, ref) => (
+    <div className="space-y-1">
+      <label className="block text-sm font-medium text-gray-700">
+        {label}
+      </label>
+      <select
+        ref={ref}
+        className={`
+          w-full px-3 py-2 border rounded-lg
+          focus:ring-2 focus:ring-blue-500 focus:border-transparent
+          ${error ? 'border-red-500' : 'border-gray-300'}
+        `}
+        {...props}
+      >
+        <option value="">Select...</option>
+        {options.map(opt => (
+          <option key={opt.value} value={opt.value}>{opt.label}</option>
+        ))}
+      </select>
+      {error && <p className="text-sm text-red-500">{error}</p>}
+    </div>
+  )
+)
+```
+
+### Checkbox
+```tsx
+interface CheckboxProps extends React.InputHTMLAttributes<HTMLInputElement> {
+  label: string
+  error?: string
+}
+
+const Checkbox = React.forwardRef<HTMLInputElement, CheckboxProps>(
+  ({ label, error, ...props }, ref) => (
+    <div>
+      <label className="flex items-center gap-2">
+        <input
+          ref={ref}
+          type="checkbox"
+          className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          {...props}
+        />
+        <span className="text-sm text-gray-700">{label}</span>
+      </label>
+      {error && <p className="text-sm text-red-500">{error}</p>}
+    </div>
+  )
+)
+```
+
+## useFieldArray for Dynamic Fields
+
+```tsx
+import { useForm, useFieldArray } from 'react-hook-form'
+
+const schema = z.object({
+  classes: z.array(z.object({
+    name: z.string().min(1),
+    dayOfWeek: z.enum(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']),
+    startTime: z.string(),
+  })).min(1, 'Add at least one class'),
+})
+
+function ScheduleForm() {
+  const { control, register, handleSubmit } = useForm({
+    resolver: zodResolver(schema),
+    defaultValues: {
+      classes: [{ name: '', dayOfWeek: 'Mon', startTime: '' }],
+    },
+  })
+
+  const { fields, append, remove } = useFieldArray({
+    control,
+    name: 'classes',
+  })
+
+  return (
+    <form onSubmit={handleSubmit(onSubmit)}>
+      {fields.map((field, index) => (
+        <div key={field.id} className="flex gap-4">
+          <input {...register(`classes.${index}.name`)} />
+          <select {...register(`classes.${index}.dayOfWeek`)}>
+            {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => (
+              <option key={day} value={day}>{day}</option>
+            ))}
+          </select>
+          <input type="time" {...register(`classes.${index}.startTime`)} />
+          <button type="button" onClick={() => remove(index)}>Remove</button>
+        </div>
+      ))}
+      
+      <button type="button" onClick={() => append({ name: '', dayOfWeek: 'Mon', startTime: '' })}>
+        Add Class
+      </button>
+      
+      <button type="submit">Save Schedule</button>
+    </form>
+  )
+}
+```
+
+## Integration with React Query
+
+```tsx
+import { useMutation } from '@tanstack/react-query'
+
+function InstructorForm({ onSuccess }: { onSuccess: () => void }) {
+  const form = useForm<FormData>({
+    resolver: zodResolver(instructorSchema),
+  })
+
+  const createInstructor = useMutation({
+    mutationFn: (data: FormData) => 
+      supabase.from('instructors').insert(data).select().single(),
+    onSuccess: () => {
+      form.reset()
+      onSuccess()
+    },
+    onError: (error) => {
+      form.setError('root', { message: error.message })
+    },
+  })
+
+  return (
+    <form onSubmit={form.handleSubmit((data) => createInstructor.mutate(data))}>
+      {/* fields */}
+      
+      {form.formState.errors.root && (
+        <div className="text-red-500">{form.formState.errors.root.message}</div>
+      )}
+      
+      <button disabled={createInstructor.isPending}>
+        {createInstructor.isPending ? 'Saving...' : 'Save'}
+      </button>
+    </form>
+  )
+}
+```
+
+## Form with Default Values from API
+
+```tsx
+function EditScheduleForm({ scheduleId }: { scheduleId: string }) {
+  const { data: schedule, isLoading } = useSchedule(scheduleId)
+  
+  const form = useForm<FormData>({
+    resolver: zodResolver(scheduleSchema),
+    defaultValues: schedule, // Set when data loads
+  })
+
+  // Reset form when data loads
+  useEffect(() => {
+    if (schedule) {
+      form.reset(schedule)
+    }
+  }, [schedule, form])
+
+  if (isLoading) return <Spinner />
+
+  return (
+    <form onSubmit={form.handleSubmit(onSubmit)}>
+      {/* fields */}
+    </form>
+  )
+}
+```
+
+## Watch and Dependent Fields
+
+```tsx
+function ConditionalForm() {
+  const { register, watch, control } = useForm()
+  
+  const watchRole = watch('role')
+  const watchAll = watch() // Watch all fields
+
+  return (
+    <form>
+      <select {...register('role')}>
+        <option value="instructor">Instructor</option>
+        <option value="manager">Manager</option>
+      </select>
+
+      {/* Show only for managers */}
+      {watchRole === 'manager' && (
+        <input {...register('branchId')} placeholder="Branch ID" />
+      )}
+    </form>
+  )
+}
+```
+
+## Form State Helpers
+
+```tsx
+const {
+  formState: {
+    errors,           // Field errors
+    isSubmitting,     // Form is being submitted
+    isValid,          // All fields valid
+    isDirty,          // Any field changed
+    dirtyFields,      // Which fields changed
+    touchedFields,    // Which fields touched
+  },
+  reset,              // Reset to default values
+  setValue,           // Set field value programmatically
+  setError,           // Set error manually
+  clearErrors,        // Clear errors
+  trigger,            // Trigger validation
+} = useForm()
+```
+
+## Anti-Patterns to Avoid
+
+```tsx
+// ❌ Don't use uncontrolled forms without validation
+<form onSubmit={(e) => {
+  e.preventDefault()
+  const data = new FormData(e.target)
+  // No validation!
+}}>
+
+// ✅ Use react-hook-form + zod
+const { handleSubmit } = useForm({ resolver: zodResolver(schema) })
+<form onSubmit={handleSubmit(onSubmit)}>
+
+// ❌ Don't validate manually
+const [errors, setErrors] = useState({})
+if (!email.includes('@')) setErrors({ email: 'Invalid' })
+
+// ✅ Let zod handle validation
+const schema = z.object({ email: z.string().email() })
+
+// ❌ Don't forget disabled state during submit
+<button type="submit">Submit</button>
+
+// ✅ Disable and show loading
+<button disabled={isSubmitting}>
+  {isSubmitting ? 'Submitting...' : 'Submit'}
+</button>
+
+// ❌ Don't use onChange for every field
+const [name, setName] = useState('')
+<input value={name} onChange={(e) => setName(e.target.value)} />
+
+// ✅ Use register
+<input {...register('name')} />
+```
+
+## File Organization
+
+```
+components/
+├── forms/
+│   ├── ScheduleForm.tsx
+│   ├── InstructorForm.tsx
+│   └── AttendanceForm.tsx
+├── ui/
+│   ├── Input.tsx
+│   ├── Select.tsx
+│   └── Checkbox.tsx
+lib/
+└── schemas/
+    ├── schedule.schema.ts
+    ├── instructor.schema.ts
+    └── attendance.schema.ts
+```

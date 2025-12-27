@@ -1,0 +1,440 @@
+---
+description: Rules for Supabase database operations, migrations, and schema changes. Prevents container corruption by enforcing safe practices for adding columns, modifying tables, and managing RLS policies. CRITICAL for avoiding database corruption issues.
+globs: supabase/**/*.sql, **/supabase*.ts, **/supabase*.js, supabase/config.toml
+alwaysApply: true
+---
+
+# Supabase Development Rules
+
+You are a Postgres expert working with Supabase. Follow these rules to prevent database corruption and container issues.
+
+## ⛔ NEVER DO THESE (Container Corruption Prevention)
+
+**STOP AND ASK THE USER before running ANY of these commands:**
+
+```bash
+# DESTRUCTIVE - Will wipe all data
+supabase db reset
+
+# DESTRUCTIVE - Removes container state
+supabase stop --no-backup
+
+# DESTRUCTIVE - Can break migration history
+supabase migration repair
+
+# DESTRUCTIVE - Squashing applied migrations
+supabase migration squash
+```
+
+**NEVER modify these files/folders:**
+- `supabase/.temp/` - Internal container state
+- `supabase/.branches/` - Branch state
+- Any migration file that has already been applied (check `supabase migration list`)
+
+**NEVER edit an existing migration file.** If a migration was already applied:
+1. Create a NEW migration to make changes
+2. Do NOT modify the old migration file
+
+**NEVER run raw SQL against the database outside of migrations:**
+```bash
+# ❌ Don't do this
+supabase db execute "ALTER TABLE users ADD COLUMN..."
+
+# ✅ Always use migration files
+supabase migration new add_user_column
+# Then edit the migration file and run:
+supabase db push  # for remote
+# or restart to apply locally
+```
+
+## Safe Workflow for Schema Changes
+
+### Adding a Column (Safe)
+```bash
+# 1. Create migration
+supabase migration new add_column_name
+
+# 2. Edit the file in supabase/migrations/
+# Use IF NOT EXISTS!
+
+# 3. Apply locally by restarting
+supabase stop
+supabase start
+
+# 4. Verify it worked
+supabase db diff
+```
+
+### If Container Seems Corrupted
+
+**Try these in order (least destructive first):**
+
+```bash
+# Step 1: Restart containers
+supabase stop
+supabase start
+
+# Step 2: If that fails, check status
+supabase status
+
+# Step 3: Check for migration issues
+supabase migration list
+
+# Step 4: Only if absolutely necessary (LOSES DATA)
+# ASK USER FIRST!
+supabase db reset
+```
+
+## Modern Supabase Features (Use These!)
+
+### Declarative Schema (Recommended Workflow)
+Instead of manual migrations, declare desired state:
+
+```bash
+# 1. Create schema files in supabase/schemas/
+# 2. Diff against database to generate migration
+supabase db diff -f my_change --local
+
+# 3. Apply migration
+supabase db push
+```
+
+```sql
+-- supabase/schemas/01_users.sql
+create table if not exists public.users (
+  id uuid primary key default gen_random_uuid(),
+  email text unique not null,
+  created_at timestamptz default now()
+);
+alter table public.users enable row level security;
+```
+
+### Generated Columns (Computed at DB Level)
+```sql
+-- Don't compute in application code
+create table public.orders (
+  id uuid primary key default gen_random_uuid(),
+  quantity int not null,
+  unit_price numeric not null,
+  -- Auto-calculated, always consistent
+  total numeric generated always as (quantity * unit_price) stored
+);
+```
+
+### Database Functions for Complex Logic
+```sql
+-- Move complex logic to database, not application
+create or replace function public.get_user_stats(user_uuid uuid)
+returns json
+language plpgsql
+security definer  -- Runs with elevated privileges
+set search_path = public
+as $$
+declare
+  result json;
+begin
+  select json_build_object(
+    'total_orders', count(*),
+    'total_spent', coalesce(sum(total), 0)
+  ) into result
+  from orders
+  where user_id = user_uuid;
+  
+  return result;
+end;
+$$;
+```
+
+### Real-time with Filters (Reduce Noise)
+```javascript
+// ❌ Subscribes to ALL changes
+supabase.channel('all').on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, handler)
+
+// ✅ Filter to relevant changes only
+supabase.channel('user-messages')
+  .on('postgres_changes', {
+    event: 'INSERT',
+    schema: 'public',
+    table: 'messages',
+    filter: `recipient_id=eq.${userId}`  // Only your messages
+  }, handler)
+  .subscribe()
+```
+
+### Edge Functions for Server Logic
+```typescript
+// supabase/functions/process-order/index.ts
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
+serve(async (req) => {
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!  // Server-side, bypasses RLS
+  )
+  
+  const { orderId } = await req.json()
+  // Process order...
+  
+  return new Response(JSON.stringify({ success: true }), {
+    headers: { 'Content-Type': 'application/json' }
+  })
+})
+```
+
+## Anti-Patterns to Avoid
+
+### Don't Modify Database via Dashboard in Production
+```bash
+# ❌ Never use Dashboard SQL editor for production changes
+
+# ✅ Always use migrations
+supabase migration new add_status_column
+# Edit the migration file
+supabase db push
+```
+
+### Don't Forget RLS on ANY Table
+```sql
+-- ❌ Table without RLS is PUBLIC to anyone with anon key!
+create table public.secrets (
+  id uuid primary key,
+  value text
+);
+
+-- ✅ ALWAYS enable RLS, even for public tables
+create table public.secrets (
+  id uuid primary key,
+  value text
+);
+alter table public.secrets enable row level security;
+-- Then add appropriate policies
+```
+
+### Don't Use Service Role Key Client-Side
+```javascript
+// ❌ NEVER expose service role key in browser
+const supabase = createClient(url, 'service_role_key_here')  // DANGER!
+
+// ✅ Use anon key client-side (respects RLS)
+const supabase = createClient(url, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
+
+// ✅ Service role only in server-side code (API routes, Edge Functions)
+```
+
+### Don't Select * in Production
+```javascript
+// ❌ Fetches all columns, slow and wasteful
+const { data } = await supabase.from('users').select('*')
+
+// ✅ Select only what you need
+const { data } = await supabase.from('users').select('id, name, email')
+
+// ✅ Use views for common column sets
+```
+
+### Don't Chain Multiple Queries When You Can Join
+```javascript
+// ❌ N+1 problem - multiple round trips
+const { data: orders } = await supabase.from('orders').select('*')
+for (const order of orders) {
+  const { data: user } = await supabase.from('users').select('*').eq('id', order.user_id)
+}
+
+// ✅ Single query with join
+const { data } = await supabase
+  .from('orders')
+  .select(`
+    id,
+    total,
+    user:users(id, name, email)
+  `)
+```
+
+### Don't Use offset Pagination for Large Tables
+```javascript
+// ❌ Gets slower as offset increases
+.range(10000, 10010)  // DB must scan 10000 rows first!
+
+// ✅ Use cursor/keyset pagination
+.select('*')
+.order('created_at', { ascending: false })
+.lt('created_at', lastSeenTimestamp)
+.limit(10)
+```
+
+## CRITICAL: Safe Schema Changes
+
+NEVER modify the database directly. Always use migrations:
+
+1. Generate migration file: `supabase migration new <description>`
+2. Write SQL in `supabase/migrations/YYYYMMDDHHmmss_description.sql`
+3. Test locally: `supabase db reset`
+4. Apply: `supabase db push`
+
+### Adding Columns (SAFE METHOD)
+
+```sql
+-- Always use IF NOT EXISTS for safety
+alter table public.table_name
+add column if not exists new_column text;
+
+-- For columns with defaults
+alter table public.table_name
+add column if not exists new_column text default 'value';
+
+-- For NOT NULL columns, add in two steps:
+alter table public.table_name
+add column if not exists new_column text;
+
+update public.table_name set new_column = 'default_value' where new_column is null;
+
+alter table public.table_name
+alter column new_column set not null;
+```
+
+### Destructive Operations (REQUIRE CONFIRMATION)
+
+ALWAYS add comments and request user confirmation before:
+- `DROP TABLE`
+- `DROP COLUMN`
+- `TRUNCATE`
+- `ALTER COLUMN ... TYPE` (data type changes)
+
+```sql
+-- WARNING: Destructive operation
+-- This will permanently delete the column and all its data
+-- Confirm with user before executing
+alter table public.table_name
+drop column column_name;
+```
+
+## Migration File Format
+
+```sql
+-- Migration: <purpose>
+-- Tables affected: <list>
+-- Author: AI Assistant
+-- Date: <UTC timestamp>
+
+-- <detailed description of changes>
+
+begin;
+
+-- Your SQL here
+
+commit;
+```
+
+## Row Level Security (RLS)
+
+ALWAYS enable RLS on new tables:
+
+```sql
+create table public.my_table (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id),
+  created_at timestamptz default now()
+);
+
+-- Enable RLS immediately
+alter table public.my_table enable row level security;
+
+-- Create granular policies (one per operation per role)
+create policy "anon_select_my_table"
+  on public.my_table for select
+  to anon
+  using (true);  -- or your condition
+
+create policy "authenticated_select_my_table"
+  on public.my_table for select
+  to authenticated
+  using (auth.uid() = user_id);
+
+create policy "authenticated_insert_my_table"
+  on public.my_table for insert
+  to authenticated
+  with check (auth.uid() = user_id);
+```
+
+## Client Queries
+
+### Initialization
+```javascript
+import { createClient } from '@supabase/supabase-js'
+
+// Use ANON key for client-side (respects RLS)
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_ANON_KEY
+)
+
+// Use SERVICE_ROLE key for server-side ONLY (bypasses RLS)
+const supabaseAdmin = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+)
+```
+
+### Query Patterns
+```javascript
+// Always handle errors
+const { data, error } = await supabase
+  .from('table')
+  .select('id, name')  // Specify columns, avoid *
+  .eq('column', value)
+  .order('created_at', { ascending: false })
+  .limit(10)
+
+if (error) throw error
+```
+
+### Use .single() for one row
+```javascript
+const { data, error } = await supabase
+  .from('users')
+  .select('*')
+  .eq('id', userId)
+  .single()  // Returns object, not array
+```
+
+## CLI Commands Reference
+
+```bash
+supabase init              # Initialize project
+supabase start             # Start local containers
+supabase stop              # Stop containers (preserves data)
+supabase stop --no-backup  # Stop without backup
+supabase db reset          # Reset to migrations (DESTRUCTIVE)
+supabase db push           # Push migrations to remote
+supabase db pull           # Pull remote schema
+supabase migration new X   # Create new migration
+supabase gen types typescript --local > types/supabase.ts
+```
+
+## Preventing Container Corruption
+
+1. NEVER edit `supabase/.temp` or `supabase/.branches` directly
+2. If container is corrupted: `supabase stop && supabase start`
+3. If that fails: `supabase stop --no-backup && supabase start`
+4. Nuclear option: `rm -rf supabase/.temp && supabase start`
+
+## Common Errors
+
+- `PGRST116`: No rows returned (not always an error)
+- `23505`: Unique constraint violation
+- `42501`: RLS policy blocked access
+- `42P01`: Table doesn't exist
+- `42703`: Column doesn't exist
+
+## TypeScript Types
+
+Generate types after schema changes:
+```bash
+supabase gen types typescript --local > types/supabase.ts
+```
+
+```typescript
+import { Database } from './types/supabase'
+const supabase = createClient<Database>(url, key)
+```

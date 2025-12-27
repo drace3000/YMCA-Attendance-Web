@@ -10,6 +10,7 @@ import {
   type FilterInfo,
   type ReportSection,
 } from "@/components/attendance-report-pdf/AttendanceReportPDFDocument";
+import { downloadPDFBlob, previewPDFBlob, printPDFBlob } from "./pdf-utils";
 
 /**
  * Generate filename for the PDF
@@ -68,16 +69,7 @@ export async function downloadAttendanceReportPDF(
 ): Promise<void> {
   const blob = await generateAttendanceReportPDFBlob(data, filters, selectedSections);
   const filename = generateFilename(filters);
-
-  // Create download link and trigger download
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  downloadPDFBlob(blob, filename);
 }
 
 /**
@@ -89,10 +81,7 @@ export async function previewAttendanceReportPDF(
   selectedSections: ReportSection[]
 ): Promise<void> {
   const blob = await generateAttendanceReportPDFBlob(data, filters, selectedSections);
-  const url = URL.createObjectURL(blob);
-  window.open(url, "_blank");
-  // Note: URL will be revoked when tab is closed or after timeout
-  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  previewPDFBlob(blob);
 }
 
 /**
@@ -104,18 +93,7 @@ export async function printAttendanceReportPDF(
   selectedSections: ReportSection[]
 ): Promise<void> {
   const blob = await generateAttendanceReportPDFBlob(data, filters, selectedSections);
-  const url = URL.createObjectURL(blob);
-
-  // Open in new window and trigger print
-  const printWindow = window.open(url, "_blank");
-  if (printWindow) {
-    printWindow.addEventListener("load", () => {
-      printWindow.print();
-    });
-  }
-
-  // Cleanup after delay
-  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  printPDFBlob(blob);
 }
 
 

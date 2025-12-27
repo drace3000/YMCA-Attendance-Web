@@ -1,0 +1,300 @@
+---
+description: Rules for Tailwind CSS development. Enforces utility-first patterns, responsive design, and consistent styling practices. Triggers when working with React/TSX components or CSS files.
+globs: **/*.tsx, **/*.jsx, **/*.css, tailwind.config.*
+alwaysApply: false
+---
+
+# Tailwind CSS Development Rules
+
+You are a Tailwind CSS expert. Follow utility-first principles and avoid custom CSS when Tailwind utilities exist.
+
+## Core Principles
+
+1. **Utility-first**: Use Tailwind classes, avoid custom CSS
+2. **Mobile-first**: Start with base styles, add responsive prefixes for larger screens
+3. **Consistency**: Use design system tokens (spacing, colors) not arbitrary values
+
+## Responsive Design
+
+Mobile-first breakpoints:
+```jsx
+// sm: 640px, md: 768px, lg: 1024px, xl: 1280px, 2xl: 1536px
+
+<div className="
+  w-full          // mobile: full width
+  md:w-1/2        // tablet: half width
+  lg:w-1/3        // desktop: third width
+">
+```
+
+## Common Patterns
+
+### Flexbox Layout
+```jsx
+// Center content
+<div className="flex items-center justify-center">
+
+// Space between
+<div className="flex items-center justify-between">
+
+// Column layout
+<div className="flex flex-col gap-4">
+
+// Responsive row/column
+<div className="flex flex-col md:flex-row gap-4">
+```
+
+### Grid Layout
+```jsx
+// Responsive grid
+<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+
+// Auto-fit grid
+<div className="grid grid-cols-[repeat(auto-fit,minmax(250px,1fr))] gap-4">
+```
+
+### Spacing
+```jsx
+// Use consistent spacing scale: 0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24...
+// p-4 = 1rem (16px), m-2 = 0.5rem (8px)
+
+<div className="p-4 md:p-6 lg:p-8">      // Responsive padding
+<div className="space-y-4">               // Vertical spacing between children
+<div className="gap-4">                   // Grid/flex gap
+```
+
+### Typography
+```jsx
+// Size scale: text-xs, text-sm, text-base, text-lg, text-xl, text-2xl...
+<h1 className="text-2xl md:text-3xl lg:text-4xl font-bold">
+
+// Text colors
+<p className="text-gray-600 dark:text-gray-300">
+
+// Truncate text
+<p className="truncate">                  // Single line ellipsis
+<p className="line-clamp-2">              // Multi-line clamp
+```
+
+### Cards & Containers
+```jsx
+<div className="
+  bg-white dark:bg-gray-800
+  rounded-lg
+  shadow-md
+  p-6
+  border border-gray-200 dark:border-gray-700
+">
+```
+
+### Buttons
+```jsx
+// Primary button
+<button className="
+  px-4 py-2
+  bg-blue-600 hover:bg-blue-700
+  text-white font-medium
+  rounded-lg
+  transition-colors
+  disabled:opacity-50 disabled:cursor-not-allowed
+">
+
+// Secondary/outline button
+<button className="
+  px-4 py-2
+  border border-gray-300 dark:border-gray-600
+  hover:bg-gray-50 dark:hover:bg-gray-700
+  rounded-lg
+  transition-colors
+">
+```
+
+### Form Inputs
+```jsx
+<input className="
+  w-full
+  px-3 py-2
+  border border-gray-300 dark:border-gray-600
+  rounded-lg
+  focus:ring-2 focus:ring-blue-500 focus:border-transparent
+  dark:bg-gray-700 dark:text-white
+  placeholder-gray-400
+"/>
+
+<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+```
+
+### Tables
+```jsx
+<table className="w-full border-collapse">
+  <thead>
+    <tr className="bg-gray-50 dark:bg-gray-700">
+      <th className="px-4 py-3 text-left text-sm font-medium text-gray-600 dark:text-gray-300">
+    </tr>
+  </thead>
+  <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+    <tr className="hover:bg-gray-50 dark:hover:bg-gray-800">
+      <td className="px-4 py-3 text-sm">
+    </tr>
+  </tbody>
+</table>
+```
+
+## State Variants
+
+```jsx
+hover:      // Mouse hover
+focus:      // Keyboard focus
+active:     // Mouse click
+disabled:   // Disabled state
+group-hover: // Parent hover (add 'group' to parent)
+peer-checked: // Sibling state (add 'peer' to sibling)
+```
+
+## Dark Mode
+
+Use `dark:` prefix for dark mode styles:
+```jsx
+<div className="bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+```
+
+## Animation & Transitions
+
+```jsx
+// Smooth transitions
+<div className="transition-all duration-200">
+<div className="transition-colors duration-150">
+
+// Built-in animations
+<div className="animate-spin">      // Loading spinner
+<div className="animate-pulse">     // Skeleton loading
+<div className="animate-bounce">    // Attention
+```
+
+## Avoid These Anti-Patterns
+
+```jsx
+// ❌ Don't use arbitrary values when scale exists
+<div className="p-[17px]">           // Bad
+<div className="p-4">                // Good (16px)
+
+// ❌ Don't mix Tailwind with inline styles
+<div className="p-4" style={{margin: '10px'}}>  // Bad
+<div className="p-4 m-2.5">                      // Good
+
+// ❌ Don't create custom CSS for utilities that exist
+.my-flex { display: flex; }          // Bad
+className="flex"                      // Good
+
+// ❌ Don't forget responsive prefixes
+<div className="hidden lg:block">    // Show only on desktop
+<div className="lg:hidden">          // Hide on desktop
+```
+
+## Class Organization
+
+Order classes logically:
+1. Layout (flex, grid, position)
+2. Sizing (w-, h-, max-w-)
+3. Spacing (p-, m-, gap-)
+4. Typography (text-, font-)
+5. Colors (bg-, text-, border-)
+6. Effects (shadow-, opacity-)
+7. States (hover:, focus:, dark:)
+
+```jsx
+<div className="
+  flex items-center justify-between
+  w-full max-w-4xl
+  p-4 gap-2
+  text-sm font-medium
+  bg-white text-gray-900
+  rounded-lg shadow-md
+  hover:shadow-lg
+  dark:bg-gray-800 dark:text-white
+">
+```
+
+## Modern CSS Features (Use These!)
+
+When custom CSS is needed, use modern features - don't write CSS like it's 2015:
+
+### Relative Colors (CSS Color Level 4)
+```css
+/* Derive colors from existing ones */
+.button-hover {
+  background: oklch(from var(--brand-color) calc(l - 0.1) c h);
+}
+```
+
+### Container Queries
+```css
+@container (min-width: 400px) {
+  .card { grid-template-columns: 1fr 1fr; }
+}
+```
+
+### :has() Selector
+```css
+/* Parent selector - style parent based on children */
+.form:has(:invalid) { border-color: red; }
+.card:has(img) { padding-top: 0; }
+```
+
+### Popover API (Native, No JS!)
+```html
+<button popovertarget="menu">Open</button>
+<div id="menu" popover>Menu content</div>
+```
+
+### CSS Nesting (Native)
+```css
+.card {
+  padding: 1rem;
+  
+  & h2 { font-size: 1.5rem; }
+  &:hover { box-shadow: 0 4px 12px rgb(0 0 0 / 0.1); }
+}
+```
+
+### View Transitions
+```css
+::view-transition-old(main),
+::view-transition-new(main) {
+  animation-duration: 0.3s;
+}
+```
+
+### Subgrid
+```css
+.grid-parent {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+}
+.grid-child {
+  display: grid;
+  grid-template-columns: subgrid;
+}
+```
+
+## Tailwind Config Extensions
+
+For custom values, extend in `tailwind.config.js`:
+```javascript
+module.exports = {
+  theme: {
+    extend: {
+      colors: {
+        brand: {
+          50: '#eff6ff',
+          500: '#3b82f6',
+          900: '#1e3a8a',
+        }
+      },
+      fontFamily: {
+        sans: ['Inter', 'sans-serif'],
+      }
+    }
+  }
+}
+```

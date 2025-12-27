@@ -1,0 +1,288 @@
+---
+description: Rules for Docker container management with Supabase local development. Prevents container corruption, data loss, and volume issues. CRITICAL when working with supabase start/stop, Docker commands, or debugging container issues.
+globs: docker-compose*.yml, Dockerfile*, supabase/config.toml, .env, .env.*
+alwaysApply: true
+---
+
+# Docker + Supabase Local Development Rules
+
+You are a Docker expert managing Supabase local development containers. Follow these rules to prevent container corruption and data loss.
+
+## ⛔ NEVER DO THESE (Container Corruption Prevention)
+
+**STOP AND ASK THE USER before running ANY of these commands:**
+
+```bash
+# DESTRUCTIVE - Removes ALL Docker data system-wide
+docker system prune -a
+docker volume prune
+
+# DESTRUCTIVE - Removes Supabase volumes (LOSES ALL LOCAL DATA)
+docker volume rm $(docker volume ls -q | grep supabase)
+
+# DESTRUCTIVE - Force removes running containers
+docker rm -f $(docker ps -aq)
+
+# DESTRUCTIVE - Stops containers without graceful shutdown
+docker kill <container>
+
+# DESTRUCTIVE - Supabase reset wipes database
+supabase db reset
+```
+
+**NEVER modify these directly:**
+- Container files while running
+- Volume mount contents via Docker exec for schema changes
+- `supabase/.temp/` directory
+
+## Supabase Docker Architecture
+
+When you run `supabase start`, these containers spin up:
+
+| Container | Purpose | Port |
+|-----------|---------|------|
+| supabase-db | PostgreSQL database | 54322 |
+| supabase-studio | Dashboard UI | 54323 |
+| supabase-kong | API Gateway | 54321 |
+| supabase-auth | GoTrue authentication | 54321/auth |
+| supabase-rest | PostgREST API | 54321/rest |
+| supabase-realtime | WebSocket subscriptions | 54321/realtime |
+| supabase-storage | File storage | 54321/storage |
+| supabase-meta | Postgres meta API | - |
+| supabase-edge-functions | Deno runtime | 54321/functions |
+
+## Safe Container Management
+
+### Check Status First (Always Do This)
+```bash
+# Check if containers are running
+supabase status
+
+# Or use Docker directly
+docker ps --filter "name=supabase"
+
+# Check container health
+docker ps --format "table {{.Names}}\t{{.Status}}"
+```
+
+### Safe Start/Stop Workflow
+```bash
+# START - Normal startup
+supabase start
+
+# STOP - Graceful shutdown (preserves data)
+supabase stop
+
+# If containers seem stuck, wait and retry
+supabase stop
+sleep 5
+supabase start
+```
+
+### When Containers Are Unhealthy
+
+**Step 1: Check what's wrong**
+```bash
+# View logs for specific container
+docker logs supabase-db --tail 50
+docker logs supabase-auth --tail 50
+
+# Check all Supabase container logs
+docker compose -f ~/supabase/docker/docker-compose.yml logs --tail 50
+```
+
+**Step 2: Restart specific unhealthy container**
+```bash
+# Restart just the problematic container
+docker restart supabase-db
+docker restart supabase-auth
+
+# Don't restart all containers unless necessary
+```
+
+**Step 3: Full restart (if needed)**
+```bash
+supabase stop
+supabase start
+```
+
+**Step 4: Nuclear option (LAST RESORT - Ask user first!)**
+```bash
+# This will lose all local data!
+supabase stop --no-backup
+supabase start
+```
+
+## Volume Management
+
+### Check Volume Status
+```bash
+# List Supabase volumes
+docker volume ls | grep supabase
+
+# Inspect volume
+docker volume inspect supabase_db_data
+```
+
+### Backup Before Risky Operations
+```bash
+# Backup local database
+supabase db dump -f backup.sql
+
+# Or use pg_dump directly
+docker exec supabase-db pg_dump -U postgres > backup.sql
+```
+
+### Restore from Backup
+```bash
+# Restore after reset
+supabase db reset
+psql postgresql://postgres:postgres@localhost:54322/postgres < backup.sql
+```
+
+## Common Issues & Fixes
+
+### Port Already in Use
+```bash
+# Find what's using the port
+lsof -i :54322
+# or on Windows
+netstat -ano | findstr :54322
+
+# Kill the process or change Supabase port in config.toml
+```
+
+### Container Won't Start
+```bash
+# Check Docker daemon is running
+docker info
+
+# Check disk space (Docker needs space!)
+docker system df
+
+# Remove only dangling images (safe)
+docker image prune
+```
+
+### Database Container Crashes on Start
+```bash
+# Usually a volume corruption issue
+# First, backup if possible
+docker exec supabase-db pg_dump -U postgres > emergency_backup.sql 2>/dev/null
+
+# Check logs
+docker logs supabase-db
+
+# If volume is corrupted (LOSES DATA):
+# supabase stop --no-backup
+# docker volume rm supabase_db_<project>
+# supabase start
+```
+
+### Migration Stuck / Schema Mismatch
+```bash
+# Check migration status
+supabase migration list
+
+# DON'T reset immediately. First try:
+supabase db push
+
+# If that fails, check for conflicts:
+supabase db diff
+```
+
+## Docker Compose Override (Advanced)
+
+For custom configuration, create `docker-compose.override.yml`:
+
+```yaml
+# docker-compose.override.yml
+version: '3.8'
+services:
+  db:
+    # Increase shared memory for complex queries
+    shm_size: '2gb'
+    # Custom Postgres config
+    command: postgres -c shared_preload_libraries=pg_stat_statements
+```
+
+## Resource Management
+
+### Set Container Limits
+```yaml
+# In docker-compose.override.yml
+services:
+  db:
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2'
+        reservations:
+          memory: 1G
+```
+
+### Monitor Resource Usage
+```bash
+# Live stats for all Supabase containers
+docker stats $(docker ps --filter "name=supabase" -q)
+
+# One-time snapshot
+docker stats --no-stream
+```
+
+## Environment Variables
+
+### Safe .env Practices
+```bash
+# .env file in project root
+POSTGRES_PASSWORD=your-secure-password  # Change from default!
+
+# Never commit .env to git
+echo ".env" >> .gitignore
+```
+
+### Check Current Config
+```bash
+supabase status
+
+# Shows all URLs and keys for local dev
+# API URL: http://localhost:54321
+# DB URL: postgresql://postgres:postgres@localhost:54322/postgres
+# Studio URL: http://localhost:54323
+```
+
+## Anti-Patterns to Avoid
+
+```bash
+# ❌ Don't use docker-compose directly for Supabase CLI projects
+docker-compose down -v  # This bypasses Supabase's state management
+
+# ✅ Use Supabase CLI
+supabase stop
+
+# ❌ Don't modify pg_hba.conf in running container
+docker exec supabase-db vi /etc/postgresql/pg_hba.conf
+
+# ✅ Use config.toml or environment variables
+
+# ❌ Don't run multiple Supabase instances on same ports
+supabase start  # Project A
+cd ../project-b && supabase start  # CONFLICT!
+
+# ✅ Configure different ports in supabase/config.toml
+[api]
+port = 54331
+```
+
+## Debugging Checklist
+
+When something goes wrong:
+
+1. [ ] `supabase status` - Are all services healthy?
+2. [ ] `docker ps` - Are containers actually running?
+3. [ ] `docker logs supabase-db --tail 100` - Any errors?
+4. [ ] `docker system df` - Is Docker out of disk space?
+5. [ ] `supabase migration list` - Any pending/failed migrations?
+6. [ ] Did you modify an already-applied migration file? (Don't do that!)
+7. [ ] Is another process using ports 54321-54323?

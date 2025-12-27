@@ -65,6 +65,24 @@ function toIsoDate(d: Date) {
   return d.toISOString().slice(0, 10);
 }
 
+// Format date as MM-DD-YYYY for display
+function toUsDate(d: Date) {
+  const iso = d.toISOString().slice(0, 10); // YYYY-MM-DD
+  const [y, m, day] = iso.split("-");
+  return `${m}-${day}-${y}`;
+}
+
+// Convert ISO date string (YYYY-MM-DD) to US format (MM-DD-YYYY)
+function isoToUsDate(isoDate: string) {
+  const [y, m, day] = isoDate.split("-");
+  return `${m}-${day}-${y}`;
+}
+
+// Get the last day of a period (subtract 1 day from exclusive end date)
+function lastDayOfPeriod(exclusiveEnd: Date) {
+  return new Date(exclusiveEnd.getTime() - 86400000); // subtract 1 day in ms
+}
+
 function linearRegressionSlope(y: number[]) {
   // x = 0..n-1
   const n = y.length;
@@ -365,8 +383,8 @@ export async function GET(req: Request) {
     topDown,
     computedAt: new Date().toISOString(),
     meta: {
-      periodStart: toIsoDate(start),
-      periodEnd: toIsoDate(end),
+      periodStart: toUsDate(start),
+      periodEnd: toUsDate(lastDayOfPeriod(end)),
       periodLabel,
       rowsInPeriod,
     },
@@ -399,14 +417,16 @@ export async function GET(req: Request) {
       .order("session_date", { ascending: false })
       .limit(1);
 
-    const firstDateInYear = (firstRes.data?.[0] as { session_date?: string } | undefined)
+    const firstDateRaw = (firstRes.data?.[0] as { session_date?: string } | undefined)
       ?.session_date
       ? String((firstRes.data?.[0] as { session_date?: string }).session_date).slice(0, 10)
       : null;
-    const lastDateInYear = (lastRes.data?.[0] as { session_date?: string } | undefined)
+    const lastDateRaw = (lastRes.data?.[0] as { session_date?: string } | undefined)
       ?.session_date
       ? String((lastRes.data?.[0] as { session_date?: string }).session_date).slice(0, 10)
       : null;
+    const firstDateInYear = firstDateRaw ? isoToUsDate(firstDateRaw) : null;
+    const lastDateInYear = lastDateRaw ? isoToUsDate(lastDateRaw) : null;
 
     payload.meta.rowsInYear = countRes.count ?? 0;
     payload.meta.firstDateInYear = firstDateInYear;

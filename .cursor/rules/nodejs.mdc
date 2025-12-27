@@ -1,0 +1,401 @@
+---
+description: Rules for Node.js development with ES modules, async patterns, error handling, and best practices. Use for JavaScript/TypeScript backend development.
+globs: **/*.js, **/*.ts, **/*.mjs, **/package.json
+alwaysApply: false
+---
+
+# Node.js Development Rules
+
+You are a Node.js expert. Follow modern ES module patterns and best practices.
+
+## ES Modules (Preferred)
+
+Use ES modules, not CommonJS:
+
+```javascript
+// package.json
+{
+  "type": "module"
+}
+
+// Correct: ES modules
+import express from 'express'
+import { readFile } from 'fs/promises'
+import path from 'path'
+import { fileURLToPath } from 'url'
+
+// Get __dirname equivalent in ESM
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+
+// Avoid: CommonJS
+// const express = require('express')  // DON'T USE
+```
+
+## Async/Await Patterns
+
+Always use async/await, never raw callbacks:
+
+```javascript
+// Correct
+async function getData() {
+  try {
+    const result = await someAsyncOperation()
+    return result
+  } catch (error) {
+    console.error('Operation failed:', error.message)
+    throw error
+  }
+}
+
+// Avoid: callbacks
+// someAsyncOperation((err, result) => { ... })
+
+// Avoid: .then chains when async/await is cleaner
+// someAsyncOperation().then(result => ...).catch(err => ...)
+```
+
+## Error Handling
+
+### Custom Error Classes
+```javascript
+class AppError extends Error {
+  constructor(message, statusCode = 500) {
+    super(message)
+    this.statusCode = statusCode
+    this.isOperational = true
+    Error.captureStackTrace(this, this.constructor)
+  }
+}
+
+class NotFoundError extends AppError {
+  constructor(message = 'Resource not found') {
+    super(message, 404)
+  }
+}
+
+class ValidationError extends AppError {
+  constructor(message = 'Validation failed') {
+    super(message, 400)
+  }
+}
+```
+
+### Express Error Middleware
+```javascript
+// Global error handler (must be last middleware)
+app.use((err, req, res, next) => {
+  const statusCode = err.statusCode || 500
+  const message = err.isOperational ? err.message : 'Internal server error'
+  
+  console.error(err.stack)
+  
+  res.status(statusCode).json({
+    error: message,
+    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+  })
+})
+```
+
+### Async Route Wrapper
+```javascript
+// Wrap async routes to catch errors
+const asyncHandler = (fn) => (req, res, next) =>
+  Promise.resolve(fn(req, res, next)).catch(next)
+
+app.get('/users/:id', asyncHandler(async (req, res) => {
+  const user = await getUser(req.params.id)
+  if (!user) throw new NotFoundError('User not found')
+  res.json(user)
+}))
+```
+
+## Environment Variables
+
+Use dotenv for local development:
+
+```javascript
+import 'dotenv/config'  // Load at entry point
+
+// Access variables
+const port = process.env.PORT || 3000
+const dbUrl = process.env.DATABASE_URL
+
+// Validate required env vars at startup
+const required = ['DATABASE_URL', 'JWT_SECRET']
+for (const key of required) {
+  if (!process.env[key]) {
+    throw new Error(`Missing required env var: ${key}`)
+  }
+}
+```
+
+## File Operations
+
+Use promises API:
+
+```javascript
+import { readFile, writeFile, mkdir } from 'fs/promises'
+import { existsSync } from 'fs'
+
+async function readJson(filepath) {
+  const content = await readFile(filepath, 'utf-8')
+  return JSON.parse(content)
+}
+
+async function writeJson(filepath, data) {
+  await writeFile(filepath, JSON.stringify(data, null, 2))
+}
+
+async function ensureDir(dirpath) {
+  if (!existsSync(dirpath)) {
+    await mkdir(dirpath, { recursive: true })
+  }
+}
+```
+
+## HTTP Client
+
+Use native fetch (Node 18+) or axios:
+
+```javascript
+// Native fetch (preferred for Node 18+)
+async function fetchData(url) {
+  const response = await fetch(url, {
+    headers: { 'Content-Type': 'application/json' }
+  })
+  
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+  }
+  
+  return response.json()
+}
+
+// With timeout
+async function fetchWithTimeout(url, timeout = 5000) {
+  const controller = new AbortController()
+  const id = setTimeout(() => controller.abort(), timeout)
+  
+  try {
+    const response = await fetch(url, { signal: controller.signal })
+    return response.json()
+  } finally {
+    clearTimeout(id)
+  }
+}
+```
+
+## Logging
+
+Use structured logging:
+
+```javascript
+// Simple structured logger
+const log = {
+  info: (message, meta = {}) => 
+    console.log(JSON.stringify({ level: 'info', message, ...meta, timestamp: new Date().toISOString() })),
+  error: (message, meta = {}) => 
+    console.error(JSON.stringify({ level: 'error', message, ...meta, timestamp: new Date().toISOString() })),
+  warn: (message, meta = {}) => 
+    console.warn(JSON.stringify({ level: 'warn', message, ...meta, timestamp: new Date().toISOString() }))
+}
+
+// Usage
+log.info('Server started', { port: 3000 })
+log.error('Database connection failed', { error: err.message })
+```
+
+## Validation
+
+Use Zod for runtime validation:
+
+```javascript
+import { z } from 'zod'
+
+const UserSchema = z.object({
+  email: z.string().email(),
+  name: z.string().min(1).max(100),
+  age: z.number().int().positive().optional()
+})
+
+function validateUser(data) {
+  return UserSchema.parse(data)  // Throws on invalid
+}
+
+// Or safe parse
+function validateUserSafe(data) {
+  const result = UserSchema.safeParse(data)
+  if (!result.success) {
+    throw new ValidationError(result.error.message)
+  }
+  return result.data
+}
+```
+
+## Project Structure
+
+```
+project/
+├── src/
+│   ├── index.js          # Entry point
+│   ├── routes/           # Route handlers
+│   ├── services/         # Business logic
+│   ├── middleware/       # Express middleware
+│   ├── utils/            # Helpers
+│   └── config/           # Configuration
+├── tests/
+├── package.json
+├── .env.example
+└── .gitignore
+```
+
+## Package.json Scripts
+
+```json
+{
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "node --test",
+    "lint": "eslint src/"
+  }
+}
+```
+
+## Modern Node.js Features (Use These!)
+
+### Native Test Runner (Node 18+)
+```javascript
+// No need for Jest/Mocha for simple tests
+import { test, describe } from 'node:test'
+import assert from 'node:assert'
+
+describe('math', () => {
+  test('adds numbers', () => {
+    assert.strictEqual(1 + 1, 2)
+  })
+})
+
+// Run with: node --test
+```
+
+### Native Watch Mode (Node 18+)
+```bash
+# No need for nodemon
+node --watch src/index.js
+```
+
+### Glob Support (Node 22+)
+```javascript
+import { glob } from 'node:fs/promises'
+
+for await (const file of glob('**/*.js')) {
+  console.log(file)
+}
+```
+
+### Permission System (Node 20+)
+```bash
+# Restrict file/network access
+node --experimental-permission --allow-fs-read=/app src/index.js
+```
+
+### Built-in .env Support (Node 20.6+)
+```bash
+# No need for dotenv package
+node --env-file=.env src/index.js
+```
+
+### AbortController for Timeouts
+```javascript
+async function fetchWithTimeout(url, ms = 5000) {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), ms)
+  
+  try {
+    const res = await fetch(url, { signal: controller.signal })
+    return res.json()
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+```
+
+### Structured Clone (Deep Copy)
+```javascript
+// No need for lodash.cloneDeep or JSON.parse(JSON.stringify())
+const copy = structuredClone(deepObject)
+```
+
+## Anti-Patterns to Avoid
+
+### Don't Use Callbacks When Promises Exist
+```javascript
+// ❌ Callback hell
+fs.readFile('a.txt', (err, a) => {
+  fs.readFile('b.txt', (err, b) => {
+    fs.writeFile('c.txt', a + b, (err) => {})
+  })
+})
+
+// ✅ Async/await
+const a = await readFile('a.txt', 'utf-8')
+const b = await readFile('b.txt', 'utf-8')
+await writeFile('c.txt', a + b)
+```
+
+### Don't Use sync Functions in Servers
+```javascript
+// ❌ Blocks event loop
+app.get('/file', (req, res) => {
+  const data = fs.readFileSync('large.json')  // BLOCKS!
+  res.json(JSON.parse(data))
+})
+
+// ✅ Use async
+app.get('/file', async (req, res) => {
+  const data = await fs.promises.readFile('large.json', 'utf-8')
+  res.json(JSON.parse(data))
+})
+```
+
+### Don't Ignore Unhandled Rejections
+```javascript
+// ✅ Always handle at process level
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection:', reason)
+  process.exit(1)
+})
+
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error)
+  process.exit(1)
+})
+```
+
+### Don't Use var or require in ESM
+```javascript
+// ❌ Old patterns
+var data = require('./data.json')
+
+// ✅ Modern ESM
+import data from './data.json' with { type: 'json' }
+const config = await import('./config.js')  // Dynamic import
+```
+
+## Common Gotchas
+
+1. **JSON imports require assertion**:
+   ```javascript
+   import data from './data.json' with { type: 'json' }
+   ```
+
+2. **No __dirname in ESM** - use fileURLToPath pattern above
+
+3. **Top-level await** - works in ESM, but wrap in async function for CommonJS compat
+
+4. **Circular dependencies** - refactor to avoid, or use dynamic imports
+
+5. **process.exit()** - avoid in libraries, use in CLI tools only

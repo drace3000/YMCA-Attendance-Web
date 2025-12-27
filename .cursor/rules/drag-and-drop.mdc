@@ -1,0 +1,488 @@
+---
+description: Rules for implementing drag and drop functionality in React/TypeScript applications. Covers library selection, accessibility, touch support, and performance patterns. Use when building sortable lists, kanban boards, file uploads, or any drag-and-drop UI.
+globs: **/*.tsx, **/*.jsx
+alwaysApply: false
+---
+
+# Drag and Drop Best Practices
+
+You are an expert in implementing drag and drop functionality. Follow these rules for accessible, performant implementations.
+
+## Library Selection (2025)
+
+### Recommended: @dnd-kit (Most Cases)
+```bash
+npm install @dnd-kit/core @dnd-kit/sortable @dnd-kit/utilities
+```
+
+**Use when:** Sortable lists, kanban boards, custom drag behaviors, need accessibility
+**Pros:** Modern, accessible, touch support, highly customizable, ~5M weekly downloads
+**Cons:** Requires more setup than plug-and-play options
+
+### Alternative: @hello-pangea/dnd (Quick Setup)
+```bash
+npm install @hello-pangea/dnd
+```
+
+**Use when:** Simple sortable lists, want fast implementation
+**Pros:** Fork of react-beautiful-dnd (maintained), easy API, good docs
+**Cons:** Less flexible than dnd-kit, limited to vertical/horizontal lists
+
+### For File Uploads: react-dropzone
+```bash
+npm install react-dropzone
+```
+
+**Use when:** File drag-and-drop from OS
+**Pros:** Handles file validation, multiple files, folder upload
+
+### Native HTML5 API
+**Use when:** Simple cases, no library budget, vanilla JS
+**Cons:** Inconsistent cross-browser, no touch support, poor accessibility
+
+## @dnd-kit Implementation
+
+### Basic Sortable List
+```tsx
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+
+interface Item {
+  id: string
+  content: string
+}
+
+function SortableItem({ id, content }: Item) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  }
+
+  return (
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+      {content}
+    </div>
+  )
+}
+
+function SortableList() {
+  const [items, setItems] = useState<Item[]>([
+    { id: '1', content: 'Item 1' },
+    { id: '2', content: 'Item 2' },
+    { id: '3', content: 'Item 3' },
+  ])
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  )
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event
+    
+    if (over && active.id !== over.id) {
+      setItems((items) => {
+        const oldIndex = items.findIndex((i) => i.id === active.id)
+        const newIndex = items.findIndex((i) => i.id === over.id)
+        return arrayMove(items, oldIndex, newIndex)
+      })
+    }
+  }
+
+  return (
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragEnd={handleDragEnd}
+    >
+      <SortableContext items={items} strategy={verticalListSortingStrategy}>
+        {items.map((item) => (
+          <SortableItem key={item.id} {...item} />
+        ))}
+      </SortableContext>
+    </DndContext>
+  )
+}
+```
+
+### Drag Overlay (Custom Preview)
+```tsx
+import { DragOverlay } from '@dnd-kit/core'
+
+function SortableListWithOverlay() {
+  const [activeId, setActiveId] = useState<string | null>(null)
+  
+  return (
+    <DndContext
+      onDragStart={(event) => setActiveId(String(event.active.id))}
+      onDragEnd={(event) => {
+        setActiveId(null)
+        handleDragEnd(event)
+      }}
+    >
+      <SortableContext items={items}>
+        {items.map((item) => (
+          <SortableItem key={item.id} {...item} />
+        ))}
+      </SortableContext>
+      
+      <DragOverlay>
+        {activeId ? (
+          <div className="drag-preview">
+            {items.find((i) => i.id === activeId)?.content}
+          </div>
+        ) : null}
+      </DragOverlay>
+    </DndContext>
+  )
+}
+```
+
+### Multiple Containers (Kanban)
+```tsx
+import { rectIntersection } from '@dnd-kit/core'
+
+// Use rectIntersection for multi-container
+<DndContext
+  collisionDetection={rectIntersection}
+  onDragOver={handleDragOver}  // Move between containers
+  onDragEnd={handleDragEnd}    // Finalize position
+>
+```
+
+## File Drop Zone (react-dropzone)
+
+```tsx
+import { useDropzone } from 'react-dropzone'
+
+function FileUpload() {
+  const onDrop = useCallback((acceptedFiles: File[]) => {
+    acceptedFiles.forEach((file) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        // Handle file content
+        console.log(reader.result)
+      }
+      reader.readAsArrayBuffer(file)
+    })
+  }, [])
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    accept: {
+      'image/*': ['.png', '.jpg', '.jpeg', '.gif'],
+      'application/pdf': ['.pdf'],
+    },
+    maxSize: 5 * 1024 * 1024, // 5MB
+    maxFiles: 5,
+  })
+
+  return (
+    <div
+      {...getRootProps()}
+      className={`
+        border-2 border-dashed rounded-lg p-8 text-center
+        ${isDragActive ? 'border-blue-500 bg-blue-50' : 'border-gray-300'}
+      `}
+    >
+      <input {...getInputProps()} />
+      {isDragActive ? (
+        <p>Drop files here...</p>
+      ) : (
+        <p>Drag files here, or click to select</p>
+      )}
+    </div>
+  )
+}
+```
+
+## Native HTML5 API (When No Library)
+
+```tsx
+function NativeDragDrop() {
+  const handleDragStart = (e: React.DragEvent, id: string) => {
+    e.dataTransfer.setData('text/plain', id)
+    e.dataTransfer.effectAllowed = 'move'
+  }
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()  // REQUIRED to allow drop
+    e.dataTransfer.dropEffect = 'move'
+  }
+
+  const handleDrop = (e: React.DragEvent, targetId: string) => {
+    e.preventDefault()
+    const sourceId = e.dataTransfer.getData('text/plain')
+    // Handle the move
+    moveItem(sourceId, targetId)
+  }
+
+  return (
+    <div
+      draggable
+      onDragStart={(e) => handleDragStart(e, 'item-1')}
+      onDragOver={handleDragOver}
+      onDrop={(e) => handleDrop(e, 'target-1')}
+    >
+      Draggable Item
+    </div>
+  )
+}
+```
+
+## Accessibility (CRITICAL)
+
+### Keyboard Support
+```tsx
+// dnd-kit handles this with KeyboardSensor
+const sensors = useSensors(
+  useSensor(PointerSensor),
+  useSensor(KeyboardSensor, {
+    coordinateGetter: sortableKeyboardCoordinates,
+  })
+)
+
+// Keyboard controls:
+// - Space/Enter: Start drag
+// - Arrow keys: Move item
+// - Space/Enter: Drop item
+// - Escape: Cancel drag
+```
+
+### ARIA Attributes
+```tsx
+<div
+  role="listbox"
+  aria-label="Sortable list"
+>
+  <div
+    role="option"
+    aria-selected={isDragging}
+    aria-describedby="drag-instructions"
+    tabIndex={0}
+  >
+    Item content
+  </div>
+</div>
+
+<div id="drag-instructions" className="sr-only">
+  Press space to start dragging. Use arrow keys to move. Press space to drop.
+</div>
+```
+
+### Screen Reader Announcements
+```tsx
+// dnd-kit provides announcements prop
+<DndContext
+  announcements={{
+    onDragStart: ({ active }) => `Picked up ${active.id}`,
+    onDragOver: ({ active, over }) => 
+      over ? `${active.id} is over ${over.id}` : `${active.id} is no longer over a droppable area`,
+    onDragEnd: ({ active, over }) =>
+      over ? `${active.id} was dropped on ${over.id}` : `${active.id} was dropped`,
+    onDragCancel: ({ active }) => `Dragging ${active.id} was cancelled`,
+  }}
+>
+```
+
+## Touch Support
+
+### dnd-kit (Built-in)
+```tsx
+import { TouchSensor } from '@dnd-kit/core'
+
+const sensors = useSensors(
+  useSensor(PointerSensor, {
+    activationConstraint: {
+      distance: 8, // Prevent accidental drags
+    },
+  }),
+  useSensor(TouchSensor, {
+    activationConstraint: {
+      delay: 250,    // Long press to start
+      tolerance: 5,  // Movement tolerance
+    },
+  }),
+  useSensor(KeyboardSensor)
+)
+```
+
+### Native API Touch Fallback
+```tsx
+// Native HTML5 drag doesn't work on touch - use pointer events
+const handlePointerDown = (e: React.PointerEvent) => {
+  e.currentTarget.setPointerCapture(e.pointerId)
+  setIsDragging(true)
+}
+
+const handlePointerMove = (e: React.PointerEvent) => {
+  if (!isDragging) return
+  setPosition({ x: e.clientX, y: e.clientY })
+}
+
+const handlePointerUp = (e: React.PointerEvent) => {
+  e.currentTarget.releasePointerCapture(e.pointerId)
+  setIsDragging(false)
+}
+```
+
+## Performance
+
+### Virtualization for Long Lists
+```tsx
+import { useVirtualizer } from '@tanstack/react-virtual'
+
+// Combine with dnd-kit for large lists
+function VirtualizedSortable() {
+  const parentRef = useRef<HTMLDivElement>(null)
+  
+  const virtualizer = useVirtualizer({
+    count: items.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 50,
+  })
+
+  return (
+    <DndContext onDragEnd={handleDragEnd}>
+      <div ref={parentRef} style={{ height: 400, overflow: 'auto' }}>
+        <SortableContext items={items}>
+          {virtualizer.getVirtualItems().map((virtualRow) => (
+            <SortableItem
+              key={items[virtualRow.index].id}
+              {...items[virtualRow.index]}
+              style={{
+                position: 'absolute',
+                top: virtualRow.start,
+                height: virtualRow.size,
+              }}
+            />
+          ))}
+        </SortableContext>
+      </div>
+    </DndContext>
+  )
+}
+```
+
+### Optimistic Updates
+```tsx
+function handleDragEnd(event: DragEndEvent) {
+  const { active, over } = event
+  if (!over || active.id === over.id) return
+
+  // 1. Update UI immediately (optimistic)
+  setItems((prev) => arrayMove(prev, oldIndex, newIndex))
+
+  // 2. Persist to database
+  updateOrder(active.id, over.id).catch(() => {
+    // 3. Rollback on error
+    setItems(previousItems)
+    toast.error('Failed to save order')
+  })
+}
+```
+
+## Anti-Patterns to Avoid
+
+```tsx
+// ❌ Don't forget preventDefault on dragover
+onDragOver={(e) => {
+  // Missing e.preventDefault() - drop won't work!
+}}
+
+// ✅ Always prevent default
+onDragOver={(e) => {
+  e.preventDefault()
+}}
+
+// ❌ Don't use index as key for sortable items
+{items.map((item, index) => (
+  <SortableItem key={index} />  // Will break drag!
+))}
+
+// ✅ Use stable unique IDs
+{items.map((item) => (
+  <SortableItem key={item.id} />
+))}
+
+// ❌ Don't mutate state directly
+setItems((items) => {
+  items.splice(oldIndex, 1)  // Mutation!
+  return items
+})
+
+// ✅ Return new array
+setItems((items) => arrayMove([...items], oldIndex, newIndex))
+
+// ❌ Don't ignore touch users
+// Native HTML5 drag doesn't work on mobile
+
+// ✅ Use library with touch support or implement pointer events
+```
+
+## Styling During Drag
+
+```css
+/* Drag source */
+.dragging {
+  opacity: 0.5;
+  cursor: grabbing;
+}
+
+/* Drop target highlight */
+.drag-over {
+  background-color: rgba(59, 130, 246, 0.1);
+  border: 2px dashed #3b82f6;
+}
+
+/* Drag preview/overlay */
+.drag-preview {
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+  transform: rotate(3deg);
+  cursor: grabbing;
+}
+
+/* Disable text selection during drag */
+.dragging-active {
+  user-select: none;
+}
+```
+
+## When to Use What
+
+| Use Case | Recommendation |
+|----------|----------------|
+| Sortable list | @dnd-kit/sortable |
+| Kanban board | @dnd-kit with multiple containers |
+| File upload | react-dropzone |
+| Simple reorder | @hello-pangea/dnd |
+| Grid drag | @dnd-kit with rectSortingStrategy |
+| Tree/nested | @dnd-kit with custom logic |
+| No dependencies | Native API + pointer events for touch |

@@ -6,6 +6,7 @@
 import { pdf } from "@react-pdf/renderer";
 import { SchedulePDFDocument } from "@/components/schedule-pdf/SchedulePDFDocument";
 import type { Session } from "@/app/scheduling/sessions-tab";
+import { downloadPDFBlob, previewPDFBlob, printPDFBlob } from "./pdf-utils";
 
 interface Branch {
   id: string;
@@ -80,16 +81,7 @@ export async function downloadSchedulePDF(
 ): Promise<void> {
   const blob = await generateSchedulePDFBlob(branch, schedule, sessions);
   const filename = generateFilename(branch.name, schedule.month_start);
-  
-  // Create download link and trigger download
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  downloadPDFBlob(blob, filename);
 }
 
 /**
@@ -101,10 +93,7 @@ export async function previewSchedulePDF(
   sessions: Session[]
 ): Promise<void> {
   const blob = await generateSchedulePDFBlob(branch, schedule, sessions);
-  const url = URL.createObjectURL(blob);
-  window.open(url, "_blank");
-  // Note: URL will be revoked when tab is closed or after timeout
-  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  previewPDFBlob(blob);
 }
 
 /**
@@ -116,16 +105,5 @@ export async function printSchedulePDF(
   sessions: Session[]
 ): Promise<void> {
   const blob = await generateSchedulePDFBlob(branch, schedule, sessions);
-  const url = URL.createObjectURL(blob);
-  
-  // Open in new window and trigger print
-  const printWindow = window.open(url, "_blank");
-  if (printWindow) {
-    printWindow.addEventListener("load", () => {
-      printWindow.print();
-    });
-  }
-  
-  // Cleanup after delay
-  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  printPDFBlob(blob);
 }

@@ -8,6 +8,7 @@ import {
   TrendsReportPDFDocument,
   type TrendsReportData,
 } from "@/components/trends-report-pdf/TrendsReportPDFDocument";
+import { downloadPDFBlob, previewPDFBlob, printPDFBlob } from "./pdf-utils";
 
 /**
  * Generate filename for the PDF
@@ -60,16 +61,7 @@ export async function downloadTrendsReportPDF(
 ): Promise<void> {
   const blob = await generateTrendsReportPDFBlob(data, chartImages);
   const filename = generateFilename(data);
-
-  // Create download link and trigger download
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  downloadPDFBlob(blob, filename);
 }
 
 /**
@@ -83,10 +75,7 @@ export async function previewTrendsReportPDF(
   }
 ): Promise<void> {
   const blob = await generateTrendsReportPDFBlob(data, chartImages);
-  const url = URL.createObjectURL(blob);
-  window.open(url, "_blank");
-  // Note: URL will be revoked when tab is closed or after timeout
-  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  previewPDFBlob(blob);
 }
 
 /**
@@ -100,18 +89,7 @@ export async function printTrendsReportPDF(
   }
 ): Promise<void> {
   const blob = await generateTrendsReportPDFBlob(data, chartImages);
-  const url = URL.createObjectURL(blob);
-
-  // Open in new window and trigger print
-  const printWindow = window.open(url, "_blank");
-  if (printWindow) {
-    printWindow.addEventListener("load", () => {
-      printWindow.print();
-    });
-  }
-
-  // Cleanup after delay
-  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  printPDFBlob(blob);
 }
 
 

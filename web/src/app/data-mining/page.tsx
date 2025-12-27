@@ -1,20 +1,49 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useCallback } from "react";
 import {
   AlertTriangle,
+  Bookmark,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
+  Download,
+  Eye,
+  FileSpreadsheet,
   Loader2,
+  Mail,
+  Printer,
+  Save,
   Search,
   Sparkles,
   Table as TableIcon,
+  Trash2,
+  X,
 } from "lucide-react";
+import * as XLSX from "xlsx";
 import type { QueryAPIResponse, ResultFormat } from "@/types/queries";
+import { useThemeSettings } from "@/components/theme-settings-provider";
+import { EmailExcelModal } from "@/components/email-excel-modal";
+
+// Format numeric values to one decimal place
+function formatValue(value: unknown): string {
+  if (typeof value === "number") {
+    // Round to nearest tenth if it has decimal places
+    return Number.isInteger(value) ? String(value) : value.toFixed(1);
+  }
+  return String(value ?? "");
+}
 
 type SubmitState = "idle" | "loading" | "error" | "ready";
-type Branch = { id: string; name: string; theme_color?: string | null };
+
+interface SavedQuery {
+  id: string;
+  branch_id: string;
+  name: string;
+  query_text: string;
+  created_at: string;
+}
 
 const exampleQueries = [
   "Which classes had the highest attendance last week?",
@@ -125,28 +154,296 @@ function pickSample(format: ResultFormat): QueryAPIResponse {
 }
 
 export default function DataMiningPage() {
+  const { branch } = useThemeSettings();
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<SubmitState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [response, setResponse] = useState<QueryAPIResponse | null>(null);
   const [showSql, setShowSql] = useState(false);
   const [selectedSample, setSelectedSample] = useState<ResultFormat | null>(null);
-  const [branches, setBranches] = useState<Branch[]>([]);
-  const [branchId, setBranchId] = useState<string | null>(null);
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [emailModalOpen, setEmailModalOpen] = useState(false);
+  const [excelBlob, setExcelBlob] = useState<Blob | null>(null);
+  const [savedQueries, setSavedQueries] = useState<SavedQuery[]>([]);
+  const [saveModalOpen, setSaveModalOpen] = useState(false);
+  const [queryName, setQueryName] = useState("");
+  const [savingQuery, setSavingQuery] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
 
-  useEffect(() => {
-    // Fetch branches for selection
-    fetch("/api/branches")
-      .then((res) => res.json())
-      .then((data: Branch[]) => {
-        setBranches(data);
-        if (data.length && !branchId) setBranchId(data[0].id);
-      })
-      .catch(() => {});
+  // Load saved queries when branch changes
+  const loadSavedQueries = useCallback(async () => {
+    if (!branch?.id) return;
+    
+    try {
+      const res = await fetch(`/api/saved-queries?branch_id=${branch.id}`);
+      if (res.ok) {
+        const data = await res.json();
+        setSavedQueries(data);
+      }
+    } catch (err) {
+      console.error("Failed to load saved queries:", err);
+    }
+  }, [branch?.id]);
 
+  useEffect(() => {
+    loadSavedQueries();
+  }, [loadSavedQueries]);
+
+  useEffect(() => {
     return () => controllerRef.current?.abort();
   }, []);
+
+  // Excel export functions
+  const generateExcelFilename = () => {
+    const now = new Date();
+    const dateStr = `${now.getFullYear()}.${String(now.getMonth() + 1).padStart(2, "0")}.${String(now.getDate()).padStart(2, "0")}`;
+    const timeStr = `${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}`;
+    const branchPart = branch.name ? branch.name.replace(/\s+/g, "_") : "DataMining";
+    const reportTitle = response?.query?.reportTitle?.replace(/\s+/g, "_") || "Query_Results";
+    return `${dateStr}.${timeStr}.${branchPart}_${reportTitle}.xlsx`;
+  };
+
+  const getExcelWorkbook = () => {
+    if (!response?.results?.data) return null;
+    
+    const rows = response.results.data;
+    const title = response.query?.reportTitle || "Data Mining Results";
+    const queryText = response.query?.queryText || "";
+    
+    // Create header rows
+    const headerRows: Record<string, string | number>[] = [
+      { col1: title },
+      { col1: `Query: ${queryText}` },
+      { col1: `Total Rows: ${rows.length}` },
+      { col1: `Generated: ${new Date().toLocaleString()}` },
+      { col1: `Branch: ${branch.name}` },
+      {}, // Empty row before data
+    ];
+
+    // Get columns from data
+    const columns = rows.length > 0 
+      ? Array.from(rows.reduce((set, row) => {
+          Object.keys(row).forEach((k) => set.add(k));
+          return set;
+        }, new Set<string>()))
+      : [];
+
+    // Prepare data rows
+    const dataRows = rows.map((row) => {
+      const exportRow: Record<string, unknown> = {};
+      columns.forEach((col) => {
+        exportRow[col] = row[col] ?? "";
+      });
+      return exportRow;
+    });
+
+    // Create workbook
+    const ws = XLSX.utils.json_to_sheet([...headerRows, ...dataRows]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Results");
+
+    // Auto-size columns
+    const colWidths = columns.map(() => ({ wch: 20 }));
+    ws["!cols"] = colWidths;
+
+    return wb;
+  };
+
+  const handleExcelDownload = () => {
+    const wb = getExcelWorkbook();
+    if (!wb) return;
+    const filename = generateExcelFilename();
+    XLSX.writeFile(wb, filename);
+  };
+
+  const handleExcelPreview = () => {
+    if (!response?.results?.data) return;
+    
+    const rows = response.results.data;
+    const title = response.query?.reportTitle || "Data Mining Results";
+    const queryText = response.query?.queryText || "";
+    
+    const columns = rows.length > 0 
+      ? Array.from(rows.reduce((set, row) => {
+          Object.keys(row).forEach((k) => set.add(k));
+          return set;
+        }, new Set<string>()))
+      : [];
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>${title}</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 20px; }
+          .header { margin-bottom: 20px; }
+          .header h1 { color: #333; margin: 0 0 10px 0; }
+          .header .info { color: #666; font-size: 14px; margin-bottom: 5px; }
+          .query { background-color: #f8f9fa; padding: 12px 15px; border-radius: 8px; border: 1px solid #ddd; margin-bottom: 20px; font-style: italic; color: #555; }
+          table { border-collapse: collapse; width: 100%; }
+          th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+          th { background-color: #0d9488; color: white; }
+          tr:nth-child(even) { background-color: #f2f2f2; }
+          tr:hover { background-color: #ddd; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>${title}</h1>
+          <div class="info">Branch: ${branch.name} | Rows: ${rows.length} | Generated: ${new Date().toLocaleString()}</div>
+        </div>
+        <div class="query">${queryText}</div>
+        <table>
+          <thead>
+            <tr>${columns.map(h => `<th>${h}</th>`).join("")}</tr>
+          </thead>
+          <tbody>
+            ${rows.map(row => `<tr>${columns.map(h => `<td>${formatValue(row[h])}</td>`).join("")}</tr>`).join("")}
+          </tbody>
+        </table>
+      </body>
+      </html>
+    `;
+
+    const previewWindow = window.open("", "_blank");
+    if (previewWindow) {
+      previewWindow.document.write(html);
+      previewWindow.document.close();
+    }
+  };
+
+  const handleExcelPrint = () => {
+    if (!response?.results?.data) return;
+    
+    const rows = response.results.data;
+    const title = response.query?.reportTitle || "Data Mining Results";
+    const queryText = response.query?.queryText || "";
+    
+    const columns = rows.length > 0 
+      ? Array.from(rows.reduce((set, row) => {
+          Object.keys(row).forEach((k) => set.add(k));
+          return set;
+        }, new Set<string>()))
+      : [];
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>${title}</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 20px; }
+          .header { margin-bottom: 20px; }
+          .header h1 { color: #333; margin: 0 0 10px 0; }
+          .header .info { color: #666; font-size: 14px; margin-bottom: 5px; }
+          .query { background-color: #f8f9fa; padding: 12px 15px; border-radius: 8px; border: 1px solid #ddd; margin-bottom: 20px; font-style: italic; color: #555; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          table { border-collapse: collapse; width: 100%; }
+          th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+          th { background-color: #0d9488; color: white; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          tr:nth-child(even) { background-color: #f2f2f2; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>${title}</h1>
+          <div class="info">Branch: ${branch.name} | Rows: ${rows.length} | Generated: ${new Date().toLocaleString()}</div>
+        </div>
+        <div class="query">${queryText}</div>
+        <table>
+          <thead>
+            <tr>${columns.map(h => `<th>${h}</th>`).join("")}</tr>
+          </thead>
+          <tbody>
+            ${rows.map(row => `<tr>${columns.map(h => `<td>${formatValue(row[h])}</td>`).join("")}</tr>`).join("")}
+          </tbody>
+        </table>
+        <script>window.onload = function() { window.print(); }</script>
+      </body>
+      </html>
+    `;
+
+    const printWindow = window.open("", "_blank");
+    if (printWindow) {
+      printWindow.document.write(html);
+      printWindow.document.close();
+    }
+  };
+
+  const handleExcelEmail = () => {
+    const wb = getExcelWorkbook();
+    if (!wb) return;
+    
+    // Generate Excel file as array buffer
+    const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+    const blob = new Blob([wbout], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    
+    setExcelBlob(blob);
+    setEmailModalOpen(true);
+  };
+
+  const handleSaveQuery = async () => {
+    if (!branch?.id || !response?.query?.queryText) return;
+    
+    const trimmedName = queryName.trim();
+    if (!trimmedName) {
+      setSaveError("Please enter a name for this query");
+      return;
+    }
+
+    setSavingQuery(true);
+    setSaveError(null);
+
+    try {
+      const res = await fetch("/api/saved-queries", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          branchId: branch.id,
+          name: trimmedName,
+          queryText: response.query.queryText,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setSaveError(data.error || "Failed to save query");
+        return;
+      }
+
+      // Add to local state and close modal
+      setSavedQueries(prev => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)));
+      setSaveModalOpen(false);
+      setQueryName("");
+    } catch (err) {
+      setSaveError("Failed to save query");
+    } finally {
+      setSavingQuery(false);
+    }
+  };
+
+  const handleDeleteQuery = async (id: string) => {
+    try {
+      const res = await fetch(`/api/saved-queries?id=${id}`, {
+        method: "DELETE",
+      });
+
+      if (res.ok) {
+        setSavedQueries(prev => prev.filter(q => q.id !== id));
+      }
+    } catch (err) {
+      console.error("Failed to delete query:", err);
+    }
+  };
+
+  const handleSelectSavedQuery = (queryText: string) => {
+    setQuery(queryText);
+    setStatus("idle");
+    setError(null);
+  };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -156,8 +453,8 @@ export default function DataMiningPage() {
       setStatus("error");
       return;
     }
-    if (!branchId) {
-      setError("Select a branch before running the query.");
+    if (!branch?.id) {
+      setError("No branch selected. Please select a branch in Settings.");
       setStatus("error");
       return;
     }
@@ -175,7 +472,7 @@ export default function DataMiningPage() {
       const res = await fetch("/api/data-mining", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: trimmed, branchId }),
+        body: JSON.stringify({ query: trimmed, branchId: branch.id }),
         signal: controller.signal,
       });
 
@@ -272,28 +569,67 @@ export default function DataMiningPage() {
                 </button>
               ))}
             </div>
+
+            {/* Saved Queries Dropdown */}
+            {savedQueries.length > 0 && (
+              <div className="mt-3 flex items-center gap-2">
+                <Bookmark className="h-4 w-4 text-yellow-400" />
+                <span className="text-sm font-medium text-foreground">Saved Queries:</span>
+                <div className="relative flex-1 max-w-md">
+                  <select
+                    className="w-full appearance-none rounded-lg border border-border bg-background/60 px-3 py-2 pr-10 text-sm text-foreground shadow-sm outline-none ring-1 ring-transparent transition focus:ring-[var(--cta)]/70"
+                    value=""
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        handleSelectSavedQuery(e.target.value);
+                      }
+                    }}
+                  >
+                    <option value="">Select a saved query...</option>
+                    {savedQueries.map((sq) => (
+                      <option key={sq.id} value={sq.query_text}>
+                        {sq.name}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                </div>
+                {/* Manage button to show delete options */}
+                <div className="relative group">
+                  <button
+                    type="button"
+                    className="rounded-lg border border-border bg-background/60 p-2 text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                    title="Manage saved queries"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                  {/* Dropdown for deleting queries */}
+                  <div className="absolute right-0 top-full z-20 mt-1 hidden w-64 rounded-lg border border-border bg-card p-2 shadow-lg group-hover:block">
+                    <p className="mb-2 px-2 text-xs font-semibold text-muted-foreground">Delete a saved query:</p>
+                    {savedQueries.map((sq) => (
+                      <button
+                        key={sq.id}
+                        type="button"
+                        onClick={() => handleDeleteQuery(sq.id)}
+                        className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm text-foreground transition hover:bg-red-500/10 hover:text-red-400"
+                      >
+                        <span className="truncate">{sq.name}</span>
+                        <Trash2 className="h-3.5 w-3.5 flex-shrink-0" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </label>
 
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
               <div className="flex items-center gap-2">
                 <span className="font-semibold text-foreground">Branch:</span>
-                <select
-                  className="min-w-[180px] rounded-md border border-border bg-background/60 px-3 py-2 text-foreground shadow-sm outline-none ring-1 ring-transparent transition focus:ring-[var(--cta)]/70"
-                  value={branchId ?? ""}
-                  onChange={(e) => {
-                    setBranchId(e.target.value || null);
-                    if (status === "error") setStatus("idle");
-                    if (error) setError(null);
-                  }}
-                >
-                  {branches.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name}
-                    </option>
-                  ))}
-                  {!branches.length ? <option value="">Loading branches...</option> : null}
-                </select>
+                <span className="rounded-md border border-border bg-background/60 px-3 py-2 text-foreground shadow-sm">
+                  {branch.name}
+                </span>
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
@@ -346,14 +682,40 @@ export default function DataMiningPage() {
 
           {response && response.success ? (
           <div className="mt-4 flex flex-col gap-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-semibold text-emerald-400">
-                <CheckCircle2 className="h-4 w-4" />
-                AI response ready
-              </span>
-              <span className="text-xs text-muted-foreground">
-                {response.results.rowCount} rows | {response.results.executionTimeMs} ms
-              </span>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-semibold text-emerald-400">
+                  <CheckCircle2 className="h-4 w-4" />
+                  AI response ready
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {response.results.rowCount} rows | {response.results.executionTimeMs} ms
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                {response.results.data.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setExportModalOpen(true)}
+                    className="inline-flex items-center gap-2 rounded-lg border border-green-600/50 bg-green-600/10 px-3 py-1.5 text-xs font-medium text-green-500 transition hover:bg-green-600/20"
+                  >
+                    <FileSpreadsheet className="h-4 w-4" />
+                    Export Excel
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQueryName("");
+                    setSaveError(null);
+                    setSaveModalOpen(true);
+                  }}
+                  className="inline-flex items-center gap-2 rounded-lg border border-yellow-600/50 bg-yellow-600/10 px-3 py-1.5 text-xs font-medium text-yellow-500 transition hover:bg-yellow-600/20"
+                >
+                  <Save className="h-4 w-4" />
+                  Save Query
+                </button>
+              </div>
             </div>
 
             <div className="rounded-xl border border-border bg-muted/40 px-4 py-3 text-sm text-foreground">
@@ -397,6 +759,214 @@ export default function DataMiningPage() {
           </div>
         ) : null}
       </section>
+
+      {/* Export to Excel Modal */}
+      {exportModalOpen && response?.results?.data && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          {/* Backdrop */}
+          <div 
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => setExportModalOpen(false)}
+          />
+          
+          {/* Modal */}
+          <div className="relative z-10 w-full max-w-md rounded-2xl border border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] p-6 shadow-2xl backdrop-blur-md">
+            {/* Header */}
+            <div className="mb-6 flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-green-600/20">
+                  <FileSpreadsheet className="h-5 w-5 text-green-500" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-[var(--brand-ink)]">Export to Excel</h2>
+                  <p className="text-sm text-[var(--brand-ink)]/70">Download query results</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setExportModalOpen(false)}
+                className="rounded-full p-1.5 text-[var(--brand-ink)]/70 hover:bg-[var(--brand-strong)] hover:text-white"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Export Info */}
+            <div className="mb-6 rounded-xl border border-[var(--brand-strong)] bg-[var(--brand-strong)]/20 p-4">
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-[var(--brand-ink)]/70">Branch:</span>
+                  <span className="font-medium text-[var(--brand-ink)]">{branch.name}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[var(--brand-ink)]/70">Report:</span>
+                  <span className="font-medium text-[var(--brand-ink)]">{response.query?.reportTitle || "Query Results"}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[var(--brand-ink)]/70">Rows:</span>
+                  <span className="font-medium text-[var(--brand-ink)]">{response.results.data.length}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[var(--brand-ink)]/70">Filename:</span>
+                  <span className="font-medium text-[var(--brand-ink)] text-xs truncate max-w-[200px]" title={generateExcelFilename()}>
+                    {generateExcelFilename()}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="space-y-3">
+              <button
+                onClick={() => handleExcelPreview()}
+                className="group flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--brand-strong)] bg-[var(--brand-strong)]/30 px-4 py-3 text-sm font-medium text-[var(--brand-ink)] transition hover:bg-[var(--brand-strong)] hover:text-white"
+              >
+                <Eye className="h-4 w-4 text-yellow-400 transition-transform group-hover:scale-125" />
+                Preview
+              </button>
+              
+              <button
+                onClick={() => { handleExcelDownload(); setExportModalOpen(false); }}
+                className="group flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--brand-strong)] bg-[var(--brand-strong)]/30 px-4 py-3 text-sm font-medium text-[var(--brand-ink)] transition hover:bg-[var(--brand-strong)] hover:text-white"
+              >
+                <Download className="h-4 w-4 text-yellow-400 transition-transform group-hover:scale-125" />
+                Download Excel
+              </button>
+              
+              <button
+                onClick={() => handleExcelPrint()}
+                className="group flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--brand-strong)] bg-[var(--brand-strong)]/30 px-4 py-3 text-sm font-medium text-[var(--brand-ink)] transition hover:bg-[var(--brand-strong)] hover:text-white"
+              >
+                <Printer className="h-4 w-4 text-yellow-400 transition-transform group-hover:scale-125" />
+                Print
+              </button>
+              
+              <button
+                onClick={() => { handleExcelEmail(); setExportModalOpen(false); }}
+                className="group flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--brand-strong)] bg-[var(--brand-strong)]/30 px-4 py-3 text-sm font-medium text-[var(--brand-ink)] transition hover:bg-[var(--brand-strong)] hover:text-white"
+              >
+                <Mail className="h-4 w-4 text-yellow-400 transition-transform group-hover:scale-125" />
+                Email Excel
+              </button>
+            </div>
+
+            {/* Footer note */}
+            <p className="mt-4 text-center text-xs text-[var(--brand-ink)]/70">
+              Export includes all query result data
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Email Excel Modal */}
+      {branch?.id && (
+        <EmailExcelModal
+          isOpen={emailModalOpen}
+          onClose={() => setEmailModalOpen(false)}
+          excelBlob={excelBlob}
+          defaultSubject={`${branch.name} - ${response?.query?.reportTitle || "Data Mining Results"}`}
+          defaultMessage={`Please find attached the Data Mining query results.\n\nQuery: ${response?.query?.queryText || ""}\n\nTotal Rows: ${response?.results?.data?.length || 0}\n\nGenerated: ${new Date().toLocaleString()}`}
+          defaultFileName={generateExcelFilename()}
+          branchId={branch.id}
+        />
+      )}
+
+      {/* Save Query Modal */}
+      {saveModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          {/* Backdrop */}
+          <div 
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => setSaveModalOpen(false)}
+          />
+          
+          {/* Modal */}
+          <div className="relative z-10 w-full max-w-md rounded-2xl border border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] p-6 shadow-2xl backdrop-blur-md">
+            {/* Header */}
+            <div className="mb-6 flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-yellow-600/20">
+                  <Save className="h-5 w-5 text-yellow-500" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-[var(--brand-ink)]">Save Query</h2>
+                  <p className="text-sm text-[var(--brand-ink)]/70">Save for quick access later</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSaveModalOpen(false)}
+                className="rounded-full p-1.5 text-[var(--brand-ink)]/70 hover:bg-[var(--brand-strong)] hover:text-white"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Error */}
+            {saveError && (
+              <div className="mb-4 flex items-center gap-2 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+                <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                <span>{saveError}</span>
+              </div>
+            )}
+
+            {/* Query Preview */}
+            <div className="mb-4 rounded-xl border border-[var(--brand-strong)] bg-[var(--brand-strong)]/20 p-4">
+              <p className="text-xs font-semibold uppercase text-[var(--brand-ink)]/60 mb-2">Query to save:</p>
+              <p className="text-sm text-[var(--brand-ink)] italic line-clamp-3">
+                &quot;{response?.query?.queryText}&quot;
+              </p>
+            </div>
+
+            {/* Name Input */}
+            <div className="mb-6">
+              <label className="mb-2 block text-sm font-medium text-[var(--brand-ink)]">
+                Query Name *
+              </label>
+              <input
+                type="text"
+                value={queryName}
+                onChange={(e) => setQueryName(e.target.value)}
+                placeholder="e.g., Weekly attendance leaders"
+                maxLength={100}
+                className="w-full rounded-xl border border-[var(--brand-strong)] bg-black/20 px-4 py-3 text-sm text-[var(--brand-ink)] placeholder:text-[var(--brand-ink)]/40 focus:outline-none focus:ring-2 focus:ring-[var(--cta)]/50"
+                autoFocus
+              />
+              <p className="mt-1 text-xs text-[var(--brand-ink)]/50">
+                {queryName.length}/100 characters
+              </p>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setSaveModalOpen(false)}
+                disabled={savingQuery}
+                className="flex-1 rounded-xl border border-[var(--brand-strong)] bg-[var(--brand-strong)]/30 px-4 py-3 text-sm font-medium text-[var(--brand-ink)] transition hover:bg-[var(--brand-strong)] hover:text-white disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveQuery}
+                disabled={savingQuery || !queryName.trim()}
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-[var(--cta)] px-4 py-3 text-sm font-medium text-[var(--cta-foreground)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {savingQuery ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Save className="h-4 w-4" />
+                    Save Query
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -448,7 +1018,7 @@ function ResultRenderer({
         <span className="rounded-full bg-[var(--brand-soft)]/40 px-3 py-1 text-xs font-semibold text-[var(--brand-strong)]">
           Single value
         </span>
-        <div className="text-3xl font-bold text-foreground">{String(firstRow[firstKey])}</div>
+        <div className="text-3xl font-bold text-foreground">{formatValue(firstRow[firstKey])}</div>
         <div className="text-sm text-muted-foreground">{firstKey}</div>
       </div>
     );
@@ -457,15 +1027,19 @@ function ResultRenderer({
   if (format === "short_list") {
     return (
       <div className="flex flex-col gap-2 rounded-xl border border-border bg-muted/20 p-4">
-        {rows.map((row, idx) => (
-          <div
-            key={idx}
-            className="flex items-center justify-between rounded-lg border border-border bg-background/50 px-3 py-2 text-sm text-foreground"
-          >
-            <span className="font-semibold">{String(row[Object.keys(row)[0]])}</span>
-            <span className="text-muted-foreground">{JSON.stringify(row)}</span>
-          </div>
-        ))}
+        {rows.map((row, idx) => {
+          const keys = Object.keys(row);
+          const formattedValues = keys.map(k => `${k}: ${formatValue(row[k])}`).join(", ");
+          return (
+            <div
+              key={idx}
+              className="flex items-center justify-between rounded-lg border border-border bg-background/50 px-3 py-2 text-sm text-foreground"
+            >
+              <span className="font-semibold">{formatValue(row[keys[0]])}</span>
+              <span className="text-muted-foreground">{formattedValues}</span>
+            </div>
+          );
+        })}
       </div>
     );
   }
@@ -484,8 +1058,8 @@ function ResultRenderer({
               key={idx}
               className="flex items-center justify-between rounded-lg bg-background/60 px-3 py-2 text-sm text-foreground"
             >
-              <span>{String(row[timeKey])}</span>
-              <span className="font-semibold">{String(row[valueKey])}</span>
+              <span>{formatValue(row[timeKey])}</span>
+              <span className="font-semibold">{formatValue(row[valueKey])}</span>
             </div>
           ))}
         </div>
@@ -518,7 +1092,7 @@ function ResultRenderer({
             <tr key={idx} className="hover:bg-muted/50">
               {columns.map((c) => (
                 <td key={c} className="px-4 py-2 text-foreground">
-                  {String(row[c] ?? "")}
+                  {formatValue(row[c])}
                 </td>
               ))}
             </tr>

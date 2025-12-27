@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { X, FileText, Download, Printer, Eye, Loader2 } from "lucide-react";
 import {
   downloadSchedulePDF,
@@ -42,6 +42,18 @@ export function GenerateScheduleModal({
 }: GenerateScheduleModalProps) {
   const [loading, setLoading] = useState<ActionType>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Apply wait cursor to body during PDF generation
+  useEffect(() => {
+    if (loading) {
+      document.body.style.cursor = "wait";
+    } else {
+      document.body.style.cursor = "";
+    }
+    return () => {
+      document.body.style.cursor = "";
+    };
+  }, [loading]);
 
   if (!isOpen) return null;
 
@@ -188,6 +200,44 @@ export function GenerateScheduleModal({
           PDF will be generated in landscape format for wall posting
         </p>
       </div>
+
+      {/* PDF Generation Loading Overlay */}
+      {loading && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm cursor-wait">
+          <div className="flex flex-col items-center gap-4 rounded-2xl border border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] p-8 shadow-2xl">
+            {/* SMIL-animated SVG spinner - runs on separate thread, won't freeze during PDF generation */}
+            <svg className="h-12 w-12" viewBox="0 0 50 50">
+              <circle
+                cx="25"
+                cy="25"
+                r="20"
+                fill="none"
+                stroke="#facc15"
+                strokeWidth="4"
+                strokeLinecap="round"
+                strokeDasharray="31.4 31.4"
+              >
+                <animateTransform
+                  attributeName="transform"
+                  type="rotate"
+                  from="0 25 25"
+                  to="360 25 25"
+                  dur="1s"
+                  repeatCount="indefinite"
+                />
+              </circle>
+            </svg>
+            <div className="text-center">
+              <p className="text-lg font-semibold text-[var(--brand-ink)]">
+                Creating PDF...
+              </p>
+              <p className="mt-1 text-sm text-[var(--brand-ink)]/70">
+                This may take a few seconds
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

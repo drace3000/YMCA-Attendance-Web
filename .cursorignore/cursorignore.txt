@@ -1,0 +1,17 @@
+# Prevent Cursor from modifying Supabase internal state
+supabase/.temp/
+supabase/.branches/
+supabase/.gitignore
+
+# Don't let AI edit applied migrations
+# (You may want to remove this if you need AI help writing NEW migrations)
+# supabase/migrations/
+
+# Supabase secrets
+supabase/.env
+.env.local
+.env*.local
+
+# Docker volumes (if exposed)
+volumes/
+docker/

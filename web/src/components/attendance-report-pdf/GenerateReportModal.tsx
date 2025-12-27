@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { X, FileText, Download, Printer, Eye, Loader2, Mail } from "lucide-react";
 import {
   downloadAttendanceReportPDF,
@@ -70,6 +70,18 @@ export function GenerateReportModal({
   const [error, setError] = useState<string | null>(null);
   const [emailModalOpen, setEmailModalOpen] = useState(false);
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
+
+  // Apply wait cursor to body during PDF generation
+  useEffect(() => {
+    if (loading) {
+      document.body.style.cursor = "wait";
+    } else {
+      document.body.style.cursor = "";
+    }
+    return () => {
+      document.body.style.cursor = "";
+    };
+  }, [loading]);
 
   if (!isOpen) return null;
 
@@ -142,11 +154,11 @@ ${selectedSections.map(s => `• ${REPORT_SECTION_LABELS[s]}`).join("\n")}`;
         <div className="mb-6 flex items-start justify-between">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--brand-strong)]/30">
-              <FileText className="h-5 w-5 text-[var(--brand-ink)]" />
+              <FileText className="h-5 w-5 text-yellow-400" />
             </div>
             <div>
               <h2 className="text-lg font-semibold text-[var(--brand-ink)]">
-                Export Report
+                Export Attendance Insights Report
               </h2>
               <p className="text-sm text-[var(--brand-ink)]/70">
                 Create a printable PDF
@@ -217,12 +229,12 @@ ${selectedSections.map(s => `• ${REPORT_SECTION_LABELS[s]}`).join("\n")}`;
           <button
             onClick={() => handleAction("preview")}
             disabled={!canGenerate || loading !== null}
-            className="flex w-full items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-medium transition text-[var(--brand-ink)] hover:bg-[var(--brand-strong)] hover:text-white border border-[var(--brand-strong)] bg-[var(--brand-strong)]/30 disabled:cursor-not-allowed disabled:opacity-50"
+            className="group flex w-full items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-medium transition text-[var(--brand-ink)] hover:bg-[var(--brand-strong)] hover:text-white border border-[var(--brand-strong)] bg-[var(--brand-strong)]/30 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loading === "preview" ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Loader2 className="h-4 w-4 animate-spin text-yellow-400" />
             ) : (
-              <Eye className="h-4 w-4" />
+              <Eye className="h-4 w-4 text-yellow-400 transition-transform group-hover:scale-125" />
             )}
             Preview PDF
           </button>
@@ -230,12 +242,12 @@ ${selectedSections.map(s => `• ${REPORT_SECTION_LABELS[s]}`).join("\n")}`;
           <button
             onClick={() => handleAction("download")}
             disabled={!canGenerate || loading !== null}
-            className="flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--cta)] px-4 py-3 text-sm font-medium text-[var(--cta-foreground)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            className="group flex w-full items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-medium transition text-[var(--brand-ink)] hover:bg-[var(--brand-strong)] hover:text-white border border-[var(--brand-strong)] bg-[var(--brand-strong)]/30 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loading === "download" ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Loader2 className="h-4 w-4 animate-spin text-yellow-400" />
             ) : (
-              <Download className="h-4 w-4" />
+              <Download className="h-4 w-4 text-yellow-400 transition-transform group-hover:scale-125" />
             )}
             Download PDF
           </button>
@@ -243,12 +255,12 @@ ${selectedSections.map(s => `• ${REPORT_SECTION_LABELS[s]}`).join("\n")}`;
           <button
             onClick={() => handleAction("print")}
             disabled={!canGenerate || loading !== null}
-            className="flex w-full items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-medium transition text-[var(--brand-ink)] hover:bg-[var(--brand-strong)] hover:text-white border border-[var(--brand-strong)] bg-[var(--brand-strong)]/30 disabled:cursor-not-allowed disabled:opacity-50"
+            className="group flex w-full items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-medium transition text-[var(--brand-ink)] hover:bg-[var(--brand-strong)] hover:text-white border border-[var(--brand-strong)] bg-[var(--brand-strong)]/30 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loading === "print" ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Loader2 className="h-4 w-4 animate-spin text-yellow-400" />
             ) : (
-              <Printer className="h-4 w-4" />
+              <Printer className="h-4 w-4 text-yellow-400 transition-transform group-hover:scale-125" />
             )}
             Print
           </button>
@@ -258,12 +270,12 @@ ${selectedSections.map(s => `• ${REPORT_SECTION_LABELS[s]}`).join("\n")}`;
             <button
               onClick={() => handleAction("email")}
               disabled={!canGenerate || loading !== null}
-              className="flex w-full items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-medium transition text-white bg-[var(--brand-strong)] hover:bg-[var(--brand-ink)] disabled:cursor-not-allowed disabled:opacity-50"
+              className="group flex w-full items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-medium transition text-[var(--brand-ink)] hover:bg-[var(--brand-strong)] hover:text-white border border-[var(--brand-strong)] bg-[var(--brand-strong)]/30 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {loading === "email" ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Loader2 className="h-4 w-4 animate-spin text-yellow-400" />
               ) : (
-                <Mail className="h-4 w-4" />
+                <Mail className="h-4 w-4 text-yellow-400 transition-transform group-hover:scale-125" />
               )}
               Email PDF
             </button>
@@ -287,6 +299,44 @@ ${selectedSections.map(s => `• ${REPORT_SECTION_LABELS[s]}`).join("\n")}`;
           defaultFileName={defaultFileName}
           branchId={branchId}
         />
+      )}
+
+      {/* PDF Generation Loading Overlay */}
+      {loading && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm cursor-wait">
+          <div className="flex flex-col items-center gap-4 rounded-2xl border border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] p-8 shadow-2xl">
+            {/* SMIL-animated SVG spinner - runs on separate thread, won't freeze during PDF generation */}
+            <svg className="h-12 w-12" viewBox="0 0 50 50">
+              <circle
+                cx="25"
+                cy="25"
+                r="20"
+                fill="none"
+                stroke="#facc15"
+                strokeWidth="4"
+                strokeLinecap="round"
+                strokeDasharray="31.4 31.4"
+              >
+                <animateTransform
+                  attributeName="transform"
+                  type="rotate"
+                  from="0 25 25"
+                  to="360 25 25"
+                  dur="1s"
+                  repeatCount="indefinite"
+                />
+              </circle>
+            </svg>
+            <div className="text-center">
+              <p className="text-lg font-semibold text-[var(--brand-ink)]">
+                Creating PDF...
+              </p>
+              <p className="mt-1 text-sm text-[var(--brand-ink)]/70">
+                This may take a few seconds
+              </p>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

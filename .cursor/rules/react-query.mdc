@@ -1,0 +1,463 @@
+---
+description: Rules for TanStack React Query with Supabase. Covers data fetching, caching, mutations, optimistic updates, and real-time subscriptions. Use for all server state management.
+globs: **/*.tsx, **/*.ts
+alwaysApply: true
+---
+
+# React Query + Supabase Rules
+
+You are an expert in TanStack React Query with Supabase. Use React Query for all server state - never useState for API data.
+
+## Setup
+
+```tsx
+// providers/query-provider.tsx
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60 * 5, // 5 minutes
+      gcTime: 1000 * 60 * 30,   // 30 minutes (formerly cacheTime)
+      retry: 1,
+      refetchOnWindowFocus: false,
+    },
+  },
+})
+
+export function QueryProvider({ children }: { children: React.ReactNode }) {
+  return (
+    <QueryClientProvider client={queryClient}>
+      {children}
+      <ReactQueryDevtools initialIsOpen={false} />
+    </QueryClientProvider>
+  )
+}
+```
+
+## Query Keys Convention
+
+```tsx
+// Use factory pattern for consistent keys
+export const queryKeys = {
+  // Base keys
+  schedules: ['schedules'] as const,
+  instructors: ['instructors'] as const,
+  classes: ['classes'] as const,
+  attendance: ['attendance'] as const,
+
+  // With filters
+  schedule: (id: string) => ['schedules', id] as const,
+  schedulesByBranch: (branchId: string) => ['schedules', 'branch', branchId] as const,
+  schedulesByMonth: (month: number, year: number) => ['schedules', 'month', { month, year }] as const,
+  
+  instructor: (id: string) => ['instructors', id] as const,
+  instructorsByBranch: (branchId: string) => ['instructors', 'branch', branchId] as const,
+  
+  attendanceBySession: (sessionId: string) => ['attendance', 'session', sessionId] as const,
+  attendanceByDateRange: (start: string, end: string) => ['attendance', 'range', { start, end }] as const,
+}
+```
+
+## Basic Queries
+
+### Fetch List
+```tsx
+import { useQuery } from '@tanstack/react-query'
+import { supabase } from '@/lib/supabase'
+
+export function useSchedules(branchId: string) {
+  return useQuery({
+    queryKey: queryKeys.schedulesByBranch(branchId),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('schedules')
+        .select(`
+          id,
+          month,
+          year,
+          status,
+          scheduled_classes (
+            id,
+            day_of_week,
+            start_time,
+            instructor:profiles(id, full_name)
+          )
+        `)
+        .eq('branch_id', branchId)
+        .order('year', { ascending: false })
+        .order('month', { ascending: false })
+
+      if (error) throw error
+      return data
+    },
+    enabled: !!branchId, // Only run if branchId exists
+  })
+}
+
+// Usage in component
+function ScheduleList({ branchId }: { branchId: string }) {
+  const { data: schedules, isLoading, error } = useSchedules(branchId)
+
+  if (isLoading) return <Spinner />
+  if (error) return <Error message={error.message} />
+
+  return schedules.map(schedule => <ScheduleCard key={schedule.id} {...schedule} />)
+}
+```
+
+### Fetch Single Item
+```tsx
+export function useSchedule(id: string) {
+  return useQuery({
+    queryKey: queryKeys.schedule(id),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('schedules')
+        .select('*')
+        .eq('id', id)
+        .single()
+
+      if (error) throw error
+      return data
+    },
+    enabled: !!id,
+  })
+}
+```
+
+## Mutations
+
+### Basic Mutation
+```tsx
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+
+export function useCreateSchedule() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (newSchedule: CreateScheduleInput) => {
+      const { data, error } = await supabase
+        .from('schedules')
+        .insert(newSchedule)
+        .select()
+        .single()
+
+      if (error) throw error
+      return data
+    },
+    onSuccess: (data) => {
+      // Invalidate list queries to refetch
+      queryClient.invalidateQueries({ queryKey: queryKeys.schedules })
+      
+      // Optionally set the new item in cache directly
+      queryClient.setQueryData(queryKeys.schedule(data.id), data)
+    },
+  })
+}
+
+// Usage
+function CreateScheduleForm() {
+  const createSchedule = useCreateSchedule()
+
+  const handleSubmit = (data: FormData) => {
+    createSchedule.mutate(data, {
+      onSuccess: () => toast.success('Schedule created'),
+      onError: (error) => toast.error(error.message),
+    })
+  }
+
+  return (
+    <form onSubmit={handleSubmit}>
+      {/* form fields */}
+      <button disabled={createSchedule.isPending}>
+        {createSchedule.isPending ? 'Creating...' : 'Create'}
+      </button>
+    </form>
+  )
+}
+```
+
+### Update Mutation
+```tsx
+export function useUpdateSchedule() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ id, ...updates }: UpdateScheduleInput) => {
+      const { data, error } = await supabase
+        .from('schedules')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single()
+
+      if (error) throw error
+      return data
+    },
+    onSuccess: (data) => {
+      // Update the single item cache
+      queryClient.setQueryData(queryKeys.schedule(data.id), data)
+      // Invalidate lists
+      queryClient.invalidateQueries({ queryKey: queryKeys.schedules })
+    },
+  })
+}
+```
+
+### Delete Mutation
+```tsx
+export function useDeleteSchedule() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from('schedules')
+        .delete()
+        .eq('id', id)
+
+      if (error) throw error
+      return id
+    },
+    onSuccess: (deletedId) => {
+      // Remove from cache
+      queryClient.removeQueries({ queryKey: queryKeys.schedule(deletedId) })
+      // Invalidate lists
+      queryClient.invalidateQueries({ queryKey: queryKeys.schedules })
+    },
+  })
+}
+```
+
+## Optimistic Updates
+
+```tsx
+export function useUpdateAttendance() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ sessionId, headCount }: UpdateAttendanceInput) => {
+      const { data, error } = await supabase
+        .from('attendance_records')
+        .upsert({ session_id: sessionId, head_count: headCount })
+        .select()
+        .single()
+
+      if (error) throw error
+      return data
+    },
+    // Optimistic update
+    onMutate: async (newData) => {
+      // Cancel outgoing refetches
+      await queryClient.cancelQueries({ 
+        queryKey: queryKeys.attendanceBySession(newData.sessionId) 
+      })
+
+      // Snapshot previous value
+      const previous = queryClient.getQueryData(
+        queryKeys.attendanceBySession(newData.sessionId)
+      )
+
+      // Optimistically update cache
+      queryClient.setQueryData(
+        queryKeys.attendanceBySession(newData.sessionId),
+        (old: any) => ({ ...old, head_count: newData.headCount })
+      )
+
+      // Return context for rollback
+      return { previous }
+    },
+    onError: (err, newData, context) => {
+      // Rollback on error
+      if (context?.previous) {
+        queryClient.setQueryData(
+          queryKeys.attendanceBySession(newData.sessionId),
+          context.previous
+        )
+      }
+    },
+    onSettled: (data, error, variables) => {
+      // Refetch to ensure consistency
+      queryClient.invalidateQueries({ 
+        queryKey: queryKeys.attendanceBySession(variables.sessionId) 
+      })
+    },
+  })
+}
+```
+
+## Real-time + React Query
+
+```tsx
+import { useEffect } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+
+export function useRealtimeSchedules(branchId: string) {
+  const queryClient = useQueryClient()
+
+  useEffect(() => {
+    const channel = supabase
+      .channel('schedule-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'schedules',
+          filter: `branch_id=eq.${branchId}`,
+        },
+        (payload) => {
+          // Invalidate queries to refetch fresh data
+          queryClient.invalidateQueries({ 
+            queryKey: queryKeys.schedulesByBranch(branchId) 
+          })
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [branchId, queryClient])
+
+  // Return the query as normal
+  return useSchedules(branchId)
+}
+```
+
+## Prefetching
+
+```tsx
+// Prefetch on hover
+function ScheduleLink({ id }: { id: string }) {
+  const queryClient = useQueryClient()
+
+  const prefetch = () => {
+    queryClient.prefetchQuery({
+      queryKey: queryKeys.schedule(id),
+      queryFn: () => fetchSchedule(id),
+      staleTime: 1000 * 60 * 5,
+    })
+  }
+
+  return (
+    <Link href={`/schedules/${id}`} onMouseEnter={prefetch}>
+      View Schedule
+    </Link>
+  )
+}
+
+// Prefetch in loader/page
+async function prefetchScheduleData(branchId: string) {
+  const queryClient = new QueryClient()
+  
+  await queryClient.prefetchQuery({
+    queryKey: queryKeys.schedulesByBranch(branchId),
+    queryFn: () => fetchSchedulesByBranch(branchId),
+  })
+
+  return queryClient
+}
+```
+
+## Pagination
+
+```tsx
+import { useInfiniteQuery } from '@tanstack/react-query'
+
+export function useInfiniteAttendance(branchId: string) {
+  return useInfiniteQuery({
+    queryKey: ['attendance', 'infinite', branchId],
+    queryFn: async ({ pageParam = 0 }) => {
+      const limit = 20
+      const { data, error } = await supabase
+        .from('attendance_records')
+        .select('*, session:class_sessions(*)')
+        .eq('branch_id', branchId)
+        .order('recorded_at', { ascending: false })
+        .range(pageParam, pageParam + limit - 1)
+
+      if (error) throw error
+      return { data, nextCursor: data.length === limit ? pageParam + limit : undefined }
+    },
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+    initialPageParam: 0,
+  })
+}
+
+// Usage
+function AttendanceList() {
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteAttendance(branchId)
+
+  return (
+    <>
+      {data?.pages.flatMap(page => page.data).map(record => (
+        <AttendanceRow key={record.id} {...record} />
+      ))}
+      
+      {hasNextPage && (
+        <button onClick={() => fetchNextPage()} disabled={isFetchingNextPage}>
+          {isFetchingNextPage ? 'Loading...' : 'Load More'}
+        </button>
+      )}
+    </>
+  )
+}
+```
+
+## Anti-Patterns to Avoid
+
+```tsx
+// ❌ Don't use useState for server data
+const [schedules, setSchedules] = useState([])
+useEffect(() => {
+  fetchSchedules().then(setSchedules)
+}, [])
+
+// ✅ Use React Query
+const { data: schedules } = useSchedules()
+
+// ❌ Don't invalidate everything
+queryClient.invalidateQueries() // Too broad!
+
+// ✅ Invalidate specific queries
+queryClient.invalidateQueries({ queryKey: queryKeys.schedules })
+
+// ❌ Don't forget error handling
+const { data } = useQuery({ queryKey: ['x'], queryFn: fetch })
+
+// ✅ Handle loading and error states
+const { data, isLoading, error } = useQuery({ queryKey: ['x'], queryFn: fetch })
+if (isLoading) return <Spinner />
+if (error) return <Error />
+
+// ❌ Don't fetch in useEffect
+useEffect(() => {
+  refetch()
+}, [someValue])
+
+// ✅ Use enabled option or queryKey dependency
+const { data } = useQuery({
+  queryKey: ['data', someValue],
+  queryFn: () => fetchData(someValue),
+  enabled: !!someValue,
+})
+```
+
+## File Organization
+
+```
+hooks/
+├── queries/
+│   ├── useSchedules.ts
+│   ├── useInstructors.ts
+│   ├── useAttendance.ts
+│   └── useClasses.ts
+├── mutations/
+│   ├── useCreateSchedule.ts
+│   ├── useUpdateSchedule.ts
+│   └── useDeleteSchedule.ts
+└── keys.ts  # Query key factory
+```
