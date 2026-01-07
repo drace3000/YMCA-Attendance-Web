@@ -1117,13 +1117,13 @@ export function SessionsTab({ scheduleId, branchId, refreshKey, onSessionsLoaded
                           <ChevronDown className="h-3 w-3 text-muted-foreground" />
                         </button>
                       </PopoverTrigger>
-                      <PopoverContent align="start" sideOffset={4} className="w-[120px] rounded-xl border border-white/20 bg-black/95 p-1 shadow-xl backdrop-blur-md">
+                      <PopoverContent align="start" sideOffset={4} className="w-[120px] rounded-xl border border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] p-1 shadow-xl backdrop-blur-md">
                         <div className="max-h-[200px] overflow-y-auto">
                           {DAY_OPTIONS.map((d) => (
                             <button
                               key={d}
                               onClick={() => { setEditForm((f) => ({ ...f, day_of_week: d })); setDayDropdownOpen(false); }}
-                              className={`flex w-full items-center rounded-lg px-2 py-1.5 text-left text-sm transition ${d === editForm.day_of_week ? "bg-[var(--cta)] text-[var(--cta-foreground)]" : "hover:bg-white/10"}`}
+                              className={`flex w-full items-center rounded-lg px-2 py-1.5 text-left text-sm transition ${d === editForm.day_of_week ? "bg-[var(--cta)] text-[var(--cta-foreground)]" : "text-[var(--brand-ink)] hover:bg-[var(--brand-strong)] hover:text-white"}`}
                             >
                               {d.slice(0, 3)}
                             </button>
@@ -1151,13 +1151,13 @@ export function SessionsTab({ scheduleId, branchId, refreshKey, onSessionsLoaded
                           <ChevronDown className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
                         </button>
                       </PopoverTrigger>
-                      <PopoverContent align="start" sideOffset={4} className="w-[200px] rounded-xl border border-white/20 bg-black/95 p-1 shadow-xl backdrop-blur-md">
+                      <PopoverContent align="start" sideOffset={4} className="w-[200px] rounded-xl border border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] p-1 shadow-xl backdrop-blur-md">
                         <div className="max-h-[250px] overflow-y-auto">
                           {classes.map((c) => (
                             <button
                               key={c.id}
                               onClick={() => { setEditForm((f) => ({ ...f, class_id: c.id })); setClassDropdownOpen(false); }}
-                              className={`flex w-full items-center rounded-lg px-2 py-1.5 text-left text-sm transition ${c.id === editForm.class_id ? "bg-[var(--cta)] text-[var(--cta-foreground)]" : "hover:bg-white/10"}`}
+                              className={`flex w-full items-center rounded-lg px-2 py-1.5 text-left text-sm transition ${c.id === editForm.class_id ? "bg-[var(--cta)] text-[var(--cta-foreground)]" : "text-[var(--brand-ink)] hover:bg-[var(--brand-strong)] hover:text-white"}`}
                             >
                               {c.name}
                             </button>
@@ -1175,13 +1175,13 @@ export function SessionsTab({ scheduleId, branchId, refreshKey, onSessionsLoaded
                           <ChevronDown className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
                         </button>
                       </PopoverTrigger>
-                      <PopoverContent align="start" sideOffset={4} className="w-[220px] rounded-xl border border-white/20 bg-black/95 p-1 shadow-xl backdrop-blur-md">
+                      <PopoverContent align="start" sideOffset={4} className="w-[220px] rounded-xl border border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] p-1 shadow-xl backdrop-blur-md">
                         <div className="max-h-[250px] overflow-y-auto">
                           {locations.map((l) => (
                             <button
                               key={l.id}
                               onClick={() => { setEditForm((f) => ({ ...f, location_id: l.id })); setLocationDropdownOpen(false); }}
-                              className={`flex w-full items-center rounded-lg px-2 py-1.5 text-left text-sm transition ${l.id === editForm.location_id ? "bg-[var(--cta)] text-[var(--cta-foreground)]" : "hover:bg-white/10"}`}
+                              className={`flex w-full items-center rounded-lg px-2 py-1.5 text-left text-sm transition ${l.id === editForm.location_id ? "bg-[var(--cta)] text-[var(--cta-foreground)]" : "text-[var(--brand-ink)] hover:bg-[var(--brand-strong)] hover:text-white"}`}
                             >
                               {l.code} - {l.name}
                             </button>
@@ -1207,13 +1207,13 @@ export function SessionsTab({ scheduleId, branchId, refreshKey, onSessionsLoaded
                           <ChevronDown className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
                         </button>
                       </PopoverTrigger>
-                      <PopoverContent align="start" sideOffset={4} className="w-[200px] rounded-xl border border-white/20 bg-black/95 p-1 shadow-xl backdrop-blur-md">
+                      <PopoverContent align="start" sideOffset={4} className="w-[200px] rounded-xl border border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] p-1 shadow-xl backdrop-blur-md">
                         <div className="max-h-[250px] overflow-y-auto">
                           {instructors.map((inst) => (
                             <button
                               key={inst.id}
                               onClick={() => toggleInstructor(inst.id)}
-                              className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition ${editForm.instructor_ids.includes(inst.id) ? "bg-[var(--cta)] text-[var(--cta-foreground)]" : "hover:bg-white/10"}`}
+                              className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition ${editForm.instructor_ids.includes(inst.id) ? "bg-[var(--cta)] text-[var(--cta-foreground)]" : "text-[var(--brand-ink)] hover:bg-[var(--brand-strong)] hover:text-white"}`}
                             >
                               <div className={`flex h-4 w-4 items-center justify-center rounded border ${editForm.instructor_ids.includes(inst.id) ? "border-[var(--cta-foreground)] bg-[var(--cta-foreground)]/20" : "border-white/30"}`}>
                                 {editForm.instructor_ids.includes(inst.id) && <Check className="h-3 w-3" />}
