@@ -57,10 +57,15 @@ export function GenerateScheduleModal({
 
   if (!isOpen) return null;
 
-  const canGenerate = branch && schedule && sessions.length > 0;
+  const canGenerate =
+    !!branch &&
+    !!schedule &&
+    sessions.length > 0 &&
+    sessions.every((s) => s.branch_id === branch.id && s.schedule_id === schedule.id);
 
   const handleAction = async (action: ActionType) => {
     if (!branch || !schedule || !action) return;
+    if (!canGenerate) return;
     
     setLoading(action);
     setError(null);

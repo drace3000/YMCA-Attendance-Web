@@ -204,6 +204,13 @@ export default function SchedulingPage() {
 
   const selectedSchedule = schedules.find((s) => s.id === selectedScheduleId);
   const selectedBranch = branches.find((b) => b.id === selectedBranchId);
+  const hasCurrentSessionsForSelection = useMemo(() => {
+    if (!selectedBranchId || !selectedScheduleId) return false;
+    if (sessionsForPrint.length === 0) return false;
+    return sessionsForPrint.every(
+      (s) => s.branch_id === selectedBranchId && s.schedule_id === selectedScheduleId
+    );
+  }, [sessionsForPrint, selectedBranchId, selectedScheduleId]);
 
   // Compute unique dates from sessions (sorted ascending)
   const uniqueDates = useMemo(() => {
@@ -268,7 +275,9 @@ export default function SchedulingPage() {
   useEffect(() => {
     setSelectedDate("");
     setSelectedWeekStart("");
-  }, [selectedBranchId, selectedScheduleId]);
+    // Clear print sessions so print actions are disabled until current selection loads
+    setSessionsForPrint([]);
+  }, [selectedBranchId, selectedScheduleId, selectedProgramGroupId]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -279,7 +288,7 @@ export default function SchedulingPage() {
           {/* Print Schedule Button */}
           <button
             onClick={() => setGenerateModalOpen(true)}
-            disabled={!selectedBranch || !selectedSchedule}
+            disabled={!selectedBranch || !selectedSchedule || !hasCurrentSessionsForSelection}
             className="btn-pill flex items-center gap-2 bg-[var(--cta)] px-4 py-2 text-sm font-medium text-[var(--cta-foreground)] shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Printer className="h-4 w-4" />
