@@ -13,6 +13,7 @@ type RecipientRow = {
   state: string | null;
   zip_code: string | null;
   on_hold: boolean;
+  recipient_type: "Administrator" | "Normal";
   created_at: string;
 };
 
@@ -26,6 +27,7 @@ type CreateRecipientPayload = {
   city?: string;
   state?: string;
   zip_code?: string;
+  recipient_type?: "Administrator" | "Normal";
 };
 
 type UpdateRecipientPayload = {
@@ -39,6 +41,7 @@ type UpdateRecipientPayload = {
   state?: string;
   zip_code?: string;
   on_hold?: boolean;
+  recipient_type?: "Administrator" | "Normal";
 };
 
 // Validation patterns
@@ -76,7 +79,7 @@ export async function GET(req: Request) {
 
   const { data, error } = await supabase
     .from("branch_schedule_recipients")
-    .select("id, branch_id, email, first_name, last_name, phone, address, city, state, zip_code, on_hold, created_at")
+    .select("id, branch_id, email, first_name, last_name, phone, address, city, state, zip_code, on_hold, recipient_type, created_at")
     .eq("branch_id", branchId)
     .order("on_hold", { ascending: true })
     .order("email", { ascending: true });
@@ -99,7 +102,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { branch_id, email, first_name, last_name, phone, address, city, state, zip_code } = body;
+  const { branch_id, email, first_name, last_name, phone, address, city, state, zip_code, recipient_type } = body;
 
   if (!branch_id) {
     return NextResponse.json({ error: "branch_id is required" }, { status: 400 });
@@ -154,6 +157,7 @@ export async function POST(req: Request) {
       city: city?.trim() || null,
       state: state?.trim().toUpperCase() || null,
       zip_code: zip_code?.trim() || null,
+      recipient_type: recipient_type || "Normal",
     })
     .select()
     .single();
@@ -176,7 +180,7 @@ export async function PUT(req: Request) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { id, email, first_name, last_name, phone, address, city, state, zip_code, on_hold } = body;
+  const { id, email, first_name, last_name, phone, address, city, state, zip_code, on_hold, recipient_type } = body;
 
   if (!id) {
     return NextResponse.json({ error: "id is required" }, { status: 400 });
@@ -240,6 +244,7 @@ export async function PUT(req: Request) {
   if (city !== undefined) updates.city = city?.trim() || null;
   if (state !== undefined) updates.state = state?.trim().toUpperCase() || null;
   if (on_hold !== undefined) updates.on_hold = !!on_hold;
+  if (recipient_type !== undefined) updates.recipient_type = recipient_type;
 
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "No fields to update" }, { status: 400 });

@@ -16,6 +16,7 @@ type Recipient = {
   state: string | null;
   zip_code: string | null;
   on_hold: boolean;
+  recipient_type: "Administrator" | "Normal";
   created_at: string;
 };
 
@@ -28,6 +29,7 @@ type FormData = {
   city: string;
   state: string;
   zip_code: string;
+  recipient_type: "Administrator" | "Normal";
 };
 
 const emptyForm: FormData = {
@@ -39,6 +41,7 @@ const emptyForm: FormData = {
   city: "",
   state: "",
   zip_code: "",
+  recipient_type: "Normal",
 };
 
 // Validation patterns
@@ -161,6 +164,7 @@ export function RecipientsTab() {
         city: formData.city.trim() || undefined,
         state: formData.state.trim() || undefined,
         zip_code: formData.zip_code.trim() || undefined,
+        recipient_type: formData.recipient_type,
       };
 
       if (editingId) {
@@ -226,6 +230,7 @@ export function RecipientsTab() {
       city: recipient.city || "",
       state: recipient.state || "",
       zip_code: recipient.zip_code || "",
+      recipient_type: recipient.recipient_type || "Normal",
     });
     setFormOnHold(!!recipient.on_hold);
     setFormError(null);
@@ -322,8 +327,8 @@ export function RecipientsTab() {
             </div>
           )}
           <div className="space-y-4">
-            {/* Row 1: Email and Phone */}
-            <div className="grid gap-4 sm:grid-cols-2">
+            {/* Row 1: Email, Phone, and Recipient Type */}
+            <div className="grid gap-4 sm:grid-cols-3">
               <div>
                 <label className="mb-1 block text-sm font-medium text-foreground/90">
                   Email <span className="text-red-400">*</span>
@@ -361,6 +366,22 @@ export function RecipientsTab() {
                 {validationErrors.phone && (
                   <p className="mt-1 text-xs text-red-400">{validationErrors.phone}</p>
                 )}
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-foreground/90">
+                  Recipient Type
+                </label>
+                <select
+                  value={formData.recipient_type}
+                  onChange={(e) => updateField("recipient_type", e.target.value as "Administrator" | "Normal")}
+                  className="w-full rounded-xl border border-white/15 bg-black/20 px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/50"
+                >
+                  <option value="Normal">Normal</option>
+                  <option value="Administrator">Administrator</option>
+                </select>
+                <p className="mt-1 text-xs text-foreground/50">
+                  Admins receive system error notifications
+                </p>
               </div>
             </div>
 
@@ -533,6 +554,7 @@ export function RecipientsTab() {
                 <tr>
                   <th className="px-4 py-2 text-left font-semibold">Email</th>
                   <th className="px-4 py-2 text-left font-semibold">Name</th>
+                  <th className="px-4 py-2 text-left font-semibold">Type</th>
                   <th className="hidden px-4 py-2 text-left font-semibold md:table-cell">Phone</th>
                   <th className="hidden px-4 py-2 text-left font-semibold lg:table-cell">Location</th>
                   <th className="px-4 py-2 text-right font-semibold">Action</th>
@@ -573,6 +595,15 @@ export function RecipientsTab() {
                         </td>
                         <td className="px-4 py-2 text-foreground">
                           {displayName || <span className="text-muted-foreground">—</span>}
+                        </td>
+                        <td className="px-4 py-2">
+                          {recipient.recipient_type === "Administrator" ? (
+                            <span className="rounded-full bg-purple-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-purple-300">
+                              Admin
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground text-xs">Normal</span>
+                          )}
                         </td>
                         <td className="hidden px-4 py-2 text-foreground md:table-cell">
                           {recipient.phone || <span className="text-muted-foreground">—</span>}
@@ -633,7 +664,7 @@ export function RecipientsTab() {
                       {/* Mobile expanded details */}
                       {isExpanded && (
                         <tr key={`${recipient.id}-details`} className="md:hidden bg-muted/30">
-                          <td colSpan={5} className="px-4 py-2">
+                          <td colSpan={6} className="px-4 py-2">
                             <div className="space-y-1 text-sm">
                               {recipient.phone && (
                                 <div>
