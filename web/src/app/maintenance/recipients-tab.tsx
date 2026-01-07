@@ -1,8 +1,13 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useState } from "react";
-import { Mail, Plus, Trash2, AlertCircle, ChevronDown, ChevronUp, Pencil, PauseCircle, PlayCircle } from "lucide-react";
+import { Mail, Plus, Trash2, AlertCircle, ChevronDown, ChevronUp, Pencil, PauseCircle, PlayCircle, Shield, User } from "lucide-react";
 import { useThemeSettings } from "@/components/theme-settings-provider";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 type Recipient = {
   id: string;
@@ -97,6 +102,9 @@ export function RecipientsTab() {
 
   // Expanded rows for mobile view
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  
+  // Recipient type dropdown
+  const [typeDropdownOpen, setTypeDropdownOpen] = useState(false);
 
   const loadRecipients = useCallback(async () => {
     if (!branch.id) return;
@@ -371,14 +379,60 @@ export function RecipientsTab() {
                 <label className="mb-1 block text-sm font-medium text-foreground/90">
                   Recipient Type
                 </label>
-                <select
-                  value={formData.recipient_type}
-                  onChange={(e) => updateField("recipient_type", e.target.value as "Administrator" | "Normal")}
-                  className="w-full rounded-xl border border-white/15 bg-black/20 px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/50"
-                >
-                  <option value="Normal">Normal</option>
-                  <option value="Administrator">Administrator</option>
-                </select>
+                <Popover open={typeDropdownOpen} onOpenChange={setTypeDropdownOpen}>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-between rounded-xl border border-white/15 bg-black/20 px-3 py-2 text-sm text-foreground transition hover:bg-black/30"
+                    >
+                      <span className="flex items-center gap-2">
+                        {formData.recipient_type === "Administrator" ? (
+                          <Shield className="h-4 w-4 text-purple-400" />
+                        ) : (
+                          <User className="h-4 w-4 text-muted-foreground" />
+                        )}
+                        {formData.recipient_type}
+                      </span>
+                      <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    align="start"
+                    sideOffset={4}
+                    className="w-[200px] rounded-xl border border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] p-1 shadow-xl backdrop-blur-md"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        updateField("recipient_type", "Normal");
+                        setTypeDropdownOpen(false);
+                      }}
+                      className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition ${
+                        formData.recipient_type === "Normal"
+                          ? "bg-[var(--cta)] text-[var(--cta-foreground)]"
+                          : "text-[var(--brand-ink)] hover:bg-[var(--brand-strong)] hover:text-white"
+                      }`}
+                    >
+                      <User className="h-4 w-4" />
+                      Normal
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        updateField("recipient_type", "Administrator");
+                        setTypeDropdownOpen(false);
+                      }}
+                      className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition ${
+                        formData.recipient_type === "Administrator"
+                          ? "bg-[var(--cta)] text-[var(--cta-foreground)]"
+                          : "text-[var(--brand-ink)] hover:bg-[var(--brand-strong)] hover:text-white"
+                      }`}
+                    >
+                      <Shield className="h-4 w-4" />
+                      Administrator
+                    </button>
+                  </PopoverContent>
+                </Popover>
                 <p className="mt-1 text-xs text-foreground/50">
                   Admins receive system error notifications
                 </p>
