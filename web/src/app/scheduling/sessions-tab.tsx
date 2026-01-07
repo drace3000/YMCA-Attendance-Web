@@ -97,6 +97,12 @@ export function SessionsTab({ scheduleId, branchId, refreshKey, onSessionsLoaded
   const [classDropdownOpen, setClassDropdownOpen] = useState(false);
   const [locationDropdownOpen, setLocationDropdownOpen] = useState(false);
   const [instructorDropdownOpen, setInstructorDropdownOpen] = useState(false);
+  
+  // Refs for dropdown scroll containers
+  const dayDropdownRef = useRef<HTMLDivElement>(null);
+  const classDropdownRef = useRef<HTMLDivElement>(null);
+  const locationDropdownRef = useRef<HTMLDivElement>(null);
+  const instructorDropdownRef = useRef<HTMLDivElement>(null);
 
   const fetchReferenceData = useCallback(async () => {
     try {
@@ -171,6 +177,35 @@ export function SessionsTab({ scheduleId, branchId, refreshKey, onSessionsLoaded
     setSessions([]); // Clear stale data immediately
     fetchSessions();
   }, [scheduleId, branchId, refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-scroll dropdowns to show selected items when opened
+  useEffect(() => {
+    if (dayDropdownOpen && dayDropdownRef.current && editForm.day_of_week) {
+      const selected = dayDropdownRef.current.querySelector('[data-selected="true"]');
+      selected?.scrollIntoView({ block: "nearest" });
+    }
+  }, [dayDropdownOpen, editForm.day_of_week]);
+
+  useEffect(() => {
+    if (classDropdownOpen && classDropdownRef.current && editForm.class_id) {
+      const selected = classDropdownRef.current.querySelector('[data-selected="true"]');
+      selected?.scrollIntoView({ block: "nearest" });
+    }
+  }, [classDropdownOpen, editForm.class_id]);
+
+  useEffect(() => {
+    if (locationDropdownOpen && locationDropdownRef.current && editForm.location_id) {
+      const selected = locationDropdownRef.current.querySelector('[data-selected="true"]');
+      selected?.scrollIntoView({ block: "nearest" });
+    }
+  }, [locationDropdownOpen, editForm.location_id]);
+
+  useEffect(() => {
+    if (instructorDropdownOpen && instructorDropdownRef.current && editForm.instructor_ids.length > 0) {
+      const selected = instructorDropdownRef.current.querySelector('[data-selected="true"]');
+      selected?.scrollIntoView({ block: "nearest" });
+    }
+  }, [instructorDropdownOpen, editForm.instructor_ids]);
 
   const handleEdit = (session: Session) => {
     setEditingId(session.id);
@@ -1118,10 +1153,11 @@ export function SessionsTab({ scheduleId, branchId, refreshKey, onSessionsLoaded
                         </button>
                       </PopoverTrigger>
                       <PopoverContent align="start" sideOffset={4} className="w-[120px] rounded-xl border border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] p-1 shadow-xl backdrop-blur-md">
-                        <div className="max-h-[200px] overflow-y-auto">
+                        <div ref={dayDropdownRef} className="max-h-[200px] overflow-y-auto">
                           {DAY_OPTIONS.map((d) => (
                             <button
                               key={d}
+                              data-selected={d === editForm.day_of_week}
                               onClick={() => { setEditForm((f) => ({ ...f, day_of_week: d })); setDayDropdownOpen(false); }}
                               className={`flex w-full items-center rounded-lg px-2 py-1.5 text-left text-sm transition ${d === editForm.day_of_week ? "bg-[var(--cta)] text-[var(--cta-foreground)]" : "text-[var(--brand-ink)] hover:bg-[var(--brand-strong)] hover:text-white"}`}
                             >
@@ -1152,10 +1188,11 @@ export function SessionsTab({ scheduleId, branchId, refreshKey, onSessionsLoaded
                         </button>
                       </PopoverTrigger>
                       <PopoverContent align="start" sideOffset={4} className="w-[200px] rounded-xl border border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] p-1 shadow-xl backdrop-blur-md">
-                        <div className="max-h-[250px] overflow-y-auto">
+                        <div ref={classDropdownRef} className="max-h-[250px] overflow-y-auto">
                           {classes.map((c) => (
                             <button
                               key={c.id}
+                              data-selected={c.id === editForm.class_id}
                               onClick={() => { setEditForm((f) => ({ ...f, class_id: c.id })); setClassDropdownOpen(false); }}
                               className={`flex w-full items-center rounded-lg px-2 py-1.5 text-left text-sm transition ${c.id === editForm.class_id ? "bg-[var(--cta)] text-[var(--cta-foreground)]" : "text-[var(--brand-ink)] hover:bg-[var(--brand-strong)] hover:text-white"}`}
                             >
@@ -1176,10 +1213,11 @@ export function SessionsTab({ scheduleId, branchId, refreshKey, onSessionsLoaded
                         </button>
                       </PopoverTrigger>
                       <PopoverContent align="start" sideOffset={4} className="w-[220px] rounded-xl border border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] p-1 shadow-xl backdrop-blur-md">
-                        <div className="max-h-[250px] overflow-y-auto">
+                        <div ref={locationDropdownRef} className="max-h-[250px] overflow-y-auto">
                           {locations.map((l) => (
                             <button
                               key={l.id}
+                              data-selected={l.id === editForm.location_id}
                               onClick={() => { setEditForm((f) => ({ ...f, location_id: l.id })); setLocationDropdownOpen(false); }}
                               className={`flex w-full items-center rounded-lg px-2 py-1.5 text-left text-sm transition ${l.id === editForm.location_id ? "bg-[var(--cta)] text-[var(--cta-foreground)]" : "text-[var(--brand-ink)] hover:bg-[var(--brand-strong)] hover:text-white"}`}
                             >
@@ -1208,10 +1246,11 @@ export function SessionsTab({ scheduleId, branchId, refreshKey, onSessionsLoaded
                         </button>
                       </PopoverTrigger>
                       <PopoverContent align="start" sideOffset={4} className="w-[200px] rounded-xl border border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] p-1 shadow-xl backdrop-blur-md">
-                        <div className="max-h-[250px] overflow-y-auto">
+                        <div ref={instructorDropdownRef} className="max-h-[250px] overflow-y-auto">
                           {instructors.map((inst) => (
                             <button
                               key={inst.id}
+                              data-selected={editForm.instructor_ids.includes(inst.id)}
                               onClick={() => toggleInstructor(inst.id)}
                               className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition ${editForm.instructor_ids.includes(inst.id) ? "bg-[var(--cta)] text-[var(--cta-foreground)]" : "text-[var(--brand-ink)] hover:bg-[var(--brand-strong)] hover:text-white"}`}
                             >
