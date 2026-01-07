@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
 
+type Params = { params: Promise<{ id: string }> };
+
 type ProgramGroup = {
   id: string;
   code: string;
@@ -21,12 +23,18 @@ type UpdateBranchGroupsPayload = {
   enabled_group_ids: string[];
 };
 
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 // GET - list all active groups with enabled flag for this branch
 export async function GET(
   _req: Request,
-  { params }: { params: { id: string } }
+  context: Params
 ) {
-  const branchId = params.id;
+  const { id: branchId } = await context.params;
+  if (!UUID_REGEX.test(branchId)) {
+    return NextResponse.json({ error: "Invalid branch id" }, { status: 400 });
+  }
   const supabase = createSupabaseServerClient();
 
   const { data: groups, error: groupsError } = await supabase
@@ -65,9 +73,12 @@ export async function GET(
 // PUT - update enabled groups for this branch (upsert true/false for all active groups)
 export async function PUT(
   req: Request,
-  { params }: { params: { id: string } }
+  context: Params
 ) {
-  const branchId = params.id;
+  const { id: branchId } = await context.params;
+  if (!UUID_REGEX.test(branchId)) {
+    return NextResponse.json({ error: "Invalid branch id" }, { status: 400 });
+  }
   const supabase = createSupabaseServerClient();
 
   let body: UpdateBranchGroupsPayload;
