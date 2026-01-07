@@ -1184,7 +1184,7 @@ export function SessionsTab({ scheduleId, branchId, refreshKey, onSessionsLoaded
                     <Popover open={locationDropdownOpen} onOpenChange={setLocationDropdownOpen}>
                       <PopoverTrigger asChild>
                         <button className="flex w-full items-center justify-between gap-1 rounded-lg border border-white/10 bg-card/60 px-2 py-1.5 text-sm shadow-sm ring-1 ring-white/5 transition hover:bg-card hover:ring-white/10">
-                          <span className="truncate">{locations.find((l) => l.id === editForm.location_id) ? `${locations.find((l) => l.id === editForm.location_id)?.code}` : "Location"}</span>
+                          <span className="truncate">{locations.find((l) => l.id === editForm.location_id) ? `${locations.find((l) => l.id === editForm.location_id)?.code} - ${locations.find((l) => l.id === editForm.location_id)?.name}` : "Location"}</span>
                           <ChevronDown className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
                         </button>
                       </PopoverTrigger>
