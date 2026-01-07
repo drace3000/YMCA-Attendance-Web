@@ -23,6 +23,16 @@ interface ErrorLog {
   occurrence_count: number;
   created_at: string;
   url: string | null;
+  source?: string | null;
+  context?: {
+    page?: string;
+    action?: string;
+    params?: Record<string, unknown>;
+    criticality?: "High" | "Medium" | "Low";
+    description?: string;
+    module?: string;
+  } | null;
+  stack_trace?: string | null;
 }
 
 interface AdminRecipient {
@@ -67,7 +77,7 @@ export async function POST(req: Request) {
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
     const { data: errors, error: queryError } = await supabase
       .from("error_logs")
-      .select("id, error_code, error_type, message, branch_name, user_email, occurrence_count, created_at, url")
+      .select("id, error_code, error_type, message, branch_name, user_email, occurrence_count, created_at, url, source, context, stack_trace")
       .is("notified_at", null)
       .is("resolved_at", null)
       .or(`occurrence_count.gte.3,created_at.lt.${oneHourAgo}`)
@@ -124,8 +134,19 @@ export async function POST(req: Request) {
     const errorSummary = errors.map(e => {
       const branchInfo = e.branch_name ? `Branch: ${e.branch_name}` : "Branch: N/A";
       const userInfo = e.user_email ? `User: ${e.user_email}` : "User: Anonymous";
+      const moduleInfo =
+        e.context?.module ||
+        e.context?.page ||
+        e.context?.action ||
+        e.source ||
+        "Module: N/A";
+      const criticality = e.context?.criticality || "Unspecified";
+      const detail = e.context?.description || e.message;
       const urlInfo = e.url ? `\n  URL: ${e.url}` : "";
-      return `- [${e.error_code}] ${e.error_type}: ${e.message} (${e.occurrence_count}x)\n  ${branchInfo} | ${userInfo}${urlInfo}`;
+      const stackPreview = e.stack_trace
+        ? `\n  Stack: ${e.stack_trace.split("\n").slice(0, 2).join(" | ")}`
+        : "";
+      return `- [${e.error_code}] ${e.error_type} (${e.occurrence_count}x)\n  ${branchInfo} | ${userInfo}\n  Module: ${moduleInfo}\n  Criticality: ${criticality}\n  Detail: ${detail}${urlInfo}${stackPreview}`;
     }).join("\n\n");
 
     const timestamp = new Date().toLocaleString("en-US", {

@@ -37,6 +37,32 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
+    const errorCode = body.error_code.trim();
+
+    // Normalize context to guarantee key fields for digest/email
+    const rawContext = (body.context ?? {}) as Record<string, unknown>;
+    const moduleName =
+      (rawContext.module as string | undefined) ??
+      (rawContext.page as string | undefined) ??
+      (rawContext.action as string | undefined) ??
+      body.source ??
+      "Unknown module";
+    const criticality =
+      (rawContext.criticality as "High" | "Medium" | "Low" | "Unspecified" | undefined) ??
+      "Unspecified";
+    const description =
+      (rawContext.description as string | undefined) ??
+      body.message ??
+      "No description provided";
+
+    const normalizedContext = {
+      ...rawContext,
+      module: moduleName,
+      criticality,
+      description,
+    };
+
+    const source = body.source ?? "client";
 
     // Check if similar error exists in last hour (for grouping)
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
@@ -76,23 +102,23 @@ export async function POST(req: Request) {
       return NextResponse.json({ 
         success: true, 
         action: "incremented",
-        error_code: body.error_code 
+        error_code: errorCode 
       });
     } else {
       // Insert new error
       const { error: insertError } = await supabase
         .from("error_logs")
         .insert({
-          error_code: body.error_code,
+          error_code: errorCode,
           error_type: body.error_type,
           message: body.message,
           branch_id: body.branch_id || null,
           branch_name: body.branch_name || null,
           user_id: body.user_id || null,
           user_email: body.user_email || null,
-          context: body.context || null,
+          context: normalizedContext,
           stack_trace: body.stack_trace || null,
-          source: body.source,
+          source,
           url: body.url || null,
           user_agent: body.user_agent || null,
         });
@@ -108,7 +134,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ 
         success: true, 
         action: "created",
-        error_code: body.error_code 
+        error_code: errorCode 
       });
     }
   } catch (err) {

@@ -102,9 +102,9 @@ export function SessionsTab({ scheduleId, branchId, refreshKey, onSessionsLoaded
   const fetchReferenceData = useCallback(async () => {
     try {
       const [classesRes, locationsRes, instructorsRes] = await Promise.all([
-        fetch("/api/maintenance/classes"),
-        fetch("/api/maintenance/locations"),
-        fetch("/api/maintenance/instructors"),
+        fetch("/api/maintenance/classes?include_inactive=true"),
+        fetch("/api/maintenance/locations?include_inactive=true"),
+        fetch("/api/maintenance/instructors?include_inactive=true"),
       ]);
       let nextClasses: ClassOption[] = [];
       let nextLocations: LocationOption[] = [];
@@ -126,10 +126,18 @@ export function SessionsTab({ scheduleId, branchId, refreshKey, onSessionsLoaded
       }
     } catch (err) {
       // PRODUCTION ERROR HANDLING - Do not remove
+      const error = err instanceof Error ? err : new Error(String(err));
       const errorCode = await logError(
-        err instanceof Error ? err : new Error(String(err)),
+        error,
         "API_ERROR",
-        { page: "scheduling/sessions", action: "fetchReferenceData" }
+        {
+          page: "scheduling",
+          action: "fetchReferenceData",
+          module: "Scheduler UI",
+          criticality: "High",
+          description: error.message,
+        },
+        error.stack
       );
       console.error(`[${errorCode}] Error fetching reference data:`, err);
     }
@@ -149,15 +157,20 @@ export function SessionsTab({ scheduleId, branchId, refreshKey, onSessionsLoaded
       onSessionsLoaded?.(loadedSessions);
     } catch (err) {
       // PRODUCTION ERROR HANDLING - Do not remove
+      const error = err instanceof Error ? err : new Error(String(err));
       const errorCode = await logError(
-        err instanceof Error ? err : new Error(String(err)),
+        error,
         "API_ERROR",
         { 
-          page: "scheduling/sessions", 
+          page: "scheduling", 
           action: "fetchSessions",
+          module: "Scheduler UI",
           branchId,
-          params: { scheduleId }
-        }
+          params: { scheduleId },
+          criticality: "High",
+          description: error.message,
+        },
+        error.stack
       );
       setError(getUserErrorMessage(errorCode));
     } finally {
