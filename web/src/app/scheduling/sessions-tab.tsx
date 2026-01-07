@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { Loader2, Trash2, Edit2, Check, X, Search, ChevronDown, Users, ArrowUpDown, ArrowUp, ArrowDown, Filter, Download, FileSpreadsheet, Eye, Printer } from "lucide-react";
 import * as XLSX from "xlsx";
+import { logError, getUserErrorMessage } from "@/lib/error-logger";
 import {
   Popover,
   PopoverArrow,
@@ -104,20 +105,32 @@ export function SessionsTab({ scheduleId, branchId, refreshKey, onSessionsLoaded
         fetch("/api/maintenance/locations"),
         fetch("/api/maintenance/instructors"),
       ]);
+      let nextClasses: ClassOption[] = [];
+      let nextLocations: LocationOption[] = [];
+      let nextInstructors: InstructorOption[] = [];
       if (classesRes.ok) {
         const data = await classesRes.json();
-        setClasses(Array.isArray(data) ? data : (data.classes || []));
+        nextClasses = Array.isArray(data) ? data : (data.classes || []);
+        setClasses(nextClasses);
       }
       if (locationsRes.ok) {
         const data = await locationsRes.json();
-        setLocations(Array.isArray(data) ? data : (data.locations || []));
+        nextLocations = Array.isArray(data) ? data : (data.locations || []);
+        setLocations(nextLocations);
       }
       if (instructorsRes.ok) {
         const data = await instructorsRes.json();
-        setInstructors(Array.isArray(data) ? data : (data.instructors || []));
+        nextInstructors = Array.isArray(data) ? data : (data.instructors || []);
+        setInstructors(nextInstructors);
       }
     } catch (err) {
-      console.error("Error fetching reference data:", err);
+      // PRODUCTION ERROR HANDLING - Do not remove
+      const errorCode = await logError(
+        err instanceof Error ? err : new Error(String(err)),
+        "API_ERROR",
+        { page: "scheduling/sessions", action: "fetchReferenceData" }
+      );
+      console.error(`[${errorCode}] Error fetching reference data:`, err);
     }
   }, []);
 
@@ -134,7 +147,18 @@ export function SessionsTab({ scheduleId, branchId, refreshKey, onSessionsLoaded
       setSessions(loadedSessions);
       onSessionsLoaded?.(loadedSessions);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "An error occurred");
+      // PRODUCTION ERROR HANDLING - Do not remove
+      const errorCode = await logError(
+        err instanceof Error ? err : new Error(String(err)),
+        "API_ERROR",
+        { 
+          page: "scheduling/sessions", 
+          action: "fetchSessions",
+          branchId,
+          params: { scheduleId }
+        }
+      );
+      setError(getUserErrorMessage(errorCode));
     } finally {
       setLoading(false);
     }

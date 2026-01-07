@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { Building2, Calendar, FileText, HelpCircle, RotateCcw, Table, ChevronDown, Printer } from "lucide-react";
 import { GenerateScheduleModal } from "@/components/schedule-report";
+import { logError } from "@/lib/error-logger";
 import {
   Popover,
   PopoverArrow,
@@ -81,7 +82,12 @@ export default function SchedulingPage() {
         }
       }
     } catch (err) {
-      console.error("Error fetching branches:", err);
+      // PRODUCTION ERROR HANDLING - Do not remove
+      await logError(
+        err instanceof Error ? err : new Error(String(err)),
+        "API_ERROR",
+        { page: "scheduling", action: "fetchBranches" }
+      );
     }
   }, [selectedBranchId]);
 
@@ -99,7 +105,12 @@ export default function SchedulingPage() {
         }
       }
     } catch (err) {
-      console.error("Error fetching schedules:", err);
+      // PRODUCTION ERROR HANDLING - Do not remove
+      await logError(
+        err instanceof Error ? err : new Error(String(err)),
+        "API_ERROR",
+        { page: "scheduling", action: "fetchSchedules" }
+      );
     } finally {
       setLoadingSchedules(false);
     }
