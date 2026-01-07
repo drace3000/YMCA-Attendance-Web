@@ -34,6 +34,7 @@ type InstructorOption = { id: string; nickname: string; first_name: string; last
 type SessionsTabProps = {
   scheduleId: string;
   branchId: string;
+  programGroupId: string;
   refreshKey: number;
   onSessionsLoaded?: (sessions: Session[]) => void;
   filterDate?: string;
@@ -64,7 +65,7 @@ type SearchMode = "narrow" | "find" | "smart";
 type SortColumn = "class" | "location" | "instructor";
 type SortDirection = "asc" | "desc";
 
-export function SessionsTab({ scheduleId, branchId, refreshKey, onSessionsLoaded, filterDate, filterWeekStart, scheduleMonthYear, branchName, scheduleName }: SessionsTabProps) {
+export function SessionsTab({ scheduleId, branchId, programGroupId, refreshKey, onSessionsLoaded, filterDate, filterWeekStart, scheduleMonthYear, branchName, scheduleName }: SessionsTabProps) {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [classes, setClasses] = useState<ClassOption[]>([]);
   const [locations, setLocations] = useState<LocationOption[]>([]);
@@ -100,9 +101,14 @@ export function SessionsTab({ scheduleId, branchId, refreshKey, onSessionsLoaded
   
 
   const fetchReferenceData = useCallback(async () => {
+    if (!branchId || !programGroupId) return;
     try {
       const [classesRes, locationsRes, instructorsRes] = await Promise.all([
-        fetch("/api/maintenance/classes?include_inactive=true"),
+        fetch(
+          `/api/maintenance/classes?include_inactive=true&branch_id=${encodeURIComponent(
+            branchId
+          )}&program_group_id=${encodeURIComponent(programGroupId)}`
+        ),
         fetch("/api/maintenance/locations?include_inactive=true"),
         fetch("/api/maintenance/instructors?include_inactive=true"),
       ]);
@@ -141,7 +147,7 @@ export function SessionsTab({ scheduleId, branchId, refreshKey, onSessionsLoaded
       );
       console.error(`[${errorCode}] Error fetching reference data:`, err);
     }
-  }, []);
+  }, [branchId, programGroupId]);
 
   const fetchSessions = useCallback(async () => {
     if (!scheduleId || !branchId) return;

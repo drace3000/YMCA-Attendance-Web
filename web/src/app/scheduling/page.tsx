@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Building2, Calendar, FileText, HelpCircle, RotateCcw, Table, ChevronDown, Printer } from "lucide-react";
+import { Building2, Calendar, FileText, HelpCircle, RotateCcw, Table, ChevronDown, Printer, Layers3 } from "lucide-react";
 import { GenerateScheduleModal } from "@/components/schedule-report";
 import { logError } from "@/lib/error-logger";
 import {
@@ -43,6 +43,15 @@ type Branch = {
   branch_manager_phone?: string;
 };
 
+type ProgramGroup = {
+  id: string;
+  code: string;
+  name: string;
+  description: string;
+  sort_order: number;
+  is_enabled: boolean;
+};
+
 const tabs: Tab[] = [
   { id: "print", label: "Print Preview", icon: <FileText className="h-4 w-4" /> },
   { id: "helper", label: "Helper", icon: <HelpCircle className="h-4 w-4" /> },
@@ -59,12 +68,18 @@ export default function SchedulingPage() {
   const [branches, setBranches] = useState<Branch[]>([]);
   const [selectedBranchId, setSelectedBranchId] = useState<string>("");
   const [branchDropdownOpen, setBranchDropdownOpen] = useState(false);
+  const [programGroups, setProgramGroups] = useState<ProgramGroup[]>([]);
+  const [selectedProgramGroupId, setSelectedProgramGroupId] = useState<string>("");
+  const [groupDropdownOpen, setGroupDropdownOpen] = useState(false);
+  const [loadingGroups, setLoadingGroups] = useState(false);
   const [sessionsForPrint, setSessionsForPrint] = useState<Session[]>([]);
   const [generateModalOpen, setGenerateModalOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string>("");
   const [dateDropdownOpen, setDateDropdownOpen] = useState(false);
   const [selectedWeekStart, setSelectedWeekStart] = useState<string>("");
   const [weekDropdownOpen, setWeekDropdownOpen] = useState(false);
+
+  const selectedProgramGroup = programGroups.find((g) => g.id === selectedProgramGroupId);
 
   // Fetch branches
   const fetchBranches = useCallback(async () => {
@@ -91,11 +106,48 @@ export default function SchedulingPage() {
     }
   }, [selectedBranchId]);
 
+  // Fetch enabled program groups for selected branch
+  const fetchProgramGroups = useCallback(async () => {
+    if (!selectedBranchId) return;
+    setLoadingGroups(true);
+    try {
+      const res = await fetch(`/api/branches/${selectedBranchId}/program-groups`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Failed to load program groups");
+      const allGroups: ProgramGroup[] = Array.isArray(data.groups) ? data.groups : [];
+      const enabledGroups = allGroups.filter((g) => g.is_enabled);
+      setProgramGroups(enabledGroups);
+
+      // Default to GroupX if enabled, otherwise first enabled group
+      if (enabledGroups.length > 0) {
+        const groupX = enabledGroups.find((g) => g.code === "GroupX");
+        const defaultId = groupX?.id ?? enabledGroups[0].id;
+        setSelectedProgramGroupId((prev) => (prev && enabledGroups.some((g) => g.id === prev) ? prev : defaultId));
+      } else {
+        setSelectedProgramGroupId("");
+      }
+    } catch (err) {
+      // PRODUCTION ERROR HANDLING - Do not remove
+      await logError(
+        err instanceof Error ? err : new Error(String(err)),
+        "API_ERROR",
+        { page: "scheduling", action: "fetchProgramGroups", branchId: selectedBranchId }
+      );
+      setProgramGroups([]);
+      setSelectedProgramGroupId("");
+    } finally {
+      setLoadingGroups(false);
+    }
+  }, [selectedBranchId]);
+
   // Fetch schedules
   const fetchSchedules = useCallback(async () => {
     setLoadingSchedules(true);
     try {
-      const res = await fetch("/api/scheduling/schedules");
+      const params = new URLSearchParams();
+      if (selectedBranchId) params.set("branch_id", selectedBranchId);
+      if (selectedProgramGroupId) params.set("program_group_id", selectedProgramGroupId);
+      const res = await fetch(`/api/scheduling/schedules?${params}`);
       if (res.ok) {
         const data = await res.json();
         setSchedules(data.schedules || []);
@@ -109,17 +161,26 @@ export default function SchedulingPage() {
       await logError(
         err instanceof Error ? err : new Error(String(err)),
         "API_ERROR",
-        { page: "scheduling", action: "fetchSchedules" }
+        { page: "scheduling", action: "fetchSchedules", branchId: selectedBranchId, params: { programGroupId: selectedProgramGroupId } }
       );
     } finally {
       setLoadingSchedules(false);
     }
-  }, [selectedScheduleId]);
+  }, [selectedScheduleId, selectedBranchId, selectedProgramGroupId]);
 
   useEffect(() => {
     fetchBranches();
-    fetchSchedules();
-  }, [fetchBranches, fetchSchedules]);
+  }, [fetchBranches]);
+
+  useEffect(() => {
+    void fetchProgramGroups();
+    // Reset schedule selection when branch changes
+    setSelectedScheduleId("");
+  }, [fetchProgramGroups, selectedBranchId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    void fetchSchedules();
+  }, [fetchSchedules]);
 
   const handleRefresh = () => {
     if (activeTab !== "helper") {
@@ -313,6 +374,66 @@ export default function SchedulingPage() {
           </Popover>
         </div>
 
+        {/* Group Selector */}
+        <div className="flex items-center gap-2">
+          <label className="text-sm font-medium">Group:</label>
+          <Popover open={groupDropdownOpen} onOpenChange={setGroupDropdownOpen}>
+            <PopoverTrigger asChild>
+              <button
+                className="btn-pill flex min-w-[200px] items-center justify-between gap-2 border border-white/10 bg-card/60 px-4 py-2 text-sm shadow-sm ring-1 ring-white/5 transition hover:bg-card hover:ring-white/10"
+                disabled={loadingGroups || programGroups.length === 0}
+              >
+                <span className="flex items-center gap-2">
+                  <Layers3 className="h-4 w-4 text-muted-foreground" />
+                  {loadingGroups
+                    ? "Loading..."
+                    : selectedProgramGroup?.code || "Select a group"}
+                </span>
+                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent
+              align="start"
+              sideOffset={4}
+              className="w-[260px] rounded-xl border border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] p-1 shadow-xl backdrop-blur-md"
+            >
+              <div className="max-h-[300px] overflow-y-auto">
+                {programGroups.map((g) => (
+                  <button
+                    key={g.id}
+                    onClick={() => {
+                      setSelectedProgramGroupId(g.id);
+                      setSelectedScheduleId("");
+                      setGroupDropdownOpen(false);
+                    }}
+                    className={`flex w-full items-start justify-between gap-3 rounded-lg px-3 py-2 text-left text-sm transition ${
+                      g.id === selectedProgramGroupId
+                        ? "bg-[var(--cta)] text-[var(--cta-foreground)]"
+                        : "text-[var(--brand-ink)] hover:bg-[var(--brand-strong)] hover:text-white"
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <Layers3 className="h-4 w-4" />
+                        <span className="font-semibold">{g.name}</span>
+                        <span className="rounded-full bg-white/10 px-2 py-0.5 font-mono text-[11px]">
+                          {g.code}
+                        </span>
+                      </div>
+                      <div className="mt-0.5 text-xs opacity-90">{g.description}</div>
+                    </div>
+                  </button>
+                ))}
+                {programGroups.length === 0 && (
+                  <div className="px-3 py-2 text-sm text-[var(--brand-ink)]/70">
+                    No groups enabled for this branch. Enable groups in Settings.
+                  </div>
+                )}
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
+
         {/* Schedule Selector */}
         <div className="flex items-center gap-2">
           <label className="text-sm font-medium">Schedule:</label>
@@ -320,7 +441,7 @@ export default function SchedulingPage() {
             <PopoverTrigger asChild>
               <button
                 className="btn-pill flex min-w-[200px] items-center justify-between gap-2 border border-white/10 bg-card/60 px-4 py-2 text-sm shadow-sm ring-1 ring-white/5 transition hover:bg-card hover:ring-white/10"
-                disabled={loadingSchedules}
+                disabled={loadingSchedules || !selectedProgramGroupId}
               >
                 <span className="flex items-center gap-2">
                   <Calendar className="h-4 w-4 text-muted-foreground" />
@@ -506,6 +627,7 @@ export default function SchedulingPage() {
           <SessionsTab
             scheduleId={selectedScheduleId}
             branchId={selectedBranchId}
+            programGroupId={selectedProgramGroupId}
             refreshKey={refreshKey}
             onSessionsLoaded={setSessionsForPrint}
             filterDate={selectedDate}

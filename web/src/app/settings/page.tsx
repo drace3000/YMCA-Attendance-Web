@@ -17,6 +17,15 @@ type BranchManagerData = {
   phone: string;
 };
 
+type ProgramGroupOption = {
+  id: string;
+  code: string;
+  name: string;
+  description: string;
+  sort_order: number;
+  is_enabled: boolean;
+};
+
 // Validation patterns
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // Phone format: (1234) 567-8901 ext 12345 (extension optional)
@@ -72,6 +81,13 @@ export default function SettingsPage() {
   const [validationErrors, setValidationErrors] = useState<{ email?: string; phone?: string }>({});
   const [dialogError, setDialogError] = useState<string | null>(null);
 
+  // Program groups (per-branch enablement)
+  const [programGroups, setProgramGroups] = useState<ProgramGroupOption[]>([]);
+  const [loadingGroups, setLoadingGroups] = useState(false);
+  const [groupsError, setGroupsError] = useState<string | null>(null);
+  const [savingGroups, setSavingGroups] = useState(false);
+  const [groupsSaveStatus, setGroupsSaveStatus] = useState<"idle" | "success" | "error">("idle");
+
   useEffect(() => {
     const load = async () => {
       setLoadingBranches(true);
@@ -112,6 +128,51 @@ export default function SettingsPage() {
     }
     setManagerSaveStatus("idle");
   }, [branch.id, branchManagerData]);
+
+  // Load program groups for selected branch
+  useEffect(() => {
+    const load = async () => {
+      if (!branch?.id) return;
+      setLoadingGroups(true);
+      setGroupsError(null);
+      setGroupsSaveStatus("idle");
+      try {
+        const res = await fetch(`/api/branches/${branch.id}/program-groups`);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error ?? "Failed to load program groups");
+        const groups = Array.isArray(data.groups) ? data.groups : [];
+        setProgramGroups(groups);
+      } catch (e) {
+        setGroupsError(e instanceof Error ? e.message : "Failed to load program groups");
+      } finally {
+        setLoadingGroups(false);
+      }
+    };
+    void load();
+  }, [branch?.id]);
+
+  const handleSaveGroups = async () => {
+    setGroupsError(null);
+    setSavingGroups(true);
+    setGroupsSaveStatus("idle");
+    try {
+      const enabledIds = programGroups.filter((g) => g.is_enabled).map((g) => g.id);
+      const res = await fetch(`/api/branches/${branch.id}/program-groups`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled_group_ids: enabledIds }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Failed to save program groups");
+      setGroupsSaveStatus("success");
+      setTimeout(() => setGroupsSaveStatus("idle"), 3000);
+    } catch (e) {
+      setGroupsSaveStatus("error");
+      setGroupsError(e instanceof Error ? e.message : "Failed to save program groups");
+    } finally {
+      setSavingGroups(false);
+    }
+  };
 
   const branchOptions = useMemo(() => {
     if (branches.some((b) => b.id === branch.id)) return branches;
@@ -244,6 +305,68 @@ export default function SettingsPage() {
           <div className="mt-2 text-xs text-foreground/70">
             Default: Eastside green {normalizeHex("#01A490")}
           </div>
+        </Card>
+      </section>
+
+      {/* Program Groups Section */}
+      <section>
+        <Card title="Program Groups" description={`Enable program groups for ${branch.name}. GroupX is the default for Eastside.`}>
+          {loadingGroups ? (
+            <div className="text-sm text-muted-foreground">Loading program groups…</div>
+          ) : groupsError ? (
+            <div className="rounded-xl border border-red-500/40 bg-red-950/30 p-3 text-sm text-red-100">
+              {groupsError}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="grid gap-2">
+                {programGroups.map((g) => (
+                  <label
+                    key={g.id}
+                    className="flex items-start justify-between gap-4 rounded-2xl border border-white/10 bg-black/15 px-4 py-3 transition hover:bg-black/20"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-foreground">{g.name}</span>
+                        <span className="rounded-full bg-white/10 px-2 py-0.5 font-mono text-[11px] text-foreground/80">
+                          {g.code}
+                        </span>
+                      </div>
+                      <div className="mt-0.5 text-sm text-foreground/75">{g.description}</div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={g.is_enabled}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setProgramGroups((prev) =>
+                          prev.map((x) => (x.id === g.id ? { ...x, is_enabled: checked } : x))
+                        );
+                        setGroupsSaveStatus("idle");
+                      }}
+                      className="mt-1 h-5 w-5 rounded border-white/20 bg-black/20"
+                    />
+                  </label>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleSaveGroups}
+                  disabled={savingGroups || loadingGroups}
+                  className="btn-pill bg-[var(--cta)] px-4 py-2 text-sm font-semibold text-[var(--cta-foreground)] shadow-sm transition hover:opacity-90 disabled:opacity-50"
+                >
+                  {savingGroups ? "Saving..." : "Save Program Groups"}
+                </button>
+                {groupsSaveStatus === "success" && (
+                  <span className="text-sm text-green-400">✓ Saved</span>
+                )}
+                {groupsSaveStatus === "error" && (
+                  <span className="text-sm text-red-400">Failed to save</span>
+                )}
+              </div>
+            </div>
+          )}
         </Card>
       </section>
 

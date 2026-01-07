@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Check, Edit2, Plus, Search, X } from "lucide-react";
+import { useThemeSettings } from "@/components/theme-settings-provider";
 import {
   Popover,
   PopoverArrow,
@@ -15,6 +16,8 @@ type ClassItem = {
   description: string | null;
   category: string | null;
   is_active: boolean;
+  branch_id: string;
+  program_group_id: string;
   created_at: string;
 };
 
@@ -22,6 +25,17 @@ type FormData = {
   name: string;
   description: string;
   category: string;
+  branch_id: string;
+  program_group_id: string;
+};
+
+type ProgramGroup = {
+  id: string;
+  code: string;
+  name: string;
+  description: string;
+  sort_order: number;
+  is_enabled: boolean;
 };
 
 // Trademark symbols available for class names
@@ -33,10 +47,15 @@ const TRADEMARK_SYMBOLS = [
 ];
 
 export function ClassesTab() {
+  const { branch } = useThemeSettings();
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showInactive, setShowInactive] = useState(false);
+
+  const [programGroups, setProgramGroups] = useState<ProgramGroup[]>([]);
+  const [selectedProgramGroupId, setSelectedProgramGroupId] = useState<string>("");
+  const [loadingGroups, setLoadingGroups] = useState(false);
 
   // Form state
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -45,6 +64,8 @@ export function ClassesTab() {
     name: "",
     description: "",
     category: "",
+    branch_id: branch.id,
+    program_group_id: "",
   });
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -71,6 +92,8 @@ export function ClassesTab() {
     try {
       const params = new URLSearchParams();
       if (showInactive) params.set("include_inactive", "true");
+      params.set("branch_id", branch.id);
+      if (selectedProgramGroupId) params.set("program_group_id", selectedProgramGroupId);
       const res = await fetch(`/api/maintenance/classes?${params}`);
       if (!res.ok) throw new Error("Failed to load classes");
       const data = await res.json();
@@ -80,11 +103,36 @@ export function ClassesTab() {
     } finally {
       setLoading(false);
     }
-  }, [showInactive]);
+  }, [showInactive, branch.id, selectedProgramGroupId]);
 
   useEffect(() => {
     void loadClasses();
   }, [loadClasses]);
+
+  // Load enabled program groups for this branch (default GroupX)
+  useEffect(() => {
+    const load = async () => {
+      setLoadingGroups(true);
+      try {
+        const res = await fetch(`/api/branches/${branch.id}/program-groups`);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error ?? "Failed to load program groups");
+        const allGroups: ProgramGroup[] = Array.isArray(data.groups) ? data.groups : [];
+        const enabled = allGroups.filter((g) => g.is_enabled);
+        setProgramGroups(enabled);
+        const groupX = enabled.find((g) => g.code === "GroupX");
+        const nextId = groupX?.id ?? enabled[0]?.id ?? "";
+        setSelectedProgramGroupId((prev) => (prev && enabled.some((g) => g.id === prev) ? prev : nextId));
+        setFormData((f) => ({ ...f, branch_id: branch.id, program_group_id: nextId }));
+      } catch {
+        setProgramGroups([]);
+        setSelectedProgramGroupId("");
+      } finally {
+        setLoadingGroups(false);
+      }
+    };
+    void load();
+  }, [branch.id]);
 
   // Validate name with debounce
   useEffect(() => {
@@ -96,9 +144,9 @@ export function ClassesTab() {
     const timeout = setTimeout(async () => {
       setValidatingName(true);
       try {
-        const params = new URLSearchParams({
-          check_name: formData.name.trim(),
-        });
+        const params = new URLSearchParams({ check_name: formData.name.trim() });
+        params.set("branch_id", formData.branch_id);
+        params.set("program_group_id", formData.program_group_id);
         if (editingId) {
           params.set("exclude_id", editingId);
         }
@@ -135,7 +183,13 @@ export function ClassesTab() {
   }, [showSymbolPicker]);
 
   const openNewForm = () => {
-    setFormData({ name: "", description: "", category: "" });
+    setFormData({
+      name: "",
+      description: "",
+      category: "",
+      branch_id: branch.id,
+      program_group_id: selectedProgramGroupId,
+    });
     setEditingId(null);
     setFormError(null);
     setNameExists(false);
@@ -147,6 +201,8 @@ export function ClassesTab() {
       name: classItem.name,
       description: classItem.description || "",
       category: classItem.category || "",
+      branch_id: classItem.branch_id,
+      program_group_id: classItem.program_group_id,
     });
     setEditingId(classItem.id);
     setFormError(null);
@@ -301,6 +357,29 @@ export function ClassesTab() {
             />
             Show inactive
           </label>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">Group:</span>
+            {loadingGroups ? (
+              <span className="text-xs text-muted-foreground">Loading…</span>
+            ) : programGroups.length === 0 ? (
+              <span className="text-xs text-muted-foreground">No enabled groups</span>
+            ) : (
+              <select
+                className="ymca-select w-44 text-sm font-semibold"
+                value={selectedProgramGroupId}
+                onChange={(e) => {
+                  setSelectedProgramGroupId(e.target.value);
+                  setFormData((f) => ({ ...f, program_group_id: e.target.value, branch_id: branch.id }));
+                }}
+              >
+                {programGroups.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.code} - {g.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
         </div>
 
         {/* Search and Filter Options */}
@@ -588,4 +667,5 @@ export function ClassesTab() {
     </div>
   );
 }
+
 

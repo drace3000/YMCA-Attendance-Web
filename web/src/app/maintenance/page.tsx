@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Building2, GraduationCap, HelpCircle, Mail, MapPin, RotateCcw } from "lucide-react";
+import { Building2, GraduationCap, HelpCircle, Layers3, Mail, MapPin, RotateCcw } from "lucide-react";
 import {
   Popover,
   PopoverArrow,
@@ -13,8 +13,9 @@ import { ClassesTab } from "./classes-tab";
 import { LocationsTab } from "./locations-tab";
 import { RecipientsTab } from "./recipients-tab";
 import { HelperTab } from "./helper-tab";
+import { GroupsTab } from "./groups-tab";
 
-type TabId = "instructors" | "classes" | "locations" | "recipients" | "helper";
+type TabId = "instructors" | "classes" | "locations" | "groups" | "recipients" | "helper";
 
 type Tab = {
   id: TabId;
@@ -26,6 +27,7 @@ const tabs: Tab[] = [
   { id: "instructors", label: "Instructors", icon: <GraduationCap className="h-4 w-4" /> },
   { id: "classes", label: "Classes", icon: <Building2 className="h-4 w-4" /> },
   { id: "locations", label: "Locations", icon: <MapPin className="h-4 w-4" /> },
+  { id: "groups", label: "Groups", icon: <Layers3 className="h-4 w-4" /> },
   { id: "recipients", label: "Recipients", icon: <Mail className="h-4 w-4" /> },
   { id: "helper", label: "Helper", icon: <HelpCircle className="h-4 w-4" /> },
 ];
@@ -50,6 +52,8 @@ export default function MaintenancePage() {
         return "Reload classes list from the database";
       case "locations":
         return "Reload locations list from the database";
+      case "groups":
+        return "Reload program groups list from the database";
       case "recipients":
         return "Reload email recipients list from the database";
       default:
@@ -129,6 +133,7 @@ export default function MaintenancePage() {
             {activeTab === "instructors" && <InstructorsTab key={`instructors-${refreshKey}`} />}
             {activeTab === "classes" && <ClassesTab key={`classes-${refreshKey}`} />}
             {activeTab === "locations" && <LocationsTab key={`locations-${refreshKey}`} />}
+            {activeTab === "groups" && <GroupsTab key={`groups-${refreshKey}`} />}
             {activeTab === "recipients" && <RecipientsTab key={`recipients-${refreshKey}`} />}
             {activeTab === "helper" && <HelperTab />}
           </div>
@@ -137,3 +142,4 @@ export default function MaintenancePage() {
     </div>
   );
 }
+
