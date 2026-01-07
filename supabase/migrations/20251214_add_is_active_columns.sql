@@ -33,3 +33,4 @@ WHERE is_active = true;
 COMMENT ON COLUMN instructors.is_active IS 'Soft delete flag. Inactive instructors are hidden from scheduling but preserved for historical reports.';
 COMMENT ON COLUMN classes.is_active IS 'Soft delete flag. Inactive classes are hidden from scheduling but preserved for historical reports.';
 COMMENT ON COLUMN locations.is_active IS 'Soft delete flag. Inactive locations are hidden from scheduling but preserved for historical reports.';
+

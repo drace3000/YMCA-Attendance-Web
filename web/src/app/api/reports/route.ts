@@ -380,17 +380,6 @@ export async function GET(req: Request) {
   const sat = byDayLocationAverages("SATURDAY");
   const sun = byDayLocationAverages("SUNDAY");
 
-  // #region agent log - debug row counts
-  console.log("[Reports API]", {
-    dateRange: `${toIsoDate(gteDate)} to ${toIsoDate(ltDate)}`,
-    filterColumn: useSessionDateFilter ? "session_date" : "effective_month",
-    totalRows: rows.length,
-    withHeadcount: withHeadcount.length,
-    totalAttendance,
-    sampleRow: rows[0] ? { id: rows[0].id, session_date: rows[0].session_date, effective_month: rows[0].effective_month } : null,
-  });
-  // #endregion
-
   const payload: ReportsPayload = {
     monthTotals: {
       totalAttendance,

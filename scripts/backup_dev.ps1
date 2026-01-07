@@ -103,3 +103,4 @@ Get-ChildItem -Path $backupsDir -Filter "dev_backup_*.backup" |
 Write-Host "`nTo restore this backup, use:" -ForegroundColor Yellow
 Write-Host "  docker exec -i $containerName pg_restore -U $dbUser -d $dbName --clean --if-exists < backup_file.backup" -ForegroundColor Gray
 Write-Host ""
+
