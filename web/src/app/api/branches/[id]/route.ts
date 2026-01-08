@@ -13,6 +13,8 @@ export async function GET(_req: Request, context: Params) {
     .select(
       `
         id,
+        code,
+        short_code,
         name,
         association:association_id (
           id,
@@ -34,6 +36,8 @@ export async function GET(_req: Request, context: Params) {
   }
 
   const branchName = data?.name ?? null;
+  const branchCode = data?.code ?? null;
+  const branchShortCode = data?.short_code ?? null;
   const associationName = data?.association?.name ?? null;
   const associationCode = data?.association?.code ?? null;
   const allianceName = data?.association?.alliance?.name ?? null;
@@ -42,6 +46,8 @@ export async function GET(_req: Request, context: Params) {
   return NextResponse.json({
     id,
     name: branchName,
+    code: branchCode,
+    short_code: branchShortCode,
     association_name: associationName,
     association_code: associationCode,
     alliance_name: allianceName,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Building2, ChevronRight, Globe2, Landmark, Search, ToggleLeft, ToggleRight } from "lucide-react";
 import { logError } from "@/lib/error-logger";
 
@@ -21,17 +21,21 @@ type Association = {
   short_name: string | null;
   alliance_id: string | null;
   state_code: string;
+  region: string | null;
   is_active: boolean;
 };
 
 type Branch = {
   id: string;
   code: string;
+  short_code: string | null;
   name: string;
   short_name: string | null;
   association_id: string;
   city: string | null;
   state_code: string | null;
+  zip: string | null;
+  phone: string | null;
   is_active: boolean;
   is_main_branch: boolean;
 };
@@ -41,6 +45,18 @@ type OrgPayload = {
   associations: Association[];
   branches: Branch[];
 };
+
+function formatNameWithYMCA(name: string): string {
+  return name
+    .split(" ")
+    .map((word) => {
+      const lower = word.toLowerCase();
+      if (lower === "ymca") return "YMCA";
+      if (lower === "ymcas") return "YMCAs";
+      return lower.charAt(0).toUpperCase() + lower.slice(1);
+    })
+    .join(" ");
+}
 
 export function OrganizationTab() {
   const [loading, setLoading] = useState(true);
@@ -55,6 +71,9 @@ export function OrganizationTab() {
 
   const [selectedAllianceId, setSelectedAllianceId] = useState<string | null>(null);
   const [selectedAssociationId, setSelectedAssociationId] = useState<string | null>(null);
+  const hasAutoSelectedDefault = useRef(false);
+  const hasScrolledToDefault = useRef(false);
+  const hasScrolledAssociation = useRef(false);
 
   const loadOrg = useCallback(async () => {
     setLoading(true);
@@ -90,6 +109,57 @@ export function OrganizationTab() {
   useEffect(() => {
     void loadOrg();
   }, [loadOrg]);
+
+  // Auto-select NY alliance and default association (prefer GROC) on initial load
+  useEffect(() => {
+    if (hasAutoSelectedDefault.current) return;
+    if (selectedAllianceId) return;
+    if (!alliances.length) return;
+
+    const nyAlliance = alliances.find((a) => a.code.toLowerCase() === "ny") || null;
+    const grocAssociation =
+      associations.find((a) => a.code.toLowerCase() === "groc") || null;
+
+    if (grocAssociation) {
+      if (grocAssociation.alliance_id) {
+        setSelectedAllianceId(grocAssociation.alliance_id);
+      } else if (nyAlliance) {
+        setSelectedAllianceId(nyAlliance.id);
+      }
+      setSelectedAssociationId(grocAssociation.id);
+      hasAutoSelectedDefault.current = true;
+      return;
+    }
+
+    if (nyAlliance) {
+      setSelectedAllianceId(nyAlliance.id);
+      const nyAssociation = associations.find((a) => a.alliance_id === nyAlliance.id);
+      if (nyAssociation) {
+        setSelectedAssociationId(nyAssociation.id);
+      }
+      hasAutoSelectedDefault.current = true;
+    }
+  }, [alliances, associations, selectedAllianceId]);
+
+  // Scroll alliances list to show the default NY selection on initial load
+  useEffect(() => {
+    if (hasScrolledToDefault.current) return;
+    if (!selectedAllianceId) return;
+    const el = document.querySelector<HTMLButtonElement>(`[data-alliance-id='${selectedAllianceId}']`);
+    if (!el) return;
+    el.scrollIntoView({ block: "start" });
+    hasScrolledToDefault.current = true;
+  }, [selectedAllianceId]);
+
+  // Scroll associations list to show the selected association near the top
+  useEffect(() => {
+    if (hasScrolledAssociation.current) return;
+    if (!selectedAssociationId) return;
+    const el = document.querySelector<HTMLButtonElement>(`[data-association-id='${selectedAssociationId}']`);
+    if (!el) return;
+    el.scrollIntoView({ block: "start" });
+    hasScrolledAssociation.current = true;
+  }, [selectedAssociationId]);
 
   const normalizedSearch = search.trim().toLowerCase();
 
@@ -132,12 +202,15 @@ export function OrganizationTab() {
 
     if (!normalizedSearch) return base;
     return base.filter((b) => {
+      const codeValue = (b.short_code ?? b.code ?? "").toLowerCase();
       return (
-        b.code.toLowerCase().includes(normalizedSearch) ||
+        codeValue.includes(normalizedSearch) ||
         b.name.toLowerCase().includes(normalizedSearch) ||
         (b.short_name ?? "").toLowerCase().includes(normalizedSearch) ||
         (b.city ?? "").toLowerCase().includes(normalizedSearch) ||
-        (b.state_code ?? "").toLowerCase().includes(normalizedSearch)
+        (b.state_code ?? "").toLowerCase().includes(normalizedSearch) ||
+        (b.zip ?? "").toLowerCase().includes(normalizedSearch) ||
+        (b.phone ?? "").toLowerCase().includes(normalizedSearch)
       );
     });
   }, [branches, normalizedSearch, selectedAllianceId, selectedAssociationId, associations]);
@@ -210,7 +283,9 @@ export function OrganizationTab() {
             <div className="flex items-center justify-between">
               <div className="inline-flex items-center gap-2 text-sm font-semibold text-foreground">
                 <Globe2 className="h-4 w-4" />
-                Alliances
+                <span>
+                  Alliances ({filteredAlliances.length})
+                </span>
               </div>
               {selectedAlliance ? (
                 <button
@@ -235,27 +310,29 @@ export function OrganizationTab() {
           <div className="max-h-[520px] overflow-auto">
             {filteredAlliances.map((a) => {
               const isSelected = selectedAllianceId === a.id;
+              const allianceNameDisplay = formatNameWithYMCA(a.name);
+              const allianceButtonClasses = `flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm transition hover:bg-muted/40 ${
+                isSelected ? "bg-[var(--cta)]/15 border-l-2 border-[var(--cta)] text-foreground" : ""
+              }`;
               return (
                 <button
                   key={a.id}
+                  data-alliance-id={a.id}
                   type="button"
                   onClick={() => {
                     setSelectedAllianceId((prev) => (prev === a.id ? null : a.id));
                     setSelectedAssociationId(null);
                   }}
-                  className={`flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm transition hover:bg-muted/40 ${
-                    isSelected ? "bg-[var(--cta)]/10" : ""
-                  }`}
+                  className={allianceButtonClasses}
                 >
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="rounded-md bg-white/10 px-2 py-0.5 text-xs font-semibold text-foreground">
+                      <span className="rounded-md bg-[var(--brand)]/80 px-2 py-0.5 text-xs font-semibold text-white">
                         {a.code.toUpperCase()}
                       </span>
-                      <span className="truncate font-semibold text-foreground">{a.name}</span>
+                      <span className="truncate font-semibold text-foreground">{allianceNameDisplay}</span>
                     </div>
                     <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                      <span>{a.alliance_type}</span>
                       {a.headquarters_state_code ? <span>HQ: {a.headquarters_state_code.toUpperCase()}</span> : null}
                       {!a.is_active ? <span className="text-red-300">inactive</span> : null}
                     </div>
@@ -276,7 +353,9 @@ export function OrganizationTab() {
             <div className="flex items-center justify-between">
               <div className="inline-flex items-center gap-2 text-sm font-semibold text-foreground">
                 <Landmark className="h-4 w-4" />
-                Associations
+                <span>
+                  Associations ({filteredAssociations.length})
+                </span>
               </div>
               {selectedAssociation ? (
                 <button
@@ -298,24 +377,26 @@ export function OrganizationTab() {
           <div className="max-h-[520px] overflow-auto">
             {filteredAssociations.map((a) => {
               const isSelected = selectedAssociationId === a.id;
+              const associationNameDisplay = formatNameWithYMCA(a.name);
+              const associationButtonClasses = `flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm transition hover:bg-muted/40 ${
+                isSelected ? "bg-[var(--cta)]/15 border-l-2 border-[var(--cta)] text-foreground" : ""
+              }`;
               return (
                 <button
                   key={a.id}
                   type="button"
+                  data-association-id={a.id}
                   onClick={() => setSelectedAssociationId((prev) => (prev === a.id ? null : a.id))}
-                  className={`flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm transition hover:bg-muted/40 ${
-                    isSelected ? "bg-[var(--cta)]/10" : ""
-                  }`}
+                  className={associationButtonClasses}
                 >
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="rounded-md bg-white/10 px-2 py-0.5 text-xs font-semibold text-foreground">
+                      <span className="rounded-md bg-[var(--brand)]/80 px-2 py-0.5 text-xs font-semibold text-white">
                         {a.code.toUpperCase()}
                       </span>
-                      <span className="truncate font-semibold text-foreground">{a.name}</span>
+                      <span className="truncate font-semibold text-foreground">{associationNameDisplay}</span>
                     </div>
                     <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                      <span>{a.state_code.toUpperCase()}</span>
                       {!a.is_active ? <span className="text-red-300">inactive</span> : null}
                     </div>
                   </div>
@@ -334,7 +415,9 @@ export function OrganizationTab() {
           <div className="border-b border-border px-4 py-3">
             <div className="inline-flex items-center gap-2 text-sm font-semibold text-foreground">
               <Building2 className="h-4 w-4" />
-              Branches
+              <span>
+                Branches ({filteredBranches.length})
+              </span>
             </div>
             {selectedAssociation ? (
               <div className="mt-2 text-xs text-muted-foreground">
@@ -350,25 +433,34 @@ export function OrganizationTab() {
 
           <div className="max-h-[520px] overflow-auto">
             {filteredBranches.map((b) => {
-              const assoc = associationById.get(b.association_id);
+              const codeDisplay = (b.short_code ?? b.code ?? "").toUpperCase();
               return (
                 <div key={b.id} className="px-4 py-3 text-sm hover:bg-muted/40">
                   <div className="flex items-center gap-2">
-                    <span className="rounded-md bg-white/10 px-2 py-0.5 text-xs font-semibold text-foreground">
-                      {b.code}
+                    <span className="rounded-md bg-[var(--brand)]/80 px-2 py-0.5 text-xs font-semibold text-white">
+                      {codeDisplay}
                     </span>
-                    <span className="truncate font-semibold text-foreground">{b.name}</span>
+                    <span className="font-semibold text-foreground">{b.name}</span>
+                  </div>
+                  <div className="mt-1 flex flex-col gap-1 text-xs">
+                    {(b.city || b.state_code || b.zip) ? (
+                      <span className="text-muted-foreground">
+                        {[
+                          b.city || null,
+                          b.state_code ? b.state_code.toUpperCase() : null,
+                          b.zip || null,
+                        ]
+                          .filter(Boolean)
+                          .join(", ")}
+                      </span>
+                    ) : null}
+                    {b.phone ? <span className="text-foreground">Ph: {b.phone}</span> : null}
+                    {!b.is_active ? <span className="text-red-300">inactive</span> : null}
                     {b.is_main_branch ? (
-                      <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-semibold text-emerald-300">
+                      <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-300 w-fit">
                         main
                       </span>
                     ) : null}
-                  </div>
-                  <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                    {assoc ? <span>Assoc: {assoc.code.toUpperCase()}</span> : null}
-                    {b.city ? <span>{b.city}</span> : null}
-                    {b.state_code ? <span>{b.state_code.toUpperCase()}</span> : null}
-                    {!b.is_active ? <span className="text-red-300">inactive</span> : null}
                   </div>
                 </div>
               );

@@ -13,7 +13,7 @@ import { getDefaultBranchThemeColor } from "@/lib/ymca-theme";
 type Mode = "light" | "dark";
 type SidebarPosition = "left" | "right";
 
-export type BranchOption = { id: string; name: string };
+export type BranchOption = { id: string; name: string; association_code?: string | null };
 
 type ThemeState = {
   brandColor: string;

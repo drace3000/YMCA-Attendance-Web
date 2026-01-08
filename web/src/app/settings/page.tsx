@@ -7,6 +7,7 @@ import { ThemeColorOption, YMCA_THEME_COLORS, normalizeHex } from "@/lib/ymca-th
 
 type BranchResponse = (BranchOption & { 
   theme_color?: string | null;
+  association?: { id: string; code: string } | null;
   branch_manager_name?: string | null;
   branch_manager_email?: string | null;
   branch_manager_phone?: string | null;
@@ -57,6 +58,18 @@ function formatPhoneInput(value: string): string {
   return out.trim();
 }
 
+function formatNameWithYMCA(name: string): string {
+  return name
+    .split(" ")
+    .map((word) => {
+      const lower = word.toLowerCase();
+      if (lower === "ymca") return "YMCA";
+      if (lower === "ymcas") return "YMCAs";
+      return lower.charAt(0).toUpperCase() + lower.slice(1);
+    })
+    .join(" ");
+}
+
 export default function SettingsPage() {
   const {
     branch,
@@ -70,6 +83,9 @@ export default function SettingsPage() {
   const [branchThemeColors, setBranchThemeColors] = useState<Record<string, string>>({
     [branch.id]: brandColor,
   });
+  const [allianceName, setAllianceName] = useState<string | null>(null);
+  const [associationName, setAssociationName] = useState<string | null>(null);
+  const [associationCode, setAssociationCode] = useState<string | null>(null);
   const [loadingBranches, setLoadingBranches] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [colorMenuOpen, setColorMenuOpen] = useState(false);
@@ -97,7 +113,17 @@ export default function SettingsPage() {
         const res = await fetch("/api/branches");
         if (!res.ok) throw new Error("Failed to load branches");
         const data: BranchResponse = await res.json();
-        setBranches(data.map(({ id, name }) => ({ id, name })));
+        const targetAssoc = (associationCode || "GROC").toLowerCase();
+        const filtered = data.filter(
+          ({ association }) => (association?.code ?? "").toLowerCase() === targetAssoc
+        );
+        const mapped = filtered.map(({ id, name, association }) => ({
+          id,
+          name,
+          association_code: association?.code ?? null,
+        }));
+        const hasCurrent = mapped.some((b) => b.id === branch.id);
+        setBranches(hasCurrent ? mapped : [...mapped, { id: branch.id, name: branch.name }]);
         const colorMap: Record<string, string> = {};
         const managerMap: Record<string, BranchManagerData> = {};
         for (const b of data) {
@@ -118,6 +144,26 @@ export default function SettingsPage() {
     };
     void load();
   }, []);
+
+  // Load alliance/association names for selected branch
+  useEffect(() => {
+    const loadOrgNames = async () => {
+      setAllianceName(null);
+      setAssociationName(null);
+      setAssociationCode(null);
+      try {
+        const res = await fetch(`/api/branches/${branch.id}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        setAllianceName(data.alliance_name ?? null);
+        setAssociationName(data.association_name ?? null);
+        if (data.association_code) setAssociationCode(data.association_code);
+      } catch {
+        // ignore; keep names null on error
+      }
+    };
+    void loadOrgNames();
+  }, [branch.id]);
 
   // Update manager form when branch changes
   useEffect(() => {
@@ -239,8 +285,18 @@ export default function SettingsPage() {
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
       <header className="rounded-3xl border border-border bg-panel-gradient p-6 shadow-sm ring-1 ring-white/10">
-        <p className="text-sm font-semibold uppercase tracking-wide text-foreground/80">
-          Settings
+        <p className="text-sm font-semibold uppercase tracking-wide text-foreground/80 flex items-center gap-2 flex-wrap">
+          <span>Settings</span>
+          {(allianceName || associationName) && (
+            <>
+              <span className="text-foreground/50">-</span>
+              <span className="text-yellow-300 font-semibold normal-case">
+                {allianceName ? <span>{formatNameWithYMCA(allianceName)}</span> : null}
+                {allianceName && associationName ? " - " : null}
+                {associationName ? <span>{associationName}</span> : null}
+              </span>
+            </>
+          )}
         </p>
         <h1 className="mt-1 text-3xl font-bold tracking-tight text-foreground">
           Customization

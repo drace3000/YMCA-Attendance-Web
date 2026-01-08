@@ -18,17 +18,21 @@ type AssociationRow = {
   short_name: string | null;
   alliance_id: string | null;
   state_code: string;
+  region: string | null;
   is_active: boolean;
 };
 
 type BranchRow = {
   id: string;
   code: string;
+  short_code: string | null;
   name: string;
   short_name: string | null;
   association_id: string;
   city: string | null;
   state_code: string | null;
+  zip: string | null;
+  phone: string | null;
   is_active: boolean;
   is_main_branch: boolean;
 };
@@ -85,18 +89,18 @@ export async function GET(req: Request) {
     let alliancesQuery = supabase
       .from("ymca_alliances")
       .select("id, code, name, short_name, alliance_type, headquarters_state_code, is_active")
-      .order("name", { ascending: true });
+      .order("code", { ascending: true });
     if (!includeInactive) alliancesQuery = alliancesQuery.eq("is_active", true);
 
     let associationsQuery = supabase
       .from("ymca_associations")
-      .select("id, code, name, short_name, alliance_id, state_code, is_active")
-      .order("name", { ascending: true });
+      .select("id, code, name, short_name, alliance_id, state_code, region, is_active")
+      .order("code", { ascending: true });
     if (!includeInactive) associationsQuery = associationsQuery.eq("is_active", true);
 
     let branchesQuery = supabase
       .from("ymca_branches")
-      .select("id, code, name, short_name, association_id, city, state_code, is_active, is_main_branch")
+      .select("id, code, short_code, name, short_name, association_id, city, state_code, zip, phone, is_active, is_main_branch")
       .order("name", { ascending: true });
     if (!includeInactive) branchesQuery = branchesQuery.eq("is_active", true);
 

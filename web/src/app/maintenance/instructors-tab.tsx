@@ -297,6 +297,7 @@ export function InstructorsTab() {
             <input
               ref={searchInputRef}
               type="text"
+              suppressHydrationWarning
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Search..."

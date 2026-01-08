@@ -5,7 +5,10 @@ const FALLBACK_EASTSIDE_BRANCH_ID = "26d6acb8-5acf-4a32-ac24-343f30b1442c";
 
 type Branch = {
   id: string;
+  code: string;
+  short_code?: string | null;
   name: string;
+  association?: { id: string; code: string } | null;
   address?: string | null;
   city?: string | null;
   state?: string | null;
@@ -26,7 +29,7 @@ export async function GET() {
   const { data, error } = await supabase
     .from("ymca_branches")
     .select(
-      "id, name, address, city, state, phone, website_url, schedule_email_from, schedule_email_reply_to, theme_color, branch_manager_name, branch_manager_email, branch_manager_phone",
+      "id, code, short_code, name, address, city, state, phone, website_url, schedule_email_from, schedule_email_reply_to, theme_color, branch_manager_name, branch_manager_email, branch_manager_phone, association:association_id (id, code)",
     )
     .order("name", { ascending: true });
 
@@ -36,7 +39,10 @@ export async function GET() {
     // (Local dev restored DB uses this Eastside UUID.)
     const fallback: Branch = {
       id: FALLBACK_EASTSIDE_BRANCH_ID,
+      code: "eastside_family_ymca",
+      short_code: "EASTSIDE",
       name: "Eastside Family YMCA",
+      association: null,
       theme_color: "#01A490",
       address: null,
       city: null,

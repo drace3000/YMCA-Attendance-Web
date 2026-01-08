@@ -1,0 +1,134 @@
+[
+  {
+    "name": "YMCA of Greater New York",
+    "region": "NYC Metro",
+    "hq_city": "New York",
+    "code": "GNY"
+  },
+  {
+    "name": "YMCA of Greater Rochester",
+    "region": "Western NY",
+    "hq_city": "Rochester",
+    "code": "GROC"
+  },
+  {
+    "name": "Capital District YMCA",
+    "region": "Capital Region",
+    "hq_city": "Albany",
+    "code": "CDYMCA"
+  },
+  {
+    "name": "YMCA of Central New York",
+    "region": "Central NY",
+    "hq_city": "Syracuse",
+    "code": "CNY"
+  },
+  {
+    "name": "YMCA Buffalo Niagara",
+    "region": "Western NY",
+    "hq_city": "Buffalo",
+    "code": "BNIAG"
+  },
+  {
+    "name": "YMCA of Long Island",
+    "region": "Long Island",
+    "hq_city": "Glen Cove",
+    "code": "LISLAND"
+  },
+  {
+    "name": "Saratoga Regional YMCA",
+    "region": "Capital Region",
+    "hq_city": "Saratoga Springs",
+    "code": "SARREG"
+  },
+  {
+    "name": "YMCA of Broome County",
+    "region": "Southern Tier",
+    "hq_city": "Binghamton",
+    "code": "BROCOU"
+  },
+  {
+    "name": "YMCA of Westchester",
+    "region": "Hudson Valley",
+    "hq_city": "White Plains",
+    "code": "WES"
+  },
+  {
+    "name": "YMCA of the Mohawk Valley",
+    "region": "Mohawk Valley",
+    "hq_city": "Utica",
+    "code": "MOHVAL"
+  },
+  {
+    "name": "Dutchess County YMCA",
+    "region": "Hudson Valley",
+    "hq_city": "Poughkeepsie",
+    "code": "DUTCOU"
+  },
+  {
+    "name": "Auburn YMCA-WEIU",
+    "region": "Finger Lakes",
+    "hq_city": "Auburn",
+    "code": "AUBWEI"
+  },
+  {
+    "name": "Oneonta Family YMCA",
+    "region": "Central NY",
+    "hq_city": "Oneonta",
+    "code": "ONEFAM"
+  },
+  {
+    "name": "Norwich Family YMCA",
+    "region": "Central NY",
+    "hq_city": "Norwich",
+    "code": "NORFAM"
+  },
+  {
+    "name": "Cortland County YMCA",
+    "region": "Central NY",
+    "hq_city": "Cortland",
+    "code": "CORCOU"
+  },
+  {
+    "name": "Watertown Family YMCA",
+    "region": "North Country",
+    "hq_city": "Watertown",
+    "code": "WATFAM"
+  },
+  {
+    "name": "YMCA of Plattsburgh",
+    "region": "North Country",
+    "hq_city": "Plattsburgh",
+    "code": "PLA"
+  },
+  {
+    "name": "Geneva YMCA",
+    "region": "Finger Lakes",
+    "hq_city": "Geneva",
+    "code": "GEN"
+  },
+  {
+    "name": "Oswego County YMCA",
+    "region": "Central NY",
+    "hq_city": "Fulton",
+    "code": "OSWCOU"
+  },
+  {
+    "name": "Jamestown YMCA",
+    "region": "Western NY",
+    "hq_city": "Jamestown",
+    "code": "JAM"
+  },
+  {
+    "name": "Olean Area YMCA",
+    "region": "Western NY",
+    "hq_city": "Olean",
+    "code": "OLEARE"
+  },
+  {
+    "name": "Hornell Area YMCA",
+    "region": "Western NY",
+    "hq_city": "Hornell",
+    "code": "HORARE"
+  }
+]
