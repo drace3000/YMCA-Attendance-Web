@@ -42,3 +42,9 @@ supabase.exe
 # Cursor debug logs with potential secrets
 .cursor/debug.log
 
+# Local backups (can contain sensitive data / very large files)
+backups/*.dump
+backups/*.backup
+backups/*.sql
+backups/*.gz
+

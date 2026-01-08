@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Building2, Calendar, FileText, HelpCircle, RotateCcw, Table, ChevronDown, Printer, Layers3 } from "lucide-react";
+import { Building2, Calendar, HelpCircle, RotateCcw, ChevronDown, Printer, Layers3, X } from "lucide-react";
 import { GenerateScheduleModal } from "@/components/schedule-report";
 import { logError } from "@/lib/error-logger";
 import {
@@ -11,14 +11,6 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { SessionsTab, Session } from "./sessions-tab";
-
-type TabId = "grid" | "print" | "helper";
-
-type Tab = {
-  id: TabId;
-  label: string;
-  icon: React.ReactNode;
-};
 
 type Schedule = {
   id: string;
@@ -52,15 +44,10 @@ type ProgramGroup = {
   is_enabled: boolean;
 };
 
-const tabs: Tab[] = [
-  { id: "print", label: "Print Preview", icon: <FileText className="h-4 w-4" /> },
-  { id: "helper", label: "Helper", icon: <HelpCircle className="h-4 w-4" /> },
-];
-
 export default function SchedulingPage() {
-  const [activeTab, setActiveTab] = useState<TabId>("grid");
   const [refreshKey, setRefreshKey] = useState(0);
   const [refreshPopoverOpen, setRefreshPopoverOpen] = useState(false);
+  const [helperOpen, setHelperOpen] = useState(false);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [selectedScheduleId, setSelectedScheduleId] = useState<string>("");
   const [scheduleDropdownOpen, setScheduleDropdownOpen] = useState(false);
@@ -73,9 +60,13 @@ export default function SchedulingPage() {
   const [groupDropdownOpen, setGroupDropdownOpen] = useState(false);
   const [loadingGroups, setLoadingGroups] = useState(false);
   const [sessionsForPrint, setSessionsForPrint] = useState<Session[]>([]);
+  const [gridSessions, setGridSessions] = useState<Session[]>([]);
+  const [gridCriteria, setGridCriteria] = useState<string[]>([]);
   const [generateModalOpen, setGenerateModalOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string>("");
   const [dateDropdownOpen, setDateDropdownOpen] = useState(false);
+  const [selectedDay, setSelectedDay] = useState<string>("");
+  const [dayDropdownOpen, setDayDropdownOpen] = useState(false);
   const [selectedWeekStart, setSelectedWeekStart] = useState<string>("");
   const [weekDropdownOpen, setWeekDropdownOpen] = useState(false);
 
@@ -183,40 +174,41 @@ export default function SchedulingPage() {
   }, [fetchSchedules]);
 
   const handleRefresh = () => {
-    if (activeTab !== "helper") {
-      setRefreshKey((k) => k + 1);
-      setRefreshPopoverOpen(false);
-    }
+    setRefreshKey((k) => k + 1);
+    setRefreshPopoverOpen(false);
   };
 
   const getRefreshMessage = () => {
-    switch (activeTab) {
-      case "grid":
-        return "Reload sessions from the database";
-      case "print":
-        return "Regenerate print preview";
-      default:
-        return "";
-    }
+    return "Reload sessions from the database";
   };
 
-  const isRefreshDisabled = activeTab === "helper";
+  const isRefreshDisabled = false;
 
   const selectedSchedule = schedules.find((s) => s.id === selectedScheduleId);
   const selectedBranch = branches.find((b) => b.id === selectedBranchId);
-  const hasCurrentSessionsForSelection = useMemo(() => {
-    if (!selectedBranchId || !selectedScheduleId) return false;
-    if (sessionsForPrint.length === 0) return false;
-    return sessionsForPrint.every(
-      (s) => s.branch_id === selectedBranchId && s.schedule_id === selectedScheduleId
-    );
-  }, [sessionsForPrint, selectedBranchId, selectedScheduleId]);
 
   // Compute unique dates from sessions (sorted ascending)
   const uniqueDates = useMemo(() => {
     const dates = [...new Set(sessionsForPrint.map((s) => s.session_date))];
     return dates.sort((a, b) => a.localeCompare(b));
   }, [sessionsForPrint]);
+
+  const dayOptions = useMemo(() => {
+    return [
+      { value: "SATURDAY", label: "SAT" },
+      { value: "SUNDAY", label: "SUN" },
+      { value: "MONDAY", label: "MON" },
+      { value: "TUESDAY", label: "TUE" },
+      { value: "WEDNESDAY", label: "WED" },
+      { value: "THURSDAY", label: "THU" },
+      { value: "FRIDAY", label: "FRI" },
+    ] as const;
+  }, []);
+
+  const selectedDayLabel = useMemo(() => {
+    if (!selectedDay) return "";
+    return dayOptions.find((d) => d.value === selectedDay)?.label ?? selectedDay;
+  }, [dayOptions, selectedDay]);
 
   // Get schedule month/year for week filtering
   const scheduleMonthYear = useMemo(() => {
@@ -279,6 +271,33 @@ export default function SchedulingPage() {
     setSessionsForPrint([]);
   }, [selectedBranchId, selectedScheduleId, selectedProgramGroupId]);
 
+  // Always load sessions for print/reporting (even if grid tab isn't active)
+  useEffect(() => {
+    const load = async () => {
+      if (!selectedBranchId || !selectedScheduleId) return;
+      try {
+        const url =
+          "/api/scheduling/sessions?schedule_id=" +
+          selectedScheduleId +
+          "&branch_id=" +
+          selectedBranchId;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error("Failed to fetch sessions for print");
+        const data = await res.json();
+        const loaded = data.sessions || [];
+        setSessionsForPrint(loaded);
+      } catch (err) {
+        await logError(
+          err instanceof Error ? err : new Error(String(err)),
+          "API_ERROR",
+          { page: "scheduling", action: "fetchSessionsForPrint", branchId: selectedBranchId, params: { scheduleId: selectedScheduleId } }
+        );
+        setSessionsForPrint([]);
+      }
+    };
+    void load();
+  }, [selectedBranchId, selectedScheduleId, refreshKey]);
+
   return (
     <div className="flex flex-col gap-6">
       {/* Page Header */}
@@ -288,7 +307,7 @@ export default function SchedulingPage() {
           {/* Print Schedule Button */}
           <button
             onClick={() => setGenerateModalOpen(true)}
-            disabled={!selectedBranch || !selectedSchedule || !hasCurrentSessionsForSelection}
+            disabled={!selectedBranch || !selectedSchedule}
             className="btn-pill flex items-center gap-2 bg-[var(--cta)] px-4 py-2 text-sm font-medium text-[var(--cta-foreground)] shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Printer className="h-4 w-4" />
@@ -327,6 +346,15 @@ export default function SchedulingPage() {
               {getRefreshMessage()}
             </PopoverContent>
           </Popover>
+          {/* Helper Button (Popup) */}
+          <button
+            type="button"
+            onClick={() => setHelperOpen(true)}
+            className="btn-pill inline-flex h-8 w-8 items-center justify-center bg-card/60 text-foreground shadow-sm ring-1 ring-white/10 transition hover:bg-card hover:ring-white/20"
+            aria-label="Open Smart Scheduler help"
+          >
+            <HelpCircle className="h-4 w-4" />
+          </button>
         </div>
         <p className="text-sm text-muted-foreground">
           Manage class schedules, sessions, and generate printable schedules
@@ -628,77 +656,82 @@ export default function SchedulingPage() {
           </Popover>
         </div>
 
+        {/* Day Filter Selector */}
+        <div className="flex items-center gap-2">
+          <label className="text-sm font-medium">Day:</label>
+          <Popover open={dayDropdownOpen} onOpenChange={setDayDropdownOpen}>
+            <PopoverTrigger asChild>
+              <button
+                className="btn-pill flex min-w-[140px] items-center justify-between gap-2 border border-white/10 bg-card/60 px-4 py-2 text-sm shadow-sm ring-1 ring-white/5 transition hover:bg-card hover:ring-white/10"
+              >
+                <span className="flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                  {selectedDayLabel || "All Days"}
+                </span>
+                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent
+              align="start"
+              sideOffset={4}
+              className="w-[160px] rounded-xl border border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] p-1 shadow-xl backdrop-blur-md"
+            >
+              <div className="max-h-[300px] overflow-y-auto">
+                <button
+                  onClick={() => {
+                    setSelectedDay("");
+                    setDayDropdownOpen(false);
+                  }}
+                  className={`flex w-full items-center rounded-lg px-3 py-2 text-left text-sm transition ${
+                    selectedDay === ""
+                      ? "bg-[var(--cta)] text-[var(--cta-foreground)]"
+                      : "text-[var(--brand-ink)] hover:bg-[var(--brand-strong)] hover:text-white"
+                  }`}
+                >
+                  All Days
+                </button>
+                {dayOptions.map((day) => (
+                  <button
+                    key={day.value}
+                    onClick={() => {
+                      setSelectedDay(day.value);
+                      setDayDropdownOpen(false);
+                    }}
+                    className={`flex w-full items-center rounded-lg px-3 py-2 text-left text-sm transition ${
+                      day.value === selectedDay
+                        ? "bg-[var(--cta)] text-[var(--cta-foreground)]"
+                        : "text-[var(--brand-ink)] hover:bg-[var(--brand-strong)] hover:text-white"
+                    }`}
+                  >
+                    {day.label}
+                  </button>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
+
       </div>
 
-      {/* Sessions Grid (always shown) */}
+      {/* Sessions Grid */}
       <div className="rounded-2xl border border-white/10 bg-card/40 p-6 shadow-lg ring-1 ring-white/5 backdrop-blur-sm">
-        {activeTab === "grid" && (
-          <SessionsTab
-            scheduleId={selectedScheduleId}
-            branchId={selectedBranchId}
-            programGroupId={selectedProgramGroupId}
-            refreshKey={refreshKey}
-            onSessionsLoaded={setSessionsForPrint}
-            filterDate={selectedDate}
-            filterWeekStart={selectedWeekStart}
-            scheduleMonthYear={scheduleMonthYear}
-            branchName={selectedBranch?.name}
-            scheduleName={selectedSchedule?.name}
-          />
-        )}
-
-        {activeTab === "print" && (
-          <div className="flex flex-col items-center justify-center gap-4 py-12 text-center">
-            <FileText className="h-16 w-16 text-muted-foreground/50" />
-            <div>
-              <h2 className="text-xl font-semibold">Print Preview</h2>
-              <p className="mt-2 text-sm text-muted-foreground">
-                PDF generation matching the Excel wall-poster format will be implemented in Phase 4.
-              </p>
-            </div>
-          </div>
-        )}
-
-        {activeTab === "helper" && (
-          <div className="flex flex-col items-center justify-center gap-4 py-12 text-center">
-            <HelpCircle className="h-16 w-16 text-muted-foreground/50" />
-            <div>
-              <h2 className="text-xl font-semibold">Helper Guide</h2>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Step-by-step instructions for managers will be implemented in Phase 5.
-              </p>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Tab Navigation for Print/Helper */}
-      <div className="flex flex-wrap gap-2">
-        <button
-          onClick={() => setActiveTab("grid")}
-          className={`btn-pill flex items-center gap-2 px-4 py-2 text-sm font-medium shadow-sm ring-1 transition active:translate-y-px active:scale-[0.98] ${
-            activeTab === "grid"
-              ? "bg-[var(--cta)] text-[var(--cta-foreground)] ring-black/10"
-              : "bg-card/60 text-foreground ring-white/10 hover:bg-card hover:ring-white/20"
-          }`}
-        >
-          <Table className="h-4 w-4" />
-          Schedule Grid
-        </button>
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`btn-pill flex items-center gap-2 px-4 py-2 text-sm font-medium shadow-sm ring-1 transition active:translate-y-px active:scale-[0.98] ${
-              activeTab === tab.id
-                ? "bg-[var(--cta)] text-[var(--cta-foreground)] ring-black/10"
-                : "bg-card/60 text-foreground ring-white/10 hover:bg-card hover:ring-white/20"
-            }`}
-          >
-            {tab.icon}
-            {tab.label}
-          </button>
-        ))}
+        <SessionsTab
+          scheduleId={selectedScheduleId}
+          branchId={selectedBranchId}
+          programGroupId={selectedProgramGroupId}
+          refreshKey={refreshKey}
+          onSessionsLoaded={setSessionsForPrint}
+          onGridChange={(payload) => {
+            setGridSessions(payload.sessions);
+            setGridCriteria(payload.criteria);
+          }}
+          filterDate={selectedDate}
+          filterDay={selectedDay}
+          filterWeekStart={selectedWeekStart}
+          scheduleMonthYear={scheduleMonthYear}
+          branchName={selectedBranch?.name}
+          scheduleName={selectedSchedule?.name}
+        />
       </div>
 
       {/* Generate Schedule Modal */}
@@ -706,9 +739,84 @@ export default function SchedulingPage() {
         isOpen={generateModalOpen}
         onClose={() => setGenerateModalOpen(false)}
         branch={selectedBranch || null}
+        programGroup={selectedProgramGroup || null}
         schedule={selectedSchedule || null}
-        sessions={sessionsForPrint}
+        sessions={gridSessions}
+        criteria={gridCriteria}
       />
+
+      {/* Helper Popup */}
+      {helperOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => setHelperOpen(false)}
+          />
+          <div className="relative z-10 w-full max-w-3xl rounded-2xl border border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] p-6 shadow-2xl backdrop-blur-md">
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold text-[var(--brand-ink)]">Smart Scheduler — Helper</h2>
+                <p className="text-sm text-[var(--brand-ink)]/70">
+                  How to select Branch/Group/Schedule, edit sessions, and generate schedules.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setHelperOpen(false)}
+                className="rounded-full p-1.5 text-[var(--brand-ink)]/70 hover:bg-[var(--brand-strong)] hover:text-white"
+                aria-label="Close helper"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="rounded-2xl border border-[var(--brand-strong)] bg-[var(--brand-strong)]/20 p-4">
+                <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--brand-ink)]/90">1) Select your data</h3>
+                <ul className="mt-3 space-y-2 text-sm text-[var(--brand-ink)]/90">
+                  <li>- Branch: choose a YMCA branch.</li>
+                  <li>- Group: defaults to <span className="font-semibold">GroupX</span> when enabled.</li>
+                  <li>- Schedule: month schedule for the selected branch + group.</li>
+                </ul>
+                <p className="mt-3 text-xs text-[var(--brand-ink)]/70">
+                  Missing group? Enable in Settings → Program Groups. Create groups in Maintenance → Groups.
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-[var(--brand-strong)] bg-[var(--brand-strong)]/20 p-4">
+                <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--brand-ink)]/90">2) Find sessions</h3>
+                <ul className="mt-3 space-y-2 text-sm text-[var(--brand-ink)]/90">
+                  <li>- Use Search and Filter Options (Narrow / Find / Smart).</li>
+                  <li>- Filter by Day / Class / Location / Instructor.</li>
+                  <li>- Use Week Start and Date selectors to narrow results.</li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <div className="rounded-2xl border border-[var(--brand-strong)] bg-[var(--brand-strong)]/20 p-4">
+                <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--brand-ink)]/90">3) Edit sessions</h3>
+                <ul className="mt-3 space-y-2 text-sm text-[var(--brand-ink)]/90">
+                  <li>- Click the pencil icon to edit a row.</li>
+                  <li>- Update time, class, location, instructors, headcount.</li>
+                  <li>- Save (check) or cancel (X).</li>
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-[var(--brand-strong)] bg-[var(--brand-strong)]/20 p-4">
+                <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--brand-ink)]/90">4) Export / Print</h3>
+                <ul className="mt-3 space-y-2 text-sm text-[var(--brand-ink)]/90">
+                  <li>- Export to Excel exports sessions for the current selection.</li>
+                  <li>- Print Schedule opens Preview/Download/Print.</li>
+                </ul>
+                <p className="mt-3 text-xs text-[var(--brand-ink)]/70">
+                  Print actions are disabled until sessions for the current selection are loaded.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -18,10 +18,12 @@ const RIGHT_COLUMN_DAYS = ["WEDNESDAY", "THURSDAY", "FRIDAY"];
 
 interface SchedulePDFProps {
   branchName: string;
+  groupName?: string;
   branchManager?: string;
   monthYear: string;
   effectiveDate: string;
   sessions: Session[];
+  criteria?: string[];
   websiteUrl?: string;
   themeColor?: string;
 }
@@ -58,6 +60,11 @@ function createStyles(themeColor: string) {
       color: "#000000",
       marginBottom: 2,
     },
+    groupName: {
+      fontSize: 11,
+      color: "#000000",
+      marginBottom: 2,
+    },
     monthYear: {
       fontSize: 12,
       color: "#000000",
@@ -67,6 +74,16 @@ function createStyles(themeColor: string) {
       fontStyle: "italic",
       color: "#666666",
       marginTop: 2,
+    },
+    criteriaContainer: {
+      marginTop: 4,
+      width: "100%",
+      alignItems: "center",
+    },
+    criteriaLine: {
+      fontSize: 7,
+      color: "#333333",
+      textAlign: "center",
     },
     // Grid layout
     gridContainer: {
@@ -207,13 +224,9 @@ function formatInstructors(instructors: Session["instructors"]): string {
 
 function groupSessionsByDay(sessions: Session[]): GroupedSessions {
   const grouped: GroupedSessions = {};
-  const seen = new Set<string>();
   for (let i = 0; i < sessions.length; i++) {
     const session = sessions[i];
     const day = session.day_of_week.toUpperCase();
-    const key = day + "|" + session.start_time + "|" + session.end_time + "|" + (session.class?.name || "");
-    if (seen.has(key)) continue;
-    seen.add(key);
     if (!grouped[day]) grouped[day] = [];
     grouped[day].push(session);
   }
@@ -286,23 +299,33 @@ function HalfGrid(props: { days: string[]; groupedSessions: GroupedSessions; sty
 }
 
 export function SchedulePDFDocument(props: SchedulePDFProps) {
-  const { branchName, branchManager, monthYear, effectiveDate, sessions, themeColor } = props;
+  const { branchName, groupName, branchManager, monthYear, effectiveDate, sessions, criteria, themeColor } = props;
   const color = themeColor || DEFAULT_THEME_COLOR;
   const styles = createStyles(color);
   const groupedSessions = groupSessionsByDay(sessions);
   const locations = extractLocations(sessions);
   const printDateTime = formatPrintDateTime();
+  const titleText = groupName ? `${groupName} Schedule` : "Group Fitness Schedule";
   
   return (
     <Document>
       <Page size="LETTER" orientation="landscape" style={styles.page}>
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.title}>GROUP FITNESS SCHEDULE</Text>
+          <Text style={styles.title}>{titleText}</Text>
           <Text style={styles.branchName}>{branchName}</Text>
           {branchManager && <Text style={styles.branchManager}>Branch Manager: {branchManager}</Text>}
           <Text style={styles.monthYear}>{monthYear}</Text>
           <Text style={styles.effectiveDate}>Effective: {effectiveDate}</Text>
+          {criteria && criteria.length > 0 ? (
+            <View style={styles.criteriaContainer}>
+              {criteria.slice(0, 5).map((line, idx) => (
+                <Text key={idx} style={styles.criteriaLine}>
+                  {line}
+                </Text>
+              ))}
+            </View>
+          ) : null}
         </View>
         
         {/* Schedule Grid */}

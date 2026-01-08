@@ -22,6 +22,12 @@ interface Schedule {
   month_start: string;
 }
 
+interface ProgramGroup {
+  id: string;
+  code: string;
+  name: string;
+}
+
 /**
  * Format month_start date to display format (e.g., "December 2025")
  */
@@ -53,15 +59,22 @@ function generateFilename(branchName: string, monthStart: string): string {
 export async function generateSchedulePDFBlob(
   branch: Branch,
   schedule: Schedule,
-  sessions: Session[]
+  sessions: Session[],
+  programGroup?: ProgramGroup | null,
+  criteria?: string[]
 ): Promise<Blob> {
+  const groupLabel = programGroup
+    ? `${programGroup.name} (${programGroup.code})`
+    : undefined;
   const doc = (
     <SchedulePDFDocument
       branchName={branch.name}
+      groupName={groupLabel}
       branchManager={branch.branch_manager_name}
       monthYear={formatMonthYear(schedule.month_start)}
       effectiveDate={formatEffectiveDate(schedule.month_start)}
       sessions={sessions}
+      criteria={criteria}
       websiteUrl={branch.website_url}
       themeColor={branch.theme_color}
     />
@@ -77,9 +90,11 @@ export async function generateSchedulePDFBlob(
 export async function downloadSchedulePDF(
   branch: Branch,
   schedule: Schedule,
-  sessions: Session[]
+  sessions: Session[],
+  programGroup?: ProgramGroup | null,
+  criteria?: string[]
 ): Promise<void> {
-  const blob = await generateSchedulePDFBlob(branch, schedule, sessions);
+  const blob = await generateSchedulePDFBlob(branch, schedule, sessions, programGroup, criteria);
   const filename = generateFilename(branch.name, schedule.month_start);
   downloadPDFBlob(blob, filename);
 }
@@ -90,9 +105,11 @@ export async function downloadSchedulePDF(
 export async function previewSchedulePDF(
   branch: Branch,
   schedule: Schedule,
-  sessions: Session[]
+  sessions: Session[],
+  programGroup?: ProgramGroup | null,
+  criteria?: string[]
 ): Promise<void> {
-  const blob = await generateSchedulePDFBlob(branch, schedule, sessions);
+  const blob = await generateSchedulePDFBlob(branch, schedule, sessions, programGroup, criteria);
   previewPDFBlob(blob);
 }
 
@@ -102,8 +119,10 @@ export async function previewSchedulePDF(
 export async function printSchedulePDF(
   branch: Branch,
   schedule: Schedule,
-  sessions: Session[]
+  sessions: Session[],
+  programGroup?: ProgramGroup | null,
+  criteria?: string[]
 ): Promise<void> {
-  const blob = await generateSchedulePDFBlob(branch, schedule, sessions);
+  const blob = await generateSchedulePDFBlob(branch, schedule, sessions, programGroup, criteria);
   printPDFBlob(blob);
 }

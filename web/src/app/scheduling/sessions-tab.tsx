@@ -37,7 +37,9 @@ type SessionsTabProps = {
   programGroupId: string;
   refreshKey: number;
   onSessionsLoaded?: (sessions: Session[]) => void;
+  onGridChange?: (payload: { sessions: Session[]; criteria: string[]; filteredCount: number; totalCount: number }) => void;
   filterDate?: string;
+  filterDay?: string;
   filterWeekStart?: string;
   scheduleMonthYear?: { year: number; month: number } | null;
   branchName?: string;
@@ -60,12 +62,22 @@ const DAY_ORDER: Record<string, number> = {
   SATURDAY: 0, SUNDAY: 1, MONDAY: 2, TUESDAY: 3, WEDNESDAY: 4, THURSDAY: 5, FRIDAY: 6,
 };
 
+const DAY_ABBREV: Record<string, string> = {
+  SATURDAY: "SAT",
+  SUNDAY: "SUN",
+  MONDAY: "MON",
+  TUESDAY: "TUE",
+  WEDNESDAY: "WED",
+  THURSDAY: "THU",
+  FRIDAY: "FRI",
+};
+
 type FilterField = "day" | "class" | "location" | "instructor";
 type SearchMode = "narrow" | "find" | "smart";
 type SortColumn = "class" | "location" | "instructor";
 type SortDirection = "asc" | "desc";
 
-export function SessionsTab({ scheduleId, branchId, programGroupId, refreshKey, onSessionsLoaded, filterDate, filterWeekStart, scheduleMonthYear, branchName, scheduleName }: SessionsTabProps) {
+export function SessionsTab({ scheduleId, branchId, programGroupId, refreshKey, onSessionsLoaded, onGridChange, filterDate, filterDay, filterWeekStart, scheduleMonthYear, branchName, scheduleName }: SessionsTabProps) {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [classes, setClasses] = useState<ClassOption[]>([]);
   const [locations, setLocations] = useState<LocationOption[]>([]);
@@ -400,6 +412,11 @@ export function SessionsTab({ scheduleId, branchId, programGroupId, refreshKey, 
       result = result.filter((s) => s.session_date === filterDate);
     }
 
+    // Day filter
+    if (filterDay) {
+      result = result.filter((s) => s.day_of_week === filterDay);
+    }
+
     // Search filter
     if (!searchTerm.trim()) return result;
     const term = searchTerm.toLowerCase();
@@ -425,6 +442,7 @@ export function SessionsTab({ scheduleId, branchId, programGroupId, refreshKey, 
     searchMode,
     fuzzyMatch,
     filterDate,
+    filterDay,
     filterWeekStart,
     scheduleMonthYear,
     classFilter,
@@ -464,6 +482,83 @@ export function SessionsTab({ scheduleId, branchId, programGroupId, refreshKey, 
     });
   }, [filteredSessions, sortOrder]);
 
+  const gridCriteria = useMemo(() => {
+    const criteria: string[] = [];
+
+    const hasWeekFilter = !!filterWeekStart;
+    const hasDateFilter = !!filterDate;
+    const hasDayFilter = !!filterDay;
+    const hasSearchFilter = !!searchTerm.trim();
+    const hasClassFilter = classFilter.length > 0 && !classFilter.includes("__NONE__");
+    const hasLocationFilter = locationFilter.length > 0 && !locationFilter.includes("__NONE__");
+    const hasInstructorFilter = instructorFilter.length > 0 && !instructorFilter.includes("__NONE__");
+    const activeSort = sortOrder[0] || null;
+
+    const isFiltered =
+      hasWeekFilter ||
+      hasDateFilter ||
+      hasDayFilter ||
+      hasSearchFilter ||
+      hasClassFilter ||
+      hasLocationFilter ||
+      hasInstructorFilter;
+
+    criteria.push(isFiltered ? "⚠ PARTIAL SCHEDULE (Filtered)" : "✓ FULL SCHEDULE");
+    criteria.push(`Grid: ${sortedSessions.length} of ${sessions.length} sessions`);
+
+    if (branchName) criteria.push(`Branch: ${branchName}`);
+    if (scheduleName) criteria.push(`Schedule: ${scheduleName}`);
+
+    if (hasWeekFilter) {
+      const satDate = new Date(filterWeekStart + "T00:00:00");
+      const friDate = new Date(satDate);
+      friDate.setDate(satDate.getDate() + 6);
+      const formatDate = (d: Date) => `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
+      criteria.push(`Week: SAT ${formatDate(satDate)} to FRI ${formatDate(friDate)}`);
+    }
+
+    if (hasDateFilter) criteria.push(`Date: ${filterDate}`);
+    if (hasDayFilter) criteria.push(`Day: ${DAY_ABBREV[filterDay] ?? filterDay}`);
+
+    if (hasSearchFilter) criteria.push(`Search (${filterField}): "${searchTerm}" [${searchMode}]`);
+
+    if (hasClassFilter) criteria.push(`Class Filter: ${classFilter.join(", ")}`);
+    if (hasLocationFilter) criteria.push(`Location Filter: ${locationFilter.join(", ")}`);
+    if (hasInstructorFilter) criteria.push(`Instructor Filter: ${instructorFilter.join(", ")}`);
+
+    if (activeSort) {
+      criteria.push(`Sort: ${activeSort.column} (${activeSort.direction === "asc" ? "ascending" : "descending"})`);
+    } else {
+      criteria.push("Sort: Default (Day → Date → Start Time)");
+    }
+
+    return criteria;
+  }, [
+    branchName,
+    scheduleName,
+    sessions.length,
+    sortedSessions.length,
+    filterWeekStart,
+    filterDate,
+    filterDay,
+    searchTerm,
+    filterField,
+    searchMode,
+    classFilter,
+    locationFilter,
+    instructorFilter,
+    sortOrder,
+  ]);
+
+  useEffect(() => {
+    onGridChange?.({
+      sessions: sortedSessions,
+      criteria: gridCriteria,
+      filteredCount: sortedSessions.length,
+      totalCount: sessions.length,
+    });
+  }, [onGridChange, sortedSessions, gridCriteria, sessions.length]);
+
   const generateExcelFilename = () => {
     const now = new Date();
     const dateStr = `${now.getFullYear()}.${String(now.getMonth() + 1).padStart(2, "0")}.${String(now.getDate()).padStart(2, "0")}`;
@@ -479,64 +574,7 @@ export function SessionsTab({ scheduleId, branchId, programGroupId, refreshKey, 
   };
 
   const getFilterCriteria = () => {
-    const criteria: string[] = [];
-    
-    // Check if any filters are applied
-    const hasWeekFilter = !!filterWeekStart;
-    const hasDateFilter = !!filterDate;
-    const hasSearchFilter = !!searchTerm.trim();
-    const hasClassFilter = classFilter.length > 0 && !classFilter.includes("__NONE__");
-    const hasLocationFilter = locationFilter.length > 0 && !locationFilter.includes("__NONE__");
-    const hasInstructorFilter = instructorFilter.length > 0 && !instructorFilter.includes("__NONE__");
-    
-    const isFiltered = hasWeekFilter || hasDateFilter || hasSearchFilter || hasClassFilter || hasLocationFilter || hasInstructorFilter;
-    
-    // Add data scope indicator
-    if (isFiltered) {
-      criteria.push("⚠ PARTIAL SCHEDULE (Filtered)");
-    } else {
-      criteria.push("✓ FULL SCHEDULE");
-    }
-    
-    // Branch and Schedule
-    if (branchName) criteria.push(`Branch: ${branchName}`);
-    if (scheduleName) criteria.push(`Schedule: ${scheduleName}`);
-    
-    // Week filter
-    if (hasWeekFilter) {
-      const satDate = new Date(filterWeekStart + "T00:00:00");
-      const friDate = new Date(satDate);
-      friDate.setDate(satDate.getDate() + 6);
-      const formatDate = (d: Date) => `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
-      criteria.push(`Week: SAT ${formatDate(satDate)} to FRI ${formatDate(friDate)}`);
-    }
-    
-    // Date filter
-    if (hasDateFilter) criteria.push(`Date: ${filterDate}`);
-    
-    // Search filter
-    if (hasSearchFilter) criteria.push(`Search (${filterField}): "${searchTerm}" [${searchMode}]`);
-    
-    // Column filters
-    if (hasClassFilter) {
-      criteria.push(`Class Filter: ${classFilter.join(", ")}`);
-    }
-    if (hasLocationFilter) {
-      criteria.push(`Location Filter: ${locationFilter.join(", ")}`);
-    }
-    if (hasInstructorFilter) {
-      criteria.push(`Instructor Filter: ${instructorFilter.join(", ")}`);
-    }
-    
-    // Sort order
-    const activeSort = sortOrder[0];
-    if (activeSort) {
-      criteria.push(`Sort: ${activeSort.column} (${activeSort.direction === "asc" ? "ascending" : "descending"})`);
-    } else {
-      criteria.push("Sort: Default (Day → Date → Start Time)");
-    }
-    
-    return criteria;
+    return gridCriteria;
   };
 
   const getExcelWorkbook = () => {
