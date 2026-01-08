@@ -26,31 +26,56 @@ comment on column public.branch_program_groups.is_enabled is
 alter table public.branch_program_groups enable row level security;
 
 -- Policies: safe to read; writes are service_role only via server APIs.
-create policy "anon_select_branch_program_groups"
-  on public.branch_program_groups for select
-  to anon
-  using (true);
+do $$
+begin
+  create policy "anon_select_branch_program_groups"
+    on public.branch_program_groups for select
+    to anon
+    using (true);
+exception
+  when duplicate_object then null;
+end $$;
 
-create policy "authenticated_select_branch_program_groups"
-  on public.branch_program_groups for select
-  to authenticated
-  using (true);
+do $$
+begin
+  create policy "authenticated_select_branch_program_groups"
+    on public.branch_program_groups for select
+    to authenticated
+    using (true);
+exception
+  when duplicate_object then null;
+end $$;
 
-create policy "service_role_insert_branch_program_groups"
-  on public.branch_program_groups for insert
-  to service_role
-  with check (true);
+do $$
+begin
+  create policy "service_role_insert_branch_program_groups"
+    on public.branch_program_groups for insert
+    to service_role
+    with check (true);
+exception
+  when duplicate_object then null;
+end $$;
 
-create policy "service_role_update_branch_program_groups"
-  on public.branch_program_groups for update
-  to service_role
-  using (true)
-  with check (true);
+do $$
+begin
+  create policy "service_role_update_branch_program_groups"
+    on public.branch_program_groups for update
+    to service_role
+    using (true)
+    with check (true);
+exception
+  when duplicate_object then null;
+end $$;
 
-create policy "service_role_delete_branch_program_groups"
-  on public.branch_program_groups for delete
-  to service_role
-  using (true);
+do $$
+begin
+  create policy "service_role_delete_branch_program_groups"
+    on public.branch_program_groups for delete
+    to service_role
+    using (true);
+exception
+  when duplicate_object then null;
+end $$;
 
 grant select on table public.branch_program_groups to anon, authenticated;
 grant all on table public.branch_program_groups to service_role;

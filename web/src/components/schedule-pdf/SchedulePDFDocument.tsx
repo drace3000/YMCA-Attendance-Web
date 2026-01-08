@@ -18,6 +18,8 @@ const RIGHT_COLUMN_DAYS = ["WEDNESDAY", "THURSDAY", "FRIDAY"];
 
 interface SchedulePDFProps {
   branchName: string;
+  allianceName?: string;
+  associationName?: string;
   groupName?: string;
   branchManager?: string;
   monthYear: string;
@@ -37,22 +39,42 @@ function createStyles(themeColor: string) {
     page: {
       flexDirection: "column",
       backgroundColor: "#FFFFFF",
-      padding: 15,
+      paddingTop: 6,
+      paddingHorizontal: 15,
+      paddingBottom: 10,
       fontFamily: "Helvetica",
     },
     // Page header
     header: {
-      alignItems: "center",
-      marginBottom: 12,
-      paddingBottom: 8,
+      flexDirection: "row",
+      alignItems: "flex-start",
+      width: "100%",
+      marginBottom: 8,
+      paddingBottom: 4,
       borderBottomWidth: 1,
       borderBottomColor: "#CCCCCC",
     },
+    headerLeft: {
+      flex: 0.8,
+      alignItems: "flex-start",
+      gap: 2,
+    },
+    headerCenter: {
+      flex: 1.4,
+      alignItems: "center",
+      gap: 2,
+      flexShrink: 1,
+    },
+    headerRight: {
+      flex: 0.8,
+    },
     title: {
-      fontSize: 18,
+      fontSize: 16,
       fontFamily: "Helvetica-Bold",
       color: themeColor,
       marginBottom: 4,
+      textAlign: "center",
+      flexShrink: 0,
     },
     branchName: {
       fontSize: 14,
@@ -64,6 +86,7 @@ function createStyles(themeColor: string) {
       fontSize: 11,
       color: "#000000",
       marginBottom: 2,
+      alignSelf: "flex-start",
     },
     monthYear: {
       fontSize: 12,
@@ -222,10 +245,34 @@ function formatInstructors(instructors: Session["instructors"]): string {
     .join("/");
 }
 
-function groupSessionsByDay(sessions: Session[]): GroupedSessions {
-  const grouped: GroupedSessions = {};
+function deduplicateSessions(sessions: Session[]): Session[] {
+  const seen = new Set<string>();
+  const result: Session[] = [];
+  
   for (let i = 0; i < sessions.length; i++) {
-    const session = sessions[i];
+    const s = sessions[i];
+    // Create unique key from time, class name, and location code
+    const key = [
+      s.start_time ?? "",
+      s.end_time ?? "",
+      s.class?.name ?? "",
+      s.location?.code ?? "",
+    ].join("|");
+    
+    if (!seen.has(key)) {
+      seen.add(key);
+      result.push(s);
+    }
+  }
+  return result;
+}
+
+function groupSessionsByDay(sessions: Session[]): GroupedSessions {
+  // Deduplicate first to ensure unique sessions
+  const uniqueSessions = deduplicateSessions(sessions);
+  const grouped: GroupedSessions = {};
+  for (let i = 0; i < uniqueSessions.length; i++) {
+    const session = uniqueSessions[i];
     const day = session.day_of_week.toUpperCase();
     if (!grouped[day]) grouped[day] = [];
     grouped[day].push(session);
@@ -299,7 +346,7 @@ function HalfGrid(props: { days: string[]; groupedSessions: GroupedSessions; sty
 }
 
 export function SchedulePDFDocument(props: SchedulePDFProps) {
-  const { branchName, groupName, branchManager, monthYear, effectiveDate, sessions, criteria, themeColor } = props;
+  const { branchName, allianceName, associationName, groupName, branchManager, monthYear, effectiveDate, sessions, criteria, themeColor } = props;
   const color = themeColor || DEFAULT_THEME_COLOR;
   const styles = createStyles(color);
   const groupedSessions = groupSessionsByDay(sessions);
@@ -312,20 +359,22 @@ export function SchedulePDFDocument(props: SchedulePDFProps) {
       <Page size="LETTER" orientation="landscape" style={styles.page}>
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.title}>{titleText}</Text>
-          <Text style={styles.branchName}>{branchName}</Text>
-          {branchManager && <Text style={styles.branchManager}>Branch Manager: {branchManager}</Text>}
-          <Text style={styles.monthYear}>{monthYear}</Text>
-          <Text style={styles.effectiveDate}>Effective: {effectiveDate}</Text>
-          {criteria && criteria.length > 0 ? (
-            <View style={styles.criteriaContainer}>
-              {criteria.slice(0, 5).map((line, idx) => (
-                <Text key={idx} style={styles.criteriaLine}>
-                  {line}
-                </Text>
-              ))}
+          <View style={styles.headerLeft}>
+            {allianceName ? <Text style={styles.groupName}>{allianceName}</Text> : null}
+            {associationName ? <Text style={styles.groupName}>{associationName}</Text> : null}
+          </View>
+          <View style={styles.headerCenter}>
+            <View style={{ flexShrink: 0 }}>
+              <Text style={styles.title} wrap={false}>
+                {titleText}
+              </Text>
             </View>
-          ) : null}
+            <Text style={styles.branchName}>{branchName}</Text>
+            {branchManager && <Text style={styles.branchManager}>Branch Manager: {branchManager}</Text>}
+            <Text style={styles.monthYear}>{monthYear}</Text>
+            <Text style={styles.effectiveDate}>Effective: {effectiveDate}</Text>
+          </View>
+          <View style={styles.headerRight} />
         </View>
         
         {/* Schedule Grid */}

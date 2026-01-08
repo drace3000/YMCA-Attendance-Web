@@ -69,6 +69,24 @@ export default function SchedulingPage() {
   const [dayDropdownOpen, setDayDropdownOpen] = useState(false);
   const [selectedWeekStart, setSelectedWeekStart] = useState<string>("");
   const [weekDropdownOpen, setWeekDropdownOpen] = useState(false);
+  const [branchOrgLabel, setBranchOrgLabel] = useState<string>("");
+  const [branchAllianceName, setBranchAllianceName] = useState<string>("");
+  const [branchAssociationName, setBranchAssociationName] = useState<string>("");
+
+  const toTitleCase = (value: string | null | undefined): string | null => {
+    if (!value) return null;
+    return value
+      .split(" ")
+      .filter(Boolean)
+      .map((word) => {
+        const upper = word.toUpperCase();
+        // Preserve YMCA acronym (and plural with lowercase s)
+        if (upper === "YMCA") return "YMCA";
+        if (upper === "YMCAS") return "YMCAs";
+        return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+      })
+      .join(" ");
+  };
 
   const selectedProgramGroup = programGroups.find((g) => g.id === selectedProgramGroupId);
 
@@ -162,6 +180,48 @@ export default function SchedulingPage() {
   useEffect(() => {
     fetchBranches();
   }, [fetchBranches]);
+
+  // Fetch Alliance + Association for the selected branch
+  useEffect(() => {
+    if (!selectedBranchId) {
+      setBranchOrgLabel("");
+      setBranchAllianceName("");
+      setBranchAssociationName("");
+      return;
+    }
+
+    const loadOrg = async () => {
+      try {
+        const res = await fetch(`/api/branches/${selectedBranchId}`);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "Failed to load branch org info");
+
+        const alliance =
+          toTitleCase(data.alliance_name) || (data.alliance_code ? String(data.alliance_code).toUpperCase() : null);
+        const association =
+          toTitleCase(data.association_name) || (data.association_code ? String(data.association_code).toUpperCase() : null);
+
+        if (alliance || association) {
+          setBranchOrgLabel(`${alliance ?? "Alliance"} - ${association ?? "Association"}`);
+        } else {
+          setBranchOrgLabel("");
+        }
+        setBranchAllianceName(alliance ?? "");
+        setBranchAssociationName(association ?? "");
+      } catch (err) {
+        await logError(
+          err instanceof Error ? err : new Error(String(err)),
+          "API_ERROR",
+          { page: "scheduling", action: "fetchBranchOrg", branchId: selectedBranchId, criticality: "Low" }
+        );
+        setBranchOrgLabel("");
+        setBranchAllianceName("");
+        setBranchAssociationName("");
+      }
+    };
+
+    void loadOrg();
+  }, [selectedBranchId]);
 
   useEffect(() => {
     void fetchProgramGroups();
@@ -359,6 +419,9 @@ export default function SchedulingPage() {
         <p className="text-sm text-muted-foreground">
           Manage class schedules, sessions, and generate printable schedules
         </p>
+        {branchOrgLabel && (
+          <p className="text-sm text-muted-foreground">{branchOrgLabel}</p>
+        )}
       </div>
 
       {/* Schedule and Branch Selectors */}
@@ -743,6 +806,8 @@ export default function SchedulingPage() {
         schedule={selectedSchedule || null}
         sessions={gridSessions}
         criteria={gridCriteria}
+        allianceName={branchAllianceName || undefined}
+        associationName={branchAssociationName || undefined}
       />
 
       {/* Helper Popup */}

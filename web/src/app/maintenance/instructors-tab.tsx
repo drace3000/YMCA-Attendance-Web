@@ -8,6 +8,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { useThemeSettings } from "@/components/theme-settings-provider";
 
 type Instructor = {
   id: string;
@@ -16,6 +17,7 @@ type Instructor = {
   first_name: string | null;
   last_name: string | null;
   nickname: string | null;
+  readable_id: string;
   is_active: boolean;
   created_at: string;
 };
@@ -32,6 +34,7 @@ type NicknameValidation = {
 };
 
 export function InstructorsTab() {
+  const { branch } = useThemeSettings();
   const [instructors, setInstructors] = useState<Instructor[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -95,6 +98,7 @@ export function InstructorsTab() {
           check_nickname: formData.nickname.trim(),
           first_name: formData.first_name.trim(),
           last_name: formData.last_name.trim(),
+          branch_id: branch.id,
         });
         const res = await fetch(`/api/maintenance/instructors?${params}`);
         if (res.ok) {
@@ -151,6 +155,10 @@ export function InstructorsTab() {
       setFormError("First name and last name are required");
       return;
     }
+    if (!formData.nickname.trim()) {
+      setFormError("Nickname is required");
+      return;
+    }
 
     if (nicknameValidation?.exists) {
       setFormError("Please choose a unique nickname");
@@ -164,7 +172,7 @@ export function InstructorsTab() {
       const method = editingId ? "PUT" : "POST";
       const body = editingId
         ? { id: editingId, ...formData }
-        : formData;
+        : { ...formData, branch_id: branch.id };
 
       const res = await fetch("/api/maintenance/instructors", {
         method,
@@ -212,6 +220,7 @@ export function InstructorsTab() {
     const lowerTerm = term.toLowerCase();
     return (
       (instructor.nickname?.toLowerCase().includes(lowerTerm) ?? false) ||
+      instructor.readable_id.toLowerCase().includes(lowerTerm) ||
       (instructor.first_name?.toLowerCase().includes(lowerTerm) ?? false) ||
       (instructor.last_name?.toLowerCase().includes(lowerTerm) ?? false)
     );
@@ -401,6 +410,7 @@ export function InstructorsTab() {
               <div>
                 <label className="text-sm font-medium text-foreground">
                   Nickname
+                  <span className="text-red-400"> *</span>
                   {validatingNickname && (
                     <span className="ml-2 text-xs text-foreground/50">checking...</span>
                   )}
@@ -485,6 +495,7 @@ export function InstructorsTab() {
                 <tr>
                   <th className="px-4 py-2 text-left font-semibold">Name</th>
                   <th className="px-4 py-2 text-left font-semibold">Nickname</th>
+                  <th className="px-4 py-2 text-left font-semibold">Instructor ID</th>
                   <th className="px-4 py-2 text-left font-semibold">Status</th>
                   <th className="px-4 py-2 text-right font-semibold">Actions</th>
                 </tr>
@@ -512,6 +523,9 @@ export function InstructorsTab() {
                         {instructor.nickname || (
                           <span className="text-muted-foreground">-</span>
                         )}
+                      </td>
+                      <td className="px-4 py-2 font-mono text-xs text-foreground/90">
+                        {instructor.readable_id}
                       </td>
                       <td className="px-4 py-2">
                         <span

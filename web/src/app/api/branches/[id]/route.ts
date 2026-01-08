@@ -3,6 +3,52 @@ import { createSupabaseServerClient } from "@/lib/supabaseServer";
 
 type Params = { params: Promise<{ id: string }> };
 
+// GET - fetch branch with association/alliance names
+export async function GET(_req: Request, context: Params) {
+  const { id } = await context.params;
+  const supabase = createSupabaseServerClient();
+
+  const { data, error } = await supabase
+    .from("ymca_branches")
+    .select(
+      `
+        id,
+        name,
+        association:association_id (
+          id,
+          name,
+          code,
+          alliance:alliance_id (
+            id,
+            name,
+            code
+          )
+        )
+      `
+    )
+    .eq("id", id)
+    .single();
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  const branchName = data?.name ?? null;
+  const associationName = data?.association?.name ?? null;
+  const associationCode = data?.association?.code ?? null;
+  const allianceName = data?.association?.alliance?.name ?? null;
+  const allianceCode = data?.association?.alliance?.code ?? null;
+
+  return NextResponse.json({
+    id,
+    name: branchName,
+    association_name: associationName,
+    association_code: associationCode,
+    alliance_name: allianceName,
+    alliance_code: allianceCode,
+  });
+}
+
 // PATCH - Update branch fields
 export async function PATCH(req: Request, context: Params) {
   const { id } = await context.params;
@@ -39,7 +85,7 @@ export async function PATCH(req: Request, context: Params) {
   }
 
   const { error } = await supabase
-    .from("branches")
+    .from("ymca_branches")
     .update(updates)
     .eq("id", id);
 

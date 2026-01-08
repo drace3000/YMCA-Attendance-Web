@@ -14,6 +14,8 @@ interface Branch {
   website_url?: string;
   theme_color?: string;
   branch_manager_name?: string;
+  alliance_name?: string | null;
+  association_name?: string | null;
 }
 
 interface Schedule {
@@ -69,6 +71,8 @@ export async function generateSchedulePDFBlob(
   const doc = (
     <SchedulePDFDocument
       branchName={branch.name}
+      allianceName={branch.alliance_name ?? undefined}
+      associationName={branch.association_name ?? undefined}
       groupName={groupLabel}
       branchManager={branch.branch_manager_name}
       monthYear={formatMonthYear(schedule.month_start)}

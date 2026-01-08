@@ -16,6 +16,8 @@ interface Branch {
   website_url?: string;
   theme_color?: string;
   branch_manager_name?: string;
+  alliance_name?: string | null;
+  association_name?: string | null;
 }
 
 interface Schedule {
@@ -38,6 +40,8 @@ interface GenerateScheduleModalProps {
   schedule: Schedule | null;
   sessions: Session[];
   criteria?: string[];
+  allianceName?: string;
+  associationName?: string;
 }
 
 type ActionType = "preview" | "download" | "print" | null;
@@ -50,6 +54,8 @@ export function GenerateScheduleModal({
   schedule,
   sessions,
   criteria = [],
+  allianceName,
+  associationName,
 }: GenerateScheduleModalProps) {
   const [loading, setLoading] = useState<ActionType>(null);
   const [error, setError] = useState<string | null>(null);
@@ -57,6 +63,28 @@ export function GenerateScheduleModal({
   const [excelLoading, setExcelLoading] = useState(false);
   const [excelError, setExcelError] = useState<string | null>(null);
   const excelWorkbookRef = useRef<XLSX.WorkBook | null>(null);
+
+  // Deduplicate sessions for reporting by time, class name, and location code
+  const uniqueSessions = useMemo(() => {
+    const seen = new Set<string>();
+    const result: Session[] = [];
+
+    for (const s of sessions) {
+      // Create a unique key from time, class name, and location code
+      const key = [
+        s.start_time ?? "",
+        s.end_time ?? "",
+        s.class?.name ?? "",
+        s.location?.code ?? "",
+      ].join("|");
+      
+      if (!seen.has(key)) {
+        seen.add(key);
+        result.push(s);
+      }
+    }
+    return result;
+  }, [sessions]);
 
   // Apply wait cursor to body during PDF generation
   useEffect(() => {
@@ -69,8 +97,6 @@ export function GenerateScheduleModal({
       document.body.style.cursor = "";
     };
   }, [loading, excelLoading]);
-
-  if (!isOpen) return null;
 
   const canGenerate =
     !!branch &&
@@ -95,6 +121,15 @@ export function GenerateScheduleModal({
       .join("/");
   };
 
+  const branchForReport = useMemo(() => {
+    if (!branch) return null;
+    return {
+      ...branch,
+      alliance_name: allianceName ?? branch.alliance_name ?? null,
+      association_name: associationName ?? branch.association_name ?? null,
+    };
+  }, [branch, allianceName, associationName]);
+
   const excelFilename = useMemo(() => {
     const now = new Date();
     const dateStr = `${now.getFullYear()}.${String(now.getMonth() + 1).padStart(2, "0")}.${String(now.getDate()).padStart(2, "0")}`;
@@ -104,26 +139,35 @@ export function GenerateScheduleModal({
     return `${dateStr}.${timeStr}.${branchPart}_Schedule${schedulePart ? "_" + schedulePart : ""}.xlsx`;
   }, [branch?.name, schedule?.name]);
 
+  const criteriaWithOrg = useMemo(() => {
+    const lines = [...criteria];
+    if (allianceName || associationName) {
+      lines.unshift(`Association: ${associationName ?? "Unknown"}`);
+      lines.unshift(`Alliance: ${allianceName ?? "Unknown"}`);
+    }
+    return lines;
+  }, [criteria, allianceName, associationName]);
+
   const buildExcelWorkbook = (): XLSX.WorkBook => {
     // Calculate unique instructors
     const uniqueInstructorIds = new Set<string>();
-    sessions.forEach((s) => s.instructors.forEach((i) => uniqueInstructorIds.add(i.id)));
+    uniqueSessions.forEach((s) => s.instructors.forEach((i) => uniqueInstructorIds.add(i.id)));
 
     const title = `${branch?.name || "Schedule"} - ${schedule?.name || "Export"}`;
 
     const headerRows: Record<string, string | number>[] = [
       { Day: title, Headcount: "DATA CONTEXT:" },
-      { Day: `Total Sessions: ${sessions.length}`, Headcount: criteria[0] || "" },
-      { Day: `Total Unique Instructors: ${uniqueInstructorIds.size}`, Headcount: criteria[1] || "" },
-      { Day: `Generated: ${new Date().toLocaleString()}`, Headcount: criteria[2] || "" },
+      { Day: `Total Sessions: ${uniqueSessions.length}`, Headcount: criteriaWithOrg[0] || "" },
+      { Day: `Total Unique Instructors: ${uniqueInstructorIds.size}`, Headcount: criteriaWithOrg[1] || "" },
+      { Day: `Generated: ${new Date().toLocaleString()}`, Headcount: criteriaWithOrg[2] || "" },
     ];
 
-    for (let i = 3; i < criteria.length; i++) {
-      headerRows.push({ Day: "", Headcount: criteria[i] });
+    for (let i = 3; i < criteriaWithOrg.length; i++) {
+      headerRows.push({ Day: "", Headcount: criteriaWithOrg[i] });
     }
     headerRows.push({});
 
-    const exportData = sessions.map((s) => ({
+    const exportData = uniqueSessions.map((s) => ({
       Day: s.day_of_week,
       Date: s.session_date,
       Start: s.start_time.slice(0, 5),
@@ -157,7 +201,7 @@ export function GenerateScheduleModal({
 
   const excelPreviewRows = useMemo(() => {
     const headers = ["Day", "Date", "Start", "End", "Class", "Location", "Instructor(s)", "Headcount"] as const;
-    const rows = sessions.map((s) => ({
+    const rows = uniqueSessions.map((s) => ({
       Day: s.day_of_week,
       Date: s.session_date,
       Start: s.start_time.slice(0, 5),
@@ -168,10 +212,10 @@ export function GenerateScheduleModal({
       Headcount: String(s.headcount ?? "-"),
     }));
     return { headers, rows };
-  }, [sessions]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [uniqueSessions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleAction = async (action: ActionType) => {
-    if (!branch || !schedule || !action) return;
+    if (!branchForReport || !schedule || !action) return;
     if (!canGenerate) return;
     
     setLoading(action);
@@ -180,13 +224,13 @@ export function GenerateScheduleModal({
     try {
       switch (action) {
         case "preview":
-          await previewSchedulePDF(branch, schedule, sessions, programGroup, criteria);
+          await previewSchedulePDF(branchForReport, schedule, uniqueSessions, programGroup, criteriaWithOrg);
           break;
         case "download":
-          await downloadSchedulePDF(branch, schedule, sessions, programGroup, criteria);
+          await downloadSchedulePDF(branchForReport, schedule, uniqueSessions, programGroup, criteriaWithOrg);
           break;
         case "print":
-          await printSchedulePDF(branch, schedule, sessions, programGroup, criteria);
+          await printSchedulePDF(branchForReport, schedule, uniqueSessions, programGroup, criteriaWithOrg);
           break;
       }
     } catch (err) {
@@ -229,6 +273,8 @@ export function GenerateScheduleModal({
     }
   };
 
+  if (!isOpen) return null;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
@@ -261,6 +307,14 @@ export function GenerateScheduleModal({
         {/* Schedule Info */}
         <div className="mb-6 rounded-xl border border-[var(--brand-strong)] bg-[var(--brand-strong)]/20 p-4">
           <div className="space-y-2 text-sm">
+            {(allianceName || associationName) && (
+              <div className="flex justify-between">
+                <span className="text-[var(--brand-ink)]/70">Alliance / Association:</span>
+                <span className="font-medium text-[var(--brand-ink)]">
+                  {allianceName || "Alliance"}{associationName ? ` — ${associationName}` : ""}
+                </span>
+              </div>
+            )}
             <div className="flex justify-between">
               <span className="text-[var(--brand-ink)]/70">Branch:</span>
               <span className="font-medium text-[var(--brand-ink)]">{branch?.name || "Not selected"}</span>
@@ -285,17 +339,17 @@ export function GenerateScheduleModal({
         </div>
 
         {/* Grid Context */}
-        {criteria.length > 0 && (
+        {criteriaWithOrg.length > 0 && (
           <div className="mb-6 rounded-xl border border-[var(--brand-strong)] bg-[var(--brand-strong)]/10 p-4">
             <div className="text-xs font-semibold uppercase tracking-wide text-[var(--brand-ink)]/80">
               Grid Context
             </div>
             <div className="mt-2 space-y-1 text-xs text-[var(--brand-ink)]/85">
-              {criteria.slice(0, 8).map((line, idx) => (
+              {criteriaWithOrg.slice(0, 8).map((line, idx) => (
                 <div key={idx}>{line}</div>
               ))}
             </div>
-            {criteria.length > 8 && (
+            {criteriaWithOrg.length > 8 && (
               <div className="mt-2 text-[11px] text-[var(--brand-ink)]/60">
                 (Showing first 8 context lines)
               </div>
@@ -408,7 +462,7 @@ export function GenerateScheduleModal({
 
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div className="text-sm text-[var(--brand-ink)]/80">
-                Rows: <span className="font-semibold text-[var(--brand-ink)]">{sessions.length}</span>
+                Rows: <span className="font-semibold text-[var(--brand-ink)]">{uniqueSessions.length}</span>
               </div>
               <button
                 type="button"
@@ -420,13 +474,13 @@ export function GenerateScheduleModal({
               </button>
             </div>
 
-            {criteria.length > 0 && (
+            {criteriaWithOrg.length > 0 && (
               <div className="mb-4 rounded-xl border border-[var(--brand-strong)] bg-[var(--brand-strong)]/10 p-4">
                 <div className="text-xs font-semibold uppercase tracking-wide text-[var(--brand-ink)]/80">
                   Grid Context
                 </div>
                 <div className="mt-2 space-y-1 text-xs text-[var(--brand-ink)]/85">
-                  {criteria.slice(0, 10).map((line, idx) => (
+                  {criteriaWithOrg.slice(0, 10).map((line, idx) => (
                     <div key={idx}>{line}</div>
                   ))}
                 </div>

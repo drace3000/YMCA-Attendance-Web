@@ -26,7 +26,7 @@ export async function GET(req: Request) {
 
   // Check if this email is a branch manager
   const { data: branch, error } = await supabase
-    .from("branches")
+    .from("ymca_branches")
     .select("id, name, branch_manager_email, branch_manager_name")
     .ilike("branch_manager_email", email.trim())
     .single();
@@ -73,7 +73,7 @@ export async function POST(req: Request) {
 
   // Check if branch exists
   const { data: branch, error: branchError } = await supabase
-    .from("branches")
+    .from("ymca_branches")
     .select("id, name, branch_manager_email")
     .eq("id", branch_id)
     .single();
@@ -92,7 +92,7 @@ export async function POST(req: Request) {
 
   // Check if this email is already a manager of another branch
   const { data: existingManager } = await supabase
-    .from("branches")
+    .from("ymca_branches")
     .select("id, name")
     .ilike("branch_manager_email", email.trim())
     .single();
@@ -111,7 +111,7 @@ export async function POST(req: Request) {
 
   // Update branch with manager info
   const { error: updateError } = await supabase
-    .from("branches")
+    .from("ymca_branches")
     .update({
       branch_manager_email: email.trim().toLowerCase(),
       branch_manager_name: managerName,

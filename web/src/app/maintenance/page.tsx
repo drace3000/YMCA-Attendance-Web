@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Building2, GraduationCap, HelpCircle, Layers3, Mail, MapPin, RotateCcw } from "lucide-react";
+import { Building2, GraduationCap, HelpCircle, Layers3, Mail, MapPin, Network, RotateCcw } from "lucide-react";
 import {
   Popover,
   PopoverArrow,
@@ -14,8 +14,9 @@ import { LocationsTab } from "./locations-tab";
 import { RecipientsTab } from "./recipients-tab";
 import { HelperTab } from "./helper-tab";
 import { GroupsTab } from "./groups-tab";
+import { OrganizationTab } from "./organization-tab";
 
-type TabId = "instructors" | "classes" | "locations" | "groups" | "recipients" | "helper";
+type TabId = "instructors" | "classes" | "locations" | "groups" | "recipients" | "organization" | "helper";
 
 type Tab = {
   id: TabId;
@@ -29,6 +30,7 @@ const tabs: Tab[] = [
   { id: "locations", label: "Locations", icon: <MapPin className="h-4 w-4" /> },
   { id: "groups", label: "Groups", icon: <Layers3 className="h-4 w-4" /> },
   { id: "recipients", label: "Recipients", icon: <Mail className="h-4 w-4" /> },
+  { id: "organization", label: "Organization", icon: <Network className="h-4 w-4" /> },
   { id: "helper", label: "Helper", icon: <HelpCircle className="h-4 w-4" /> },
 ];
 
@@ -56,6 +58,8 @@ export default function MaintenancePage() {
         return "Reload program groups list from the database";
       case "recipients":
         return "Reload email recipients list from the database";
+      case "organization":
+        return "Reload YMCA alliances, associations, and branches";
       default:
         return "";
     }
@@ -135,6 +139,7 @@ export default function MaintenancePage() {
             {activeTab === "locations" && <LocationsTab key={`locations-${refreshKey}`} />}
             {activeTab === "groups" && <GroupsTab key={`groups-${refreshKey}`} />}
             {activeTab === "recipients" && <RecipientsTab key={`recipients-${refreshKey}`} />}
+            {activeTab === "organization" && <OrganizationTab key={`organization-${refreshKey}`} />}
             {activeTab === "helper" && <HelperTab />}
           </div>
         </div>

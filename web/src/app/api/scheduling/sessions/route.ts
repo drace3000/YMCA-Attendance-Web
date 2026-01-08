@@ -14,7 +14,7 @@ type SessionRow = {
   headcount: number | null;
   class: { id: string; name: string } | { id: string; name: string }[] | null;
   location: { id: string; code: string; name: string } | { id: string; code: string; name: string }[] | null;
-  instructors?: { id: string; nickname: string; first_name: string; last_name: string }[];
+  instructors?: { id: string; nickname: string; first_name: string; last_name: string; readable_id: string | null }[];
 };
 
 type CreateSessionPayload = {
@@ -85,7 +85,10 @@ export async function GET(req: Request) {
   // Fetch instructor assignments for all sessions (batch to avoid URI too long)
   const sessionIds = (sessions || []).map((s: { id: string }) => s.id);
   
-  let instructorMap: Record<string, { id: string; nickname: string; first_name: string; last_name: string }[]> = {};
+  let instructorMap: Record<
+    string,
+    { id: string; nickname: string; first_name: string; last_name: string; readable_id: string | null }[]
+  > = {};
   
   if (sessionIds.length > 0) {
     // Batch session IDs to avoid URI too long error
@@ -102,7 +105,7 @@ export async function GET(req: Request) {
           .from("session_instructors")
           .select(`
             session_id,
-            instructor:instructor_id(id, nickname, first_name, last_name)
+            instructor:instructor_id(id, nickname, first_name, last_name, readable_id)
           `)
           .in("session_id", batch)
       )

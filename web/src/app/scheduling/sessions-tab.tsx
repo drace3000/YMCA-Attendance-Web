@@ -24,12 +24,12 @@ export type Session = {
   headcount: number | null;
   class: { id: string; name: string } | null;
   location: { id: string; code: string; name: string } | null;
-  instructors: { id: string; nickname: string; first_name: string; last_name: string }[];
+  instructors: { id: string; nickname: string; first_name: string; last_name: string; readable_id?: string | null }[];
 };
 
 type ClassOption = { id: string; name: string };
 type LocationOption = { id: string; code: string; name: string };
-type InstructorOption = { id: string; nickname: string; first_name: string; last_name: string };
+type InstructorOption = { id: string; nickname: string; first_name: string; last_name: string; readable_id?: string | null };
 
 type SessionsTabProps = {
   scheduleId: string;
@@ -281,6 +281,15 @@ export function SessionsTab({ scheduleId, branchId, programGroupId, refreshKey, 
   const formatInstructors = (list: Session["instructors"]) => {
     if (!list || list.length === 0) return "-";
     return list.map((i) => i.nickname || (i.first_name + " " + i.last_name).trim()).join(", ");
+  };
+
+  const formatInstructorIds = (list: Session["instructors"]) => {
+    if (!list || list.length === 0) return "-";
+    const ids = list
+      .map((i) => (i.readable_id || "").trim())
+      .filter(Boolean);
+    if (ids.length === 0) return "-";
+    return ids.join(", ");
   };
 
   const formatLocation = (loc: Session["location"]) => {
@@ -1168,6 +1177,7 @@ export function SessionsTab({ scheduleId, branchId, programGroupId, refreshKey, 
                   </Popover>
                 </div>
               </th>
+              <th className="px-3 py-3 text-left font-medium">Instructor ID(s)</th>
               <th className="px-3 py-3 text-center font-medium">HC</th>
               <th className="px-3 py-3 text-center font-medium w-20">Actions</th>
             </tr>
@@ -1300,6 +1310,20 @@ export function SessionsTab({ scheduleId, branchId, programGroupId, refreshKey, 
                       </PopoverContent>
                     </Popover>
                   </td>
+                  {/* Instructor IDs (read-only) */}
+                  <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
+                    {formatInstructorIds(
+                      instructors
+                        .filter((i) => editForm.instructor_ids.includes(i.id))
+                        .map((i) => ({
+                          id: i.id,
+                          nickname: i.nickname,
+                          first_name: i.first_name,
+                          last_name: i.last_name,
+                          readable_id: i.readable_id ?? null,
+                        }))
+                    )}
+                  </td>
                   {/* Headcount Input */}
                   <td className="px-2 py-2">
                     <input
@@ -1327,6 +1351,9 @@ export function SessionsTab({ scheduleId, branchId, programGroupId, refreshKey, 
                   <td className="px-3 py-2">{session.class?.name || "-"}</td>
                   <td className="px-3 py-2">{formatLocation(session.location)}</td>
                   <td className="px-3 py-2 max-w-[200px] truncate">{formatInstructors(session.instructors)}</td>
+                  <td className="px-3 py-2 max-w-[240px] truncate font-mono text-xs text-muted-foreground" title={formatInstructorIds(session.instructors)}>
+                    {formatInstructorIds(session.instructors)}
+                  </td>
                   <td className="px-3 py-2 text-center">{session.headcount ?? "-"}</td>
                   <td className="px-2 py-2">
                     <div className="flex justify-center gap-1">
@@ -1339,7 +1366,7 @@ export function SessionsTab({ scheduleId, branchId, programGroupId, refreshKey, 
             )}
             {sortedSessions.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-3 py-8 text-center text-muted-foreground">
+                <td colSpan={10} className="px-3 py-8 text-center text-muted-foreground">
                   {searchTerm ? "No sessions match your search." : "No sessions found for this schedule."}
                 </td>
               </tr>

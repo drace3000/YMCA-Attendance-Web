@@ -31,31 +31,56 @@ comment on column public.program_groups.sort_order is
 alter table public.program_groups enable row level security;
 
 -- Policies: groups are safe to read publicly; writes are service_role only (via server API routes).
-create policy "anon_select_program_groups"
-  on public.program_groups for select
-  to anon
-  using (true);
+do $$
+begin
+  create policy "anon_select_program_groups"
+    on public.program_groups for select
+    to anon
+    using (true);
+exception
+  when duplicate_object then null;
+end $$;
 
-create policy "authenticated_select_program_groups"
-  on public.program_groups for select
-  to authenticated
-  using (true);
+do $$
+begin
+  create policy "authenticated_select_program_groups"
+    on public.program_groups for select
+    to authenticated
+    using (true);
+exception
+  when duplicate_object then null;
+end $$;
 
-create policy "service_role_insert_program_groups"
-  on public.program_groups for insert
-  to service_role
-  with check (true);
+do $$
+begin
+  create policy "service_role_insert_program_groups"
+    on public.program_groups for insert
+    to service_role
+    with check (true);
+exception
+  when duplicate_object then null;
+end $$;
 
-create policy "service_role_update_program_groups"
-  on public.program_groups for update
-  to service_role
-  using (true)
-  with check (true);
+do $$
+begin
+  create policy "service_role_update_program_groups"
+    on public.program_groups for update
+    to service_role
+    using (true)
+    with check (true);
+exception
+  when duplicate_object then null;
+end $$;
 
-create policy "service_role_delete_program_groups"
-  on public.program_groups for delete
-  to service_role
-  using (true);
+do $$
+begin
+  create policy "service_role_delete_program_groups"
+    on public.program_groups for delete
+    to service_role
+    using (true);
+exception
+  when duplicate_object then null;
+end $$;
 
 grant select on table public.program_groups to anon, authenticated;
 grant all on table public.program_groups to service_role;

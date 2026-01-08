@@ -54,20 +54,44 @@ ON public.error_logs (created_at DESC);
 ALTER TABLE public.error_logs ENABLE ROW LEVEL SECURITY;
 
 -- Policy: Allow anonymous users to insert errors (client-side logging)
-CREATE POLICY "anon_insert_errors" ON public.error_logs 
-  FOR INSERT TO anon WITH CHECK (true);
+do $$
+begin
+  create policy "anon_insert_errors" on public.error_logs
+    for insert to anon
+    with check (true);
+exception
+  when duplicate_object then null;
+end $$;
 
 -- Policy: Allow authenticated users to insert errors
-CREATE POLICY "authenticated_insert_errors" ON public.error_logs 
-  FOR INSERT TO authenticated WITH CHECK (true);
+do $$
+begin
+  create policy "authenticated_insert_errors" on public.error_logs
+    for insert to authenticated
+    with check (true);
+exception
+  when duplicate_object then null;
+end $$;
 
 -- Policy: Only service role can read errors (for digest API)
-CREATE POLICY "service_select_errors" ON public.error_logs 
-  FOR SELECT TO service_role USING (true);
+do $$
+begin
+  create policy "service_select_errors" on public.error_logs
+    for select to service_role
+    using (true);
+exception
+  when duplicate_object then null;
+end $$;
 
 -- Policy: Only service role can update errors (for marking notified)
-CREATE POLICY "service_update_errors" ON public.error_logs 
-  FOR UPDATE TO service_role USING (true);
+do $$
+begin
+  create policy "service_update_errors" on public.error_logs
+    for update to service_role
+    using (true);
+exception
+  when duplicate_object then null;
+end $$;
 
 -- Grant permissions
 GRANT INSERT ON TABLE public.error_logs TO anon;

@@ -20,6 +20,9 @@ export type ErrorType =
 export type ErrorContext = {
   page?: string;
   action?: string;
+  module?: string;
+  criticality?: "High" | "Medium" | "Low";
+  description?: string;
   branchId?: string;
   branchName?: string;
   userId?: string;
@@ -90,6 +93,9 @@ export async function logError(
         user_id: context?.userId || null,
         user_email: context?.userEmail || null,
         context: {
+          module: context?.module,
+          criticality: context?.criticality,
+          description: context?.description,
           page: context?.page,
           action: context?.action,
           params: context?.params,

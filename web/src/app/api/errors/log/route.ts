@@ -9,6 +9,7 @@
 
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
+import { Resend } from "resend";
 
 interface ErrorLogPayload {
   error_code: string;
@@ -24,6 +25,13 @@ interface ErrorLogPayload {
   url?: string | null;
   user_agent?: string | null;
 }
+
+type AdminRecipient = {
+  email: string;
+  first_name: string | null;
+  last_name: string | null;
+  on_hold?: boolean | null;
+};
 
 export async function POST(req: Request) {
   try {
@@ -63,6 +71,20 @@ export async function POST(req: Request) {
     };
 
     const source = body.source ?? "client";
+
+    // Immediate alert gating (server-only, secret required)
+    // This prevents browsers from triggering emails directly.
+    const notifySecret = process.env.ERROR_LOG_SECRET || process.env.CRON_SECRET || "";
+    const providedSecret = req.headers.get("x-error-log-secret") ?? "";
+    const authHeader = req.headers.get("authorization") ?? "";
+    const canTriggerImmediateNotify =
+      !!notifySecret &&
+      (providedSecret === notifySecret || authHeader === `Bearer ${notifySecret}`);
+
+    const shouldImmediateNotify =
+      canTriggerImmediateNotify &&
+      source === "server" &&
+      normalizedContext.criticality === "High";
 
     // Check if similar error exists in last hour (for grouping)
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
@@ -106,7 +128,7 @@ export async function POST(req: Request) {
       });
     } else {
       // Insert new error
-      const { error: insertError } = await supabase
+      const { data: inserted, error: insertError } = await supabase
         .from("error_logs")
         .insert({
           error_code: errorCode,
@@ -121,7 +143,9 @@ export async function POST(req: Request) {
           source,
           url: body.url || null,
           user_agent: body.user_agent || null,
-        });
+        })
+        .select("id")
+        .single();
 
       if (insertError) {
         console.error("Error inserting error log:", insertError);
@@ -131,10 +155,86 @@ export async function POST(req: Request) {
         );
       }
 
+      let immediateNotified = false;
+      if (shouldImmediateNotify && inserted?.id) {
+        const resendApiKey = process.env.RESEND_API_KEY;
+        if (!resendApiKey) {
+          console.warn("RESEND_API_KEY not configured - immediate error email skipped");
+        } else {
+          // Get Administrator recipients (receive all system errors)
+          const { data: admins, error: adminsError } = await supabase
+            .from("branch_schedule_recipients")
+            .select("email, first_name, last_name")
+            .eq("recipient_type", "Administrator")
+            .eq("on_hold", false)
+            .returns<AdminRecipient[]>();
+
+          if (adminsError) {
+            console.error("Error querying administrator recipients:", adminsError);
+          } else if (!admins || admins.length === 0) {
+            console.warn("No Administrator recipients configured for immediate error notifications");
+          } else {
+            const resend = new Resend(resendApiKey);
+            const adminEmails = admins.map((a) => a.email);
+
+            const branchInfo = body.branch_name ? `Branch: ${body.branch_name}` : "Branch: N/A";
+            const userInfo = body.user_email ? `User: ${body.user_email}` : "User: Anonymous";
+            const moduleInfo = normalizedContext.module || "Unknown module";
+            const urlInfo = body.url ? `\nURL: ${body.url}` : "";
+            const stackPreview = body.stack_trace
+              ? `\nStack: ${body.stack_trace.split("\n").slice(0, 3).join(" | ")}`
+              : "";
+
+            const timestamp = new Date().toLocaleString("en-US", {
+              timeZone: "America/New_York",
+              dateStyle: "full",
+              timeStyle: "short",
+            });
+
+            const emailText = `YMCA Attendance System - HIGH Severity Error
+Generated: ${timestamp}
+
+Error Code: ${errorCode}
+Type: ${body.error_type}
+Criticality: High
+${branchInfo}
+${userInfo}
+Module: ${moduleInfo}
+Detail: ${normalizedContext.description || body.message}${urlInfo}${stackPreview}
+
+---
+This alert was triggered by a server-side error log (protected endpoint).
+You can also review errors in Supabase Studio > Table Editor > error_logs.`;
+
+            const { error: emailError } = await resend.emails.send({
+              from: process.env.RESEND_FROM_EMAIL || "YMCA System <noreply@resend.dev>",
+              to: adminEmails,
+              subject: `[YMCA] HIGH Severity Error: ${body.error_type} (${errorCode})`,
+              text: emailText,
+            });
+
+            if (emailError) {
+              console.error("Error sending immediate error email:", emailError);
+            } else {
+              immediateNotified = true;
+              const { error: markError } = await supabase
+                .from("error_logs")
+                .update({ notified_at: new Date().toISOString() })
+                .eq("id", inserted.id);
+
+              if (markError) {
+                console.error("Error marking error as notified:", markError);
+              }
+            }
+          }
+        }
+      }
+
       return NextResponse.json({ 
         success: true, 
         action: "created",
-        error_code: errorCode 
+        error_code: errorCode,
+        immediate_notified: immediateNotified,
       });
     }
   } catch (err) {

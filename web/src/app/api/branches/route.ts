@@ -24,7 +24,7 @@ export async function GET() {
   
   // Fetch branches with all relevant fields for scheduling/reports
   const { data, error } = await supabase
-    .from("branches")
+    .from("ymca_branches")
     .select(
       "id, name, address, city, state, phone, website_url, schedule_email_from, schedule_email_reply_to, theme_color, branch_manager_name, branch_manager_email, branch_manager_phone",
     )

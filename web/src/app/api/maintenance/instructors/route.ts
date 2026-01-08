@@ -8,6 +8,7 @@ type InstructorRow = {
   first_name: string | null;
   last_name: string | null;
   nickname: string | null;
+  readable_id: string;
   is_active: boolean;
   created_at: string;
 };
@@ -54,6 +55,51 @@ function generateNicknameSuggestions(firstName: string, lastName: string): strin
   }
   
   return suggestions;
+}
+
+function sanitizeReadableIdPart(input: string): string {
+  return input
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "") // keep ids compact and consistent with existing backfill
+    .replace(/[^A-Z0-9_-]/g, "");
+}
+
+type BranchMeta = {
+  id: string;
+  short_code: string;
+  association: { code: string } | null;
+};
+
+async function getNextReadableId(
+  supabase: ReturnType<typeof createSupabaseServerClient>,
+  base: string,
+): Promise<string> {
+  // Find existing IDs with the same base (e.g., BASE, BASE-2, BASE-3)
+  const { data, error } = await supabase
+    .from("instructors")
+    .select("readable_id")
+    .ilike("readable_id", `${base}%`)
+    .returns<{ readable_id: string }[]>();
+
+  if (error) {
+    // Fall back to base; let the unique index enforce if needed.
+    return base;
+  }
+
+  const existing = new Set((data ?? []).map((r) => r.readable_id));
+  if (!existing.has(base)) return base;
+
+  let maxSuffix = 1;
+  for (const id of existing) {
+    const m = id.match(new RegExp(`^${base}-(\\d+)$`));
+    if (m) {
+      const n = Number(m[1]);
+      if (Number.isFinite(n)) maxSuffix = Math.max(maxSuffix, n);
+    }
+  }
+
+  return `${base}-${maxSuffix + 1}`;
 }
 
 // GET - List all instructors or check nickname availability
@@ -121,7 +167,7 @@ export async function GET(req: Request) {
   // Regular list query
   let query = supabase
     .from("instructors")
-    .select("id, branch_id, raw_name, first_name, last_name, nickname, is_active, created_at")
+    .select("id, branch_id, raw_name, first_name, last_name, nickname, readable_id, is_active, created_at")
     .order("nickname", { ascending: true, nullsFirst: false });
 
   if (!includeInactive) {
@@ -157,17 +203,23 @@ export async function POST(req: Request) {
     );
   }
 
+  if (!branch_id) {
+    return NextResponse.json({ error: "branch_id is required" }, { status: 400 });
+  }
+
+  const trimmedNickname = nickname?.trim();
+  if (!trimmedNickname) {
+    // We use nickname for schedules and for readable_id generation.
+    return NextResponse.json({ error: "nickname is required" }, { status: 400 });
+  }
+
   // Check nickname uniqueness if provided
-  if (nickname?.trim()) {
+  if (trimmedNickname) {
     let nickQuery = supabase
       .from("instructors")
       .select("id")
-      .ilike("nickname", nickname.trim());
-    if (branch_id) {
-      nickQuery = nickQuery.eq("branch_id", branch_id);
-    } else {
-      nickQuery = nickQuery.is("branch_id", null);
-    }
+      .ilike("nickname", trimmedNickname);
+    nickQuery = nickQuery.eq("branch_id", branch_id);
     const { data: existing } = await nickQuery;
 
     if (existing && existing.length > 0) {
@@ -180,14 +232,39 @@ export async function POST(req: Request) {
 
   const raw_name = `${first_name.trim()} ${last_name.trim()}`;
 
+  // Build readable_id (stable and memorable): ASSOC-BRANCHSHORT-NICKNAME
+  const { data: branchMeta, error: branchMetaError } = await supabase
+    .from("ymca_branches")
+    .select("id, short_code, association:ymca_associations(code)")
+    .eq("id", branch_id)
+    .returns<BranchMeta>()
+    .single();
+
+  if (branchMetaError || !branchMeta) {
+    return NextResponse.json({ error: "Branch not found" }, { status: 404 });
+  }
+
+  const assocCode = branchMeta.association?.code;
+  const branchShort = branchMeta.short_code;
+  if (!assocCode || !branchShort) {
+    return NextResponse.json(
+      { error: "Branch hierarchy metadata missing (association code / short_code)" },
+      { status: 500 },
+    );
+  }
+
+  const baseReadableId = `${sanitizeReadableIdPart(assocCode)}-${sanitizeReadableIdPart(branchShort)}-${sanitizeReadableIdPart(trimmedNickname)}`;
+  const readable_id = await getNextReadableId(supabase, baseReadableId);
+
   const { data, error } = await supabase
     .from("instructors")
     .insert({
       first_name: first_name.trim(),
       last_name: last_name.trim(),
-      nickname: nickname?.trim() || null,
+      nickname: trimmedNickname,
       raw_name,
-      branch_id: branch_id || null,
+      branch_id,
+      readable_id,
       is_active: true,
     })
     .select()
@@ -196,6 +273,14 @@ export async function POST(req: Request) {
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+
+  // Ensure instructor_branches has the primary branch link for cross-branch scheduling
+  await supabase
+    .from("instructor_branches")
+    .upsert(
+      { instructor_id: data.id, branch_id, is_primary: true },
+      { onConflict: "instructor_id,branch_id" },
+    );
 
   return NextResponse.json(data, { status: 201 });
 }
