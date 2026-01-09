@@ -3,12 +3,17 @@ import { createSupabaseServerClient } from "@/lib/supabaseServer";
 
 const FALLBACK_EASTSIDE_BRANCH_ID = "26d6acb8-5acf-4a32-ac24-343f30b1442c";
 
+interface AssociationData {
+  id: string;
+  code: string;
+}
+
 type Branch = {
   id: string;
   code: string;
   short_code?: string | null;
   name: string;
-  association?: { id: string; code: string } | null;
+  association?: AssociationData | null;
   address?: string | null;
   city?: string | null;
   state?: string | null;
@@ -22,7 +27,26 @@ type Branch = {
   branch_manager_phone?: string | null;
 };
 
-export async function GET() {
+interface RawBranchData {
+  id: string;
+  code: string;
+  short_code?: string | null;
+  name: string;
+  association?: AssociationData | AssociationData[] | null;
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  phone?: string | null;
+  website_url?: string | null;
+  schedule_email_from?: string | null;
+  schedule_email_reply_to?: string | null;
+  theme_color?: string | null;
+  branch_manager_name?: string | null;
+  branch_manager_email?: string | null;
+  branch_manager_phone?: string | null;
+}
+
+export async function GET(): Promise<NextResponse> {
   const supabase = createSupabaseServerClient();
   
   // Fetch branches with all relevant fields for scheduling/reports
@@ -58,7 +82,13 @@ export async function GET() {
     return NextResponse.json([fallback], { status: 200 });
   }
 
-  const branches: Branch[] = data ?? [];
+  // Transform raw data to handle Supabase returning association as array
+  const rawData = (data ?? []) as RawBranchData[];
+  const branches: Branch[] = rawData.map((b) => ({
+    ...b,
+    association: Array.isArray(b.association) ? b.association[0] ?? null : b.association ?? null,
+  }));
+  
   return NextResponse.json(branches);
 }
 

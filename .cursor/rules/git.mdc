@@ -1,0 +1,290 @@
+---
+description: Rules for Git workflow and version control. Covers commit conventions, branch naming, and safe practices for Supabase projects. Use when making commits or managing branches.
+globs: .gitignore, .git/**
+alwaysApply: false
+---
+
+# Git Workflow Rules
+
+You are a Git expert. Follow these conventions for clean, traceable history.
+
+## Commit Message Format
+
+```
+<type>(<scope>): <short description>
+
+[optional body]
+[optional footer]
+```
+
+### Types
+| Type | Use For |
+|------|---------|
+| `feat` | New feature |
+| `fix` | Bug fix |
+| `refactor` | Code change that neither fixes a bug nor adds a feature |
+| `style` | Formatting, whitespace (no code change) |
+| `docs` | Documentation only |
+| `test` | Adding or updating tests |
+| `chore` | Build, dependencies, tooling |
+| `perf` | Performance improvement |
+
+### Examples
+```bash
+feat(scheduler): add drag-and-drop for class reordering
+fix(api): handle null branch_id in schedule query
+refactor(auth): extract session validation to hook
+docs(readme): add setup instructions for local Supabase
+chore(deps): update @tanstack/react-query to 5.x
+test(forms): add validation tests for schedule form
+```
+
+### Scope (Optional but Helpful)
+Use the feature area or component name:
+- `scheduler`, `maintenance`, `reports`
+- `api`, `auth`, `db`
+- `ui`, `forms`, `modal`
+
+## Branch Naming
+
+```
+<type>/<short-description>
+```
+
+### Branch Types
+| Prefix | Use For |
+|--------|---------|
+| `feature/` | New features |
+| `fix/` | Bug fixes |
+| `refactor/` | Code refactoring |
+| `chore/` | Maintenance tasks |
+| `hotfix/` | Urgent production fixes |
+
+### Examples
+```bash
+feature/hierarchy-report
+fix/session-deduplication
+refactor/query-key-factory
+chore/update-dependencies
+hotfix/auth-redirect-loop
+```
+
+### Rules
+- Use lowercase with hyphens
+- Keep it short but descriptive
+- Include ticket number if applicable: `feature/ABC-123-user-profile`
+
+## Atomic Commits
+
+### One Logical Change Per Commit
+```bash
+# ❌ Bad: Multiple unrelated changes
+git commit -m "fix login bug, add new header, update deps"
+
+# ✅ Good: Separate commits
+git commit -m "fix(auth): handle expired token redirect"
+git commit -m "feat(ui): add responsive header component"
+git commit -m "chore(deps): update react to 18.3"
+```
+
+### Commit Frequently
+- Commit after each logical step
+- Makes reverting easier
+- Provides better history for debugging
+
+## What to Commit
+
+### Always Commit
+- Source code changes
+- Configuration files (`.env.example`, `tsconfig.json`)
+- Migration files (but see Supabase rules below)
+- Package.json / lock files
+- Documentation
+
+### Never Commit
+```gitignore
+# Environment files with secrets
+.env
+.env.local
+.env.production
+
+# Dependencies
+node_modules/
+
+# Build outputs
+.next/
+dist/
+build/
+
+# IDE settings (personal)
+.idea/
+.vscode/settings.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Database dumps (large, contain data)
+*.dump
+*.backup
+*.sql.gz
+
+# Logs
+*.log
+npm-debug.log*
+```
+
+## Supabase-Specific Rules
+
+### Migration Files
+```bash
+# ✅ Commit new migration files
+git add supabase/migrations/20240901120000_add_users_table.sql
+git commit -m "feat(db): add users table with RLS policies"
+
+# ⚠️ NEVER modify an already-applied migration
+# If migration is in production, create a NEW migration instead
+
+# ❌ Don't commit these
+supabase/.temp/        # Internal state
+supabase/.branches/    # Branch state
+```
+
+### Before Pushing Migration Changes
+```bash
+# Verify migration status
+supabase migration list
+
+# Check for uncommitted schema changes
+supabase db diff
+```
+
+## Pull Request Guidelines
+
+### PR Title
+Follow commit message format:
+```
+feat(scheduler): implement drag-and-drop class ordering
+```
+
+### PR Description Template
+```markdown
+## Summary
+Brief description of changes
+
+## Changes
+- Added X component
+- Fixed Y bug
+- Updated Z logic
+
+## Testing
+- [ ] Unit tests pass
+- [ ] Manual testing completed
+- [ ] Tested on mobile viewport
+
+## Screenshots (if UI change)
+[Attach screenshots]
+
+## Migration Notes (if applicable)
+- New migration: `20240901_add_column.sql`
+- Requires `supabase db push`
+```
+
+### PR Size
+- Aim for <400 lines changed
+- Split large features into smaller PRs
+- Each PR should be reviewable in <30 minutes
+
+## Common Git Operations
+
+### Undo Last Commit (Keep Changes)
+```bash
+git reset --soft HEAD~1
+```
+
+### Amend Last Commit
+```bash
+git add .
+git commit --amend --no-edit
+```
+
+### Stash Changes
+```bash
+git stash                    # Stash changes
+git stash pop                # Apply and remove stash
+git stash list               # View stashes
+git stash drop stash@{0}     # Delete specific stash
+```
+
+### Rebase onto Main
+```bash
+git checkout feature/my-branch
+git fetch origin
+git rebase origin/main
+
+# If conflicts, resolve then:
+git add .
+git rebase --continue
+```
+
+### Cherry-Pick Commit
+```bash
+git cherry-pick <commit-hash>
+```
+
+## Pre-Commit Checklist
+
+Before committing, verify:
+- [ ] Code compiles without errors
+- [ ] Linting passes (`npm run lint`)
+- [ ] Tests pass (`npm run test`)
+- [ ] No console.log statements left
+- [ ] No commented-out code
+- [ ] Environment variables not hardcoded
+- [ ] Sensitive data not included
+
+## Anti-Patterns to Avoid
+
+```bash
+# ❌ Don't commit everything at once
+git add .
+git commit -m "changes"
+
+# ✅ Stage specific files, write descriptive message
+git add src/components/Schedule.tsx
+git commit -m "fix(scheduler): prevent duplicate class times"
+
+# ❌ Don't use generic messages
+git commit -m "fix"
+git commit -m "update"
+git commit -m "WIP"
+
+# ✅ Be specific
+git commit -m "fix(api): return 404 for non-existent schedule"
+
+# ❌ Don't force push to shared branches
+git push --force origin main  # DANGEROUS!
+
+# ✅ Force push only to your own feature branches
+git push --force-with-lease origin feature/my-branch
+
+# ❌ Don't commit generated files
+git add types/supabase.ts  # Generated by CLI
+
+# ✅ Regenerate on build or add to .gitignore
+```
+
+## Useful Aliases
+
+Add to `~/.gitconfig`:
+```ini
+[alias]
+  co = checkout
+  br = branch
+  ci = commit
+  st = status
+  last = log -1 HEAD
+  unstage = reset HEAD --
+  graph = log --oneline --graph --all
+  amend = commit --amend --no-edit
+```

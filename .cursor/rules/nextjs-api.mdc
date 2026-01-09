@@ -1,0 +1,424 @@
+---
+description: Rules for Next.js API route handlers. Covers route structure, error handling, authentication, and Supabase integration. Use when building or modifying API endpoints.
+globs: **/app/api/**/*.ts, **/api/**/route.ts
+alwaysApply: false
+---
+
+# Next.js API Route Rules
+
+You are an expert in Next.js App Router API routes. Build secure, well-typed endpoints.
+
+## Route Handler Structure
+
+### Basic Route (app/api/users/route.ts)
+```typescript
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+
+export async function GET(request: NextRequest) {
+  try {
+    const supabase = await createClient()
+    
+    const { data, error } = await supabase
+      .from('users')
+      .select('id, name, email')
+      .order('name')
+    
+    if (error) {
+      console.error('Database error:', error)
+      return NextResponse.json(
+        { error: 'Failed to fetch users' },
+        { status: 500 }
+      )
+    }
+    
+    return NextResponse.json({ users: data })
+  } catch (error) {
+    console.error('Unexpected error:', error)
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}
+```
+
+### Dynamic Route (app/api/users/[id]/route.ts)
+```typescript
+import { NextRequest, NextResponse } from 'next/server'
+
+interface RouteParams {
+  params: Promise<{ id: string }>
+}
+
+export async function GET(
+  request: NextRequest,
+  { params }: RouteParams
+) {
+  const { id } = await params
+  
+  // Validate ID format
+  if (!id || !isValidUUID(id)) {
+    return NextResponse.json(
+      { error: 'Invalid user ID' },
+      { status: 400 }
+    )
+  }
+  
+  const supabase = await createClient()
+  
+  const { data, error } = await supabase
+    .from('users')
+    .select('*')
+    .eq('id', id)
+    .single()
+  
+  if (error) {
+    if (error.code === 'PGRST116') {
+      return NextResponse.json(
+        { error: 'User not found' },
+        { status: 404 }
+      )
+    }
+    return NextResponse.json(
+      { error: 'Database error' },
+      { status: 500 }
+    )
+  }
+  
+  return NextResponse.json(data)
+}
+```
+
+## Request Handling
+
+### Query Parameters
+```typescript
+export async function GET(request: NextRequest) {
+  const searchParams = request.nextUrl.searchParams
+  
+  const page = parseInt(searchParams.get('page') || '1')
+  const limit = parseInt(searchParams.get('limit') || '10')
+  const search = searchParams.get('search') || ''
+  const status = searchParams.get('status') // may be null
+  
+  // Build query
+  let query = supabase.from('items').select('*', { count: 'exact' })
+  
+  if (search) {
+    query = query.ilike('name', `%${search}%`)
+  }
+  
+  if (status) {
+    query = query.eq('status', status)
+  }
+  
+  const { data, count, error } = await query
+    .range((page - 1) * limit, page * limit - 1)
+    .order('created_at', { ascending: false })
+  
+  return NextResponse.json({
+    data,
+    pagination: {
+      page,
+      limit,
+      total: count,
+      totalPages: Math.ceil((count || 0) / limit),
+    },
+  })
+}
+```
+
+### Request Body (POST/PUT)
+```typescript
+import { z } from 'zod'
+
+const CreateUserSchema = z.object({
+  email: z.string().email(),
+  name: z.string().min(1).max(100),
+  role: z.enum(['admin', 'user', 'manager']).optional().default('user'),
+})
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json()
+    
+    // Validate with Zod
+    const result = CreateUserSchema.safeParse(body)
+    
+    if (!result.success) {
+      return NextResponse.json(
+        { 
+          error: 'Validation failed',
+          details: result.error.flatten().fieldErrors,
+        },
+        { status: 400 }
+      )
+    }
+    
+    const { email, name, role } = result.data
+    
+    const supabase = await createClient()
+    
+    const { data, error } = await supabase
+      .from('users')
+      .insert({ email, name, role })
+      .select()
+      .single()
+    
+    if (error) {
+      // Handle unique constraint violation
+      if (error.code === '23505') {
+        return NextResponse.json(
+          { error: 'Email already exists' },
+          { status: 409 }
+        )
+      }
+      throw error
+    }
+    
+    return NextResponse.json(data, { status: 201 })
+  } catch (error) {
+    console.error('Create user error:', error)
+    return NextResponse.json(
+      { error: 'Failed to create user' },
+      { status: 500 }
+    )
+  }
+}
+```
+
+## Error Response Pattern
+
+### Consistent Error Shape
+```typescript
+interface ApiError {
+  error: string
+  code?: string
+  details?: Record<string, string[]>
+}
+
+// Helper function
+function errorResponse(
+  message: string,
+  status: number,
+  details?: Record<string, string[]>
+): NextResponse<ApiError> {
+  return NextResponse.json(
+    { error: message, ...(details && { details }) },
+    { status }
+  )
+}
+
+// Usage
+return errorResponse('User not found', 404)
+return errorResponse('Validation failed', 400, { email: ['Invalid format'] })
+```
+
+### Common HTTP Status Codes
+```typescript
+// Success
+200 // OK - GET success, PUT/PATCH success
+201 // Created - POST success
+204 // No Content - DELETE success
+
+// Client Errors
+400 // Bad Request - Invalid input, validation failed
+401 // Unauthorized - Not authenticated
+403 // Forbidden - Authenticated but not allowed
+404 // Not Found - Resource doesn't exist
+409 // Conflict - Duplicate, constraint violation
+422 // Unprocessable Entity - Valid syntax but semantic errors
+
+// Server Errors
+500 // Internal Server Error - Unexpected error
+503 // Service Unavailable - Database down, etc.
+```
+
+## Authentication
+
+### Check Auth in Route
+```typescript
+export async function GET(request: NextRequest) {
+  const supabase = await createClient()
+  
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  
+  if (authError || !user) {
+    return NextResponse.json(
+      { error: 'Unauthorized' },
+      { status: 401 }
+    )
+  }
+  
+  // User is authenticated, proceed...
+  const { data, error } = await supabase
+    .from('private_data')
+    .select('*')
+    .eq('user_id', user.id)
+  
+  return NextResponse.json(data)
+}
+```
+
+### Role-Based Access
+```typescript
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  
+  if (!user) {
+    return errorResponse('Unauthorized', 401)
+  }
+  
+  // Check user role
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single()
+  
+  if (profile?.role !== 'admin') {
+    return errorResponse('Forbidden', 403)
+  }
+  
+  // Proceed with delete...
+}
+```
+
+## File Structure
+
+```
+app/
+└── api/
+    ├── users/
+    │   ├── route.ts              # GET /api/users, POST /api/users
+    │   └── [id]/
+    │       └── route.ts          # GET/PUT/DELETE /api/users/:id
+    ├── schedules/
+    │   ├── route.ts
+    │   └── [id]/
+    │       ├── route.ts
+    │       └── classes/
+    │           └── route.ts      # GET /api/schedules/:id/classes
+    └── maintenance/
+        ├── organization/
+        │   └── route.ts
+        └── instructors/
+            └── route.ts
+```
+
+## Anti-Patterns to Avoid
+
+```typescript
+// ❌ Don't expose service role key in routes
+import { createClient } from '@supabase/supabase-js'
+const supabase = createClient(url, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+
+// ✅ Use server client that respects RLS
+import { createClient } from '@/lib/supabase/server'
+const supabase = await createClient()
+
+// ❌ Don't return raw database errors to client
+if (error) {
+  return NextResponse.json({ error: error.message }, { status: 500 })
+}
+
+// ✅ Log internally, return generic message
+if (error) {
+  console.error('Database error:', error)
+  return NextResponse.json({ error: 'Failed to fetch data' }, { status: 500 })
+}
+
+// ❌ Don't skip input validation
+const { email } = await request.json()
+await supabase.from('users').insert({ email })
+
+// ✅ Always validate input
+const result = schema.safeParse(await request.json())
+if (!result.success) return errorResponse('Invalid input', 400)
+
+// ❌ Don't use try/catch without proper error handling
+try {
+  // ...
+} catch (e) {
+  throw e  // Just re-throws, unhelpful
+}
+
+// ✅ Log and return appropriate response
+try {
+  // ...
+} catch (error) {
+  console.error('Unexpected error:', error)
+  return errorResponse('Internal server error', 500)
+}
+
+// ❌ Don't forget to handle missing resources
+const { data } = await supabase.from('users').select().eq('id', id).single()
+return NextResponse.json(data)  // data could be null!
+
+// ✅ Check for null/error
+const { data, error } = await supabase.from('users').select().eq('id', id).single()
+if (error || !data) {
+  return errorResponse('User not found', 404)
+}
+return NextResponse.json(data)
+```
+
+## CORS (If Needed)
+
+```typescript
+// For public APIs that need CORS
+export async function OPTIONS(request: NextRequest) {
+  return new NextResponse(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    },
+  })
+}
+
+// Add CORS headers to responses
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+}
+
+return NextResponse.json(data, { headers: corsHeaders })
+```
+
+## Rate Limiting Pattern
+
+```typescript
+import { Ratelimit } from '@upstash/ratelimit'
+import { Redis } from '@upstash/redis'
+
+const ratelimit = new Ratelimit({
+  redis: Redis.fromEnv(),
+  limiter: Ratelimit.slidingWindow(10, '10 s'), // 10 requests per 10 seconds
+})
+
+export async function POST(request: NextRequest) {
+  const ip = request.ip ?? '127.0.0.1'
+  const { success, limit, remaining } = await ratelimit.limit(ip)
+  
+  if (!success) {
+    return NextResponse.json(
+      { error: 'Too many requests' },
+      { 
+        status: 429,
+        headers: {
+          'X-RateLimit-Limit': limit.toString(),
+          'X-RateLimit-Remaining': remaining.toString(),
+        },
+      }
+    )
+  }
+  
+  // Proceed with request...
+}
+```

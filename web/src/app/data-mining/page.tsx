@@ -196,12 +196,12 @@ export default function DataMiningPage() {
     const dateStr = `${now.getFullYear()}.${String(now.getMonth() + 1).padStart(2, "0")}.${String(now.getDate()).padStart(2, "0")}`;
     const timeStr = `${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}`;
     const branchPart = branch.name ? branch.name.replace(/\s+/g, "_") : "DataMining";
-    const reportTitle = response?.query?.reportTitle?.replace(/\s+/g, "_") || "Query_Results";
+    const reportTitle = (response?.success && response.query?.reportTitle?.replace(/\s+/g, "_")) || "Query_Results";
     return `${dateStr}.${timeStr}.${branchPart}_${reportTitle}.xlsx`;
   };
 
   const getExcelWorkbook = () => {
-    if (!response?.results?.data) return null;
+    if (!response?.success || !response.results?.data) return null;
     
     const rows = response.results.data;
     const title = response.query?.reportTitle || "Data Mining Results";
@@ -254,7 +254,7 @@ export default function DataMiningPage() {
   };
 
   const handleExcelPreview = () => {
-    if (!response?.results?.data) return;
+    if (!response?.success || !response.results?.data) return;
     
     const rows = response.results.data;
     const title = response.query?.reportTitle || "Data Mining Results";
@@ -311,7 +311,7 @@ export default function DataMiningPage() {
   };
 
   const handleExcelPrint = () => {
-    if (!response?.results?.data) return;
+    if (!response?.success || !response.results?.data) return;
     
     const rows = response.results.data;
     const title = response.query?.reportTitle || "Data Mining Results";
@@ -381,7 +381,7 @@ export default function DataMiningPage() {
   };
 
   const handleSaveQuery = async () => {
-    if (!branch?.id || !response?.query?.queryText) return;
+    if (!branch?.id || !response?.success || !response.query?.queryText) return;
     
     const trimmedName = queryName.trim();
     if (!trimmedName) {
@@ -422,7 +422,7 @@ export default function DataMiningPage() {
   };
 
   const handleUpdateQuery = async () => {
-    if (!selectedSavedQueryId || !response?.query?.queryText) return;
+    if (!selectedSavedQueryId || !response?.success || !response.query?.queryText) return;
 
     setUpdatingQuery(true);
 
@@ -820,7 +820,7 @@ export default function DataMiningPage() {
       </section>
 
       {/* Export to Excel Modal */}
-      {exportModalOpen && response?.results?.data && (
+      {exportModalOpen && response?.success && response.results?.data && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           {/* Backdrop */}
           <div 
@@ -922,8 +922,8 @@ export default function DataMiningPage() {
           isOpen={emailModalOpen}
           onClose={() => setEmailModalOpen(false)}
           excelBlob={excelBlob}
-          defaultSubject={`${branch.name} - ${response?.query?.reportTitle || "Data Mining Results"}`}
-          defaultMessage={`Please find attached the Data Mining query results.\n\nQuery: ${response?.query?.queryText || ""}\n\nTotal Rows: ${response?.results?.data?.length || 0}\n\nGenerated: ${new Date().toLocaleString()}`}
+          defaultSubject={`${branch.name} - ${(response?.success && response.query?.reportTitle) || "Data Mining Results"}`}
+          defaultMessage={`Please find attached the Data Mining query results.\n\nQuery: ${(response?.success && response.query?.queryText) || ""}\n\nTotal Rows: ${(response?.success && response.results?.data?.length) || 0}\n\nGenerated: ${new Date().toLocaleString()}`}
           defaultFileName={generateExcelFilename()}
           branchId={branch.id}
         />
@@ -971,7 +971,7 @@ export default function DataMiningPage() {
             <div className="mb-4 rounded-xl border border-[var(--brand-strong)] bg-[var(--brand-strong)]/20 p-4">
               <p className="text-xs font-semibold uppercase text-[var(--brand-ink)]/60 mb-2">Query to save:</p>
               <p className="text-sm text-[var(--brand-ink)] italic line-clamp-3">
-                &quot;{response?.query?.queryText}&quot;
+                &quot;{(response?.success && response.query?.queryText) || ""}&quot;
               </p>
             </div>
 
@@ -1075,7 +1075,7 @@ export default function DataMiningPage() {
             <div className="mb-6 rounded-xl border border-[var(--brand-strong)] bg-[var(--brand-strong)]/20 p-4">
               <p className="text-xs font-semibold uppercase text-[var(--brand-ink)]/60 mb-2">New query text:</p>
               <p className="text-sm text-[var(--brand-ink)] italic line-clamp-3">
-                &quot;{response?.query?.queryText}&quot;
+                &quot;{(response?.success && response.query?.queryText) || ""}&quot;
               </p>
             </div>
 

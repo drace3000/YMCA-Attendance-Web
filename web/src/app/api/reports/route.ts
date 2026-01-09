@@ -48,15 +48,19 @@ type ReportsPayload = {
   weekTotals: { label: string; total: number }[];
 };
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type SupabaseQueryBuilder = { range: (from: number, to: number) => PromiseLike<{ data: any; error: any }> };
+
 async function fetchAllRows(
-  query: ReturnType<ReturnType<typeof createSupabaseServerClient>["from"]>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  query: any,
   pageSize = 2000,
-) {
+): Promise<ReportRow[]> {
   let from = 0;
   const all: ReportRow[] = [];
 
   while (true) {
-    const { data, error } = await query.range(from, from + pageSize - 1);
+    const { data, error } = await (query as SupabaseQueryBuilder).range(from, from + pageSize - 1);
     if (error) {
       throw error;
     }

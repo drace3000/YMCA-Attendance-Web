@@ -223,7 +223,7 @@ export default function Home() {
         return;
       }
 
-      if (data.user && !data.session) {
+      if (data?.user && !data?.session) {
         const { error: otpError } = await signInWithOtp(email.trim());
         if (otpError) {
           setIsRegistering(false);
@@ -234,7 +234,7 @@ export default function Home() {
         setOtpError(null);
         setShowOtpModal(true);
         setTimeout(() => otpInputRefs.current[0]?.focus(), 100);
-      } else if (data.session) {
+      } else if (data?.session) {
         // Session created immediately, proceed to register manager
         await completeManagerRegistration();
       }

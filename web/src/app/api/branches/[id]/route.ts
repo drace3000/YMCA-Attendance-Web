@@ -3,8 +3,29 @@ import { createSupabaseServerClient } from "@/lib/supabaseServer";
 
 type Params = { params: Promise<{ id: string }> };
 
+interface AllianceData {
+  id: string;
+  name: string;
+  code: string;
+}
+
+interface AssociationData {
+  id: string;
+  name: string;
+  code: string;
+  alliance?: AllianceData | AllianceData[] | null;
+}
+
+interface BranchData {
+  id: string;
+  code: string;
+  short_code: string | null;
+  name: string;
+  association?: AssociationData | AssociationData[] | null;
+}
+
 // GET - fetch branch with association/alliance names
-export async function GET(_req: Request, context: Params) {
+export async function GET(_req: Request, context: Params): Promise<NextResponse> {
   const { id } = await context.params;
   const supabase = createSupabaseServerClient();
 
@@ -32,16 +53,30 @@ export async function GET(_req: Request, context: Params) {
     .single();
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("Error fetching branch:", error.message);
+    return NextResponse.json({ error: "Failed to fetch branch" }, { status: 500 });
   }
 
-  const branchName = data?.name ?? null;
-  const branchCode = data?.code ?? null;
-  const branchShortCode = data?.short_code ?? null;
-  const associationName = data?.association?.name ?? null;
-  const associationCode = data?.association?.code ?? null;
-  const allianceName = data?.association?.alliance?.name ?? null;
-  const allianceCode = data?.association?.alliance?.code ?? null;
+  const typedData = data as BranchData | null;
+  const branchName = typedData?.name ?? null;
+  const branchCode = typedData?.code ?? null;
+  const branchShortCode = typedData?.short_code ?? null;
+  
+  // Handle association which could be object or array from Supabase
+  const association = Array.isArray(typedData?.association) 
+    ? typedData?.association[0] 
+    : typedData?.association;
+  
+  const associationName = association?.name ?? null;
+  const associationCode = association?.code ?? null;
+  
+  // Handle alliance which could be object or array from Supabase
+  const alliance = Array.isArray(association?.alliance) 
+    ? association?.alliance[0] 
+    : association?.alliance;
+  
+  const allianceName = alliance?.name ?? null;
+  const allianceCode = alliance?.code ?? null;
 
   return NextResponse.json({
     id,
@@ -56,7 +91,7 @@ export async function GET(_req: Request, context: Params) {
 }
 
 // PATCH - Update branch fields
-export async function PATCH(req: Request, context: Params) {
+export async function PATCH(req: Request, context: Params): Promise<NextResponse> {
   const { id } = await context.params;
   
   let body: Record<string, unknown>;
@@ -97,7 +132,7 @@ export async function PATCH(req: Request, context: Params) {
 
   if (error) {
     console.error("Error updating branch:", error.message);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: "Failed to update branch" }, { status: 500 });
   }
 
   return NextResponse.json({ success: true });

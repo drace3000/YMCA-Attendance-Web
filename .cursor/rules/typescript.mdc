@@ -343,64 +343,6 @@ const colors: StatusColors = {
 }
 ```
 
-## React Anti-Patterns to Avoid
-
-### You Might Not Need useEffect
-
-AI loves useEffect but often doesn't need it. Avoid these patterns:
-
-```typescript
-// ❌ Don't use useEffect for derived state
-const [items, setItems] = useState<Item[]>([])
-const [filteredItems, setFilteredItems] = useState<Item[]>([])
-
-useEffect(() => {
-  setFilteredItems(items.filter(i => i.active))
-}, [items])
-
-// ✅ Calculate during render instead
-const [items, setItems] = useState<Item[]>([])
-const filteredItems = items.filter(i => i.active)
-
-// ❌ Don't use useEffect for event handling
-useEffect(() => {
-  if (submitted) {
-    sendAnalytics()
-  }
-}, [submitted])
-
-// ✅ Call in the event handler
-const handleSubmit = () => {
-  setSubmitted(true)
-  sendAnalytics()  // Do it here
-}
-
-// ❌ Don't use useEffect to initialize from props
-useEffect(() => {
-  setLocalValue(props.value)
-}, [props.value])
-
-// ✅ Use key to reset component or derive from props
-<Component key={id} initialValue={value} />
-
-// ❌ Don't fetch in useEffect without cleanup
-useEffect(() => {
-  fetchData().then(setData)  // Race condition!
-}, [id])
-
-// ✅ Use cleanup or React Query/SWR
-useEffect(() => {
-  let cancelled = false
-  fetchData().then(d => { if (!cancelled) setData(d) })
-  return () => { cancelled = true }
-}, [id])
-```
-
-### When useEffect IS Appropriate
-- Syncing with external systems (DOM, third-party widgets)
-- Setting up subscriptions (WebSockets, event listeners)
-- Cleanup on unmount
-
 ## Common Gotchas
 
 ```typescript

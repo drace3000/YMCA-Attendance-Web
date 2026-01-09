@@ -211,14 +211,7 @@ export async function GET(req: Request) {
     
   }
   
-  const data = allRows;
-  const error = null;
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-
-  const rows: TrendRow[] = (data ?? []) as unknown as TrendRow[];
+  const rows: TrendRow[] = allRows;
   const rowsInPeriod = rows.length;
   
   // Number of buckets = number of months we're tracking

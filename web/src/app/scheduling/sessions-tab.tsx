@@ -154,8 +154,7 @@ export function SessionsTab({ scheduleId, branchId, programGroupId, refreshKey, 
           module: "Scheduler UI",
           criticality: "High",
           description: error.message,
-        },
-        error.stack
+        }
       );
       console.error(`[${errorCode}] Error fetching reference data:`, err);
     }
@@ -187,8 +186,7 @@ export function SessionsTab({ scheduleId, branchId, programGroupId, refreshKey, 
           params: { scheduleId },
           criticality: "High",
           description: error.message,
-        },
-        error.stack
+        }
       );
       setError(getUserErrorMessage(errorCode));
     } finally {

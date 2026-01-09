@@ -1,0 +1,490 @@
+---
+description: Rules for generating PDF reports and Excel exports. Covers @react-pdf/renderer patterns, xlsx library usage, and download handling. Use when building report generation features.
+globs: **/*report*.tsx, **/*Report*.tsx, **/*pdf*.tsx, **/*PDF*.tsx, **/*excel*.ts, **/*Excel*.ts, **/*export*.ts
+alwaysApply: false
+---
+
+# Report Generation Rules (PDF + Excel)
+
+You are an expert in generating reports. Build well-structured, printable documents.
+
+## PDF Generation with @react-pdf/renderer
+
+### Basic Document Structure
+```tsx
+import {
+  Document,
+  Page,
+  Text,
+  View,
+  StyleSheet,
+  Font,
+  pdf,
+} from '@react-pdf/renderer'
+
+// Register custom fonts (optional)
+Font.register({
+  family: 'Inter',
+  fonts: [
+    { src: '/fonts/Inter-Regular.ttf', fontWeight: 'normal' },
+    { src: '/fonts/Inter-Bold.ttf', fontWeight: 'bold' },
+  ],
+})
+
+// Define styles
+const styles = StyleSheet.create({
+  page: {
+    padding: 40,
+    fontSize: 10,
+    fontFamily: 'Helvetica',
+  },
+  header: {
+    marginBottom: 20,
+  },
+  title: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  subtitle: {
+    fontSize: 12,
+    color: '#666',
+  },
+  table: {
+    display: 'flex',
+    flexDirection: 'column',
+    marginTop: 10,
+  },
+  tableRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+    paddingVertical: 6,
+  },
+  tableHeader: {
+    backgroundColor: '#f5f5f5',
+    fontWeight: 'bold',
+  },
+  tableCell: {
+    flex: 1,
+    paddingHorizontal: 4,
+  },
+  footer: {
+    position: 'absolute',
+    bottom: 30,
+    left: 40,
+    right: 40,
+    fontSize: 8,
+    color: '#999',
+    textAlign: 'center',
+  },
+})
+
+// Document Component
+interface ReportProps {
+  title: string
+  data: ReportRow[]
+  generatedAt: Date
+}
+
+function ReportDocument({ title, data, generatedAt }: ReportProps) {
+  return (
+    <Document>
+      <Page size="LETTER" style={styles.page}>
+        {/* Header */}
+        <View style={styles.header}>
+          <Text style={styles.title}>{title}</Text>
+          <Text style={styles.subtitle}>
+            Generated: {generatedAt.toLocaleDateString()}
+          </Text>
+        </View>
+
+        {/* Table */}
+        <View style={styles.table}>
+          {/* Header Row */}
+          <View style={[styles.tableRow, styles.tableHeader]}>
+            <Text style={[styles.tableCell, { flex: 2 }]}>Name</Text>
+            <Text style={styles.tableCell}>Date</Text>
+            <Text style={styles.tableCell}>Status</Text>
+          </View>
+
+          {/* Data Rows */}
+          {data.map((row, index) => (
+            <View key={index} style={styles.tableRow}>
+              <Text style={[styles.tableCell, { flex: 2 }]}>{row.name}</Text>
+              <Text style={styles.tableCell}>{row.date}</Text>
+              <Text style={styles.tableCell}>{row.status}</Text>
+            </View>
+          ))}
+        </View>
+
+        {/* Footer */}
+        <Text style={styles.footer}>
+          Page 1 | {title} | Confidential
+        </Text>
+      </Page>
+    </Document>
+  )
+}
+```
+
+### Multi-Page with Page Numbers
+```tsx
+import { Document, Page, Text, View } from '@react-pdf/renderer'
+
+function MultiPageReport({ data }: { data: Item[] }) {
+  const itemsPerPage = 25
+  const pages = Math.ceil(data.length / itemsPerPage)
+
+  return (
+    <Document>
+      {Array.from({ length: pages }).map((_, pageIndex) => (
+        <Page key={pageIndex} size="LETTER" style={styles.page}>
+          {/* Content for this page */}
+          {data
+            .slice(pageIndex * itemsPerPage, (pageIndex + 1) * itemsPerPage)
+            .map((item, i) => (
+              <View key={i} style={styles.row}>
+                <Text>{item.name}</Text>
+              </View>
+            ))}
+
+          {/* Footer with page number */}
+          <Text
+            style={styles.footer}
+            render={({ pageNumber, totalPages }) =>
+              `Page ${pageNumber} of ${totalPages}`
+            }
+            fixed
+          />
+        </Page>
+      ))}
+    </Document>
+  )
+}
+```
+
+### PDF Download/Preview
+```tsx
+import { pdf } from '@react-pdf/renderer'
+import { saveAs } from 'file-saver'
+
+// Generate blob and download
+async function downloadPDF(data: ReportData) {
+  const doc = <ReportDocument {...data} />
+  const blob = await pdf(doc).toBlob()
+  saveAs(blob, `report-${Date.now()}.pdf`)
+}
+
+// Generate blob for preview
+async function generatePDFBlob(data: ReportData): Promise<Blob> {
+  const doc = <ReportDocument {...data} />
+  return await pdf(doc).toBlob()
+}
+
+// Preview in modal
+function PDFPreview({ data }: { data: ReportData }) {
+  const [blobUrl, setBlobUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    async function generate() {
+      const blob = await generatePDFBlob(data)
+      setBlobUrl(URL.createObjectURL(blob))
+    }
+    generate()
+
+    return () => {
+      if (blobUrl) URL.revokeObjectURL(blobUrl)
+    }
+  }, [data])
+
+  if (!blobUrl) return <Spinner />
+
+  return (
+    <iframe
+      src={blobUrl}
+      width="100%"
+      height="600px"
+      title="PDF Preview"
+    />
+  )
+}
+```
+
+### Print PDF
+```tsx
+async function printPDF(data: ReportData) {
+  const blob = await generatePDFBlob(data)
+  const blobUrl = URL.createObjectURL(blob)
+
+  const printWindow = window.open(blobUrl)
+  if (printWindow) {
+    printWindow.onload = () => {
+      printWindow.print()
+      // Clean up after print dialog closes
+      printWindow.onafterprint = () => {
+        printWindow.close()
+        URL.revokeObjectURL(blobUrl)
+      }
+    }
+  }
+}
+```
+
+## Excel Generation with xlsx
+
+### Basic Excel Export
+```typescript
+import * as XLSX from 'xlsx'
+import { saveAs } from 'file-saver'
+
+interface ExportRow {
+  name: string
+  email: string
+  date: string
+  amount: number
+}
+
+function exportToExcel(data: ExportRow[], filename: string) {
+  // Create workbook and worksheet
+  const wb = XLSX.utils.book_new()
+
+  // Convert data to worksheet
+  const ws = XLSX.utils.json_to_sheet(data)
+
+  // Set column widths
+  ws['!cols'] = [
+    { wch: 25 },  // Name
+    { wch: 30 },  // Email
+    { wch: 12 },  // Date
+    { wch: 10 },  // Amount
+  ]
+
+  // Add worksheet to workbook
+  XLSX.utils.book_append_sheet(wb, ws, 'Report')
+
+  // Generate buffer
+  const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+
+  // Save file
+  const blob = new Blob([excelBuffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  })
+  saveAs(blob, `${filename}.xlsx`)
+}
+```
+
+### Multi-Sheet Excel
+```typescript
+function exportMultiSheet(
+  sheets: { name: string; data: unknown[] }[],
+  filename: string
+) {
+  const wb = XLSX.utils.book_new()
+
+  sheets.forEach(({ name, data }) => {
+    const ws = XLSX.utils.json_to_sheet(data)
+    XLSX.utils.book_append_sheet(wb, ws, name)
+  })
+
+  const buffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+  const blob = new Blob([buffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  })
+  saveAs(blob, `${filename}.xlsx`)
+}
+
+// Usage
+exportMultiSheet([
+  { name: 'Summary', data: summaryData },
+  { name: 'Details', data: detailsData },
+  { name: 'Instructors', data: instructorData },
+], 'full-report')
+```
+
+### Custom Headers and Formatting
+```typescript
+function exportWithCustomHeaders(data: RawData[]) {
+  // Transform data with custom headers
+  const formattedData = data.map(row => ({
+    'Full Name': row.name,
+    'Email Address': row.email,
+    'Registration Date': formatDate(row.createdAt),
+    'Total Amount ($)': row.amount.toFixed(2),
+  }))
+
+  const ws = XLSX.utils.json_to_sheet(formattedData)
+
+  // Style header row (basic - xlsx-style needed for full styling)
+  const range = XLSX.utils.decode_range(ws['!ref'] || 'A1')
+  for (let col = range.s.c; col <= range.e.c; col++) {
+    const cell = XLSX.utils.encode_cell({ r: 0, c: col })
+    if (ws[cell]) {
+      ws[cell].s = { font: { bold: true } }
+    }
+  }
+
+  return ws
+}
+```
+
+### Read Excel File
+```typescript
+async function readExcelFile(file: File): Promise<unknown[]> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target?.result as ArrayBuffer)
+        const workbook = XLSX.read(data, { type: 'array' })
+
+        // Get first sheet
+        const firstSheet = workbook.Sheets[workbook.SheetNames[0]]
+
+        // Convert to JSON
+        const jsonData = XLSX.utils.sheet_to_json(firstSheet)
+        resolve(jsonData)
+      } catch (error) {
+        reject(error)
+      }
+    }
+
+    reader.onerror = reject
+    reader.readAsArrayBuffer(file)
+  })
+}
+```
+
+## Hierarchical Report Pattern
+
+```tsx
+// For organizational hierarchy (Alliance > Association > Branch)
+interface HierarchyReportProps {
+  alliances: Alliance[]
+}
+
+function HierarchyPDFDocument({ alliances }: HierarchyReportProps) {
+  return (
+    <Document>
+      <Page size="LETTER" style={styles.page}>
+        <Text style={styles.title}>Organization Hierarchy</Text>
+
+        {alliances.map((alliance) => (
+          <View key={alliance.id} style={styles.allianceSection}>
+            {/* Alliance Header */}
+            <View style={styles.allianceHeader}>
+              <Text style={styles.allianceName}>{alliance.name}</Text>
+            </View>
+
+            {/* Associations */}
+            {alliance.associations.map((assoc) => (
+              <View key={assoc.id} style={styles.associationSection}>
+                <Text style={styles.associationName}>
+                  {assoc.code} - {assoc.name}
+                </Text>
+
+                {/* Branches */}
+                <View style={styles.branchList}>
+                  {assoc.branches.map((branch) => (
+                    <View key={branch.id} style={styles.branchRow}>
+                      <Text style={styles.branchCode}>{branch.short_code}</Text>
+                      <Text style={styles.branchName}>{branch.name}</Text>
+                      <Text style={styles.branchCity}>{branch.city}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            ))}
+          </View>
+        ))}
+      </Page>
+    </Document>
+  )
+}
+```
+
+## Data Transformation
+
+```typescript
+// Deduplicate and sort for reports
+function prepareReportData<T extends { id: string }>(
+  data: T[],
+  sortKey: keyof T
+): T[] {
+  // Deduplicate
+  const unique = Array.from(
+    new Map(data.map(item => [item.id, item])).values()
+  )
+
+  // Sort
+  return unique.sort((a, b) =>
+    String(a[sortKey]).localeCompare(String(b[sortKey]))
+  )
+}
+
+// Group data for sections
+function groupBy<T>(data: T[], key: keyof T): Record<string, T[]> {
+  return data.reduce((acc, item) => {
+    const groupKey = String(item[key])
+    if (!acc[groupKey]) acc[groupKey] = []
+    acc[groupKey].push(item)
+    return acc
+  }, {} as Record<string, T[]>)
+}
+```
+
+## Anti-Patterns to Avoid
+
+```tsx
+// ❌ Don't use web-only styles in PDF
+<View style={{ display: 'flex', gap: '10px' }}>  // gap not supported
+
+// ✅ Use marginTop/marginBottom instead
+<View style={{ display: 'flex', flexDirection: 'column' }}>
+  <View style={{ marginBottom: 10 }}>...</View>
+</View>
+
+// ❌ Don't forget to handle empty data
+{data.map(item => ...)}  // Crashes if data is undefined
+
+// ✅ Always provide fallback
+{(data || []).map(item => ...)}
+{data?.length === 0 && <Text>No data available</Text>}
+
+// ❌ Don't create blob URLs without cleanup
+const url = URL.createObjectURL(blob)  // Memory leak!
+
+// ✅ Clean up blob URLs
+useEffect(() => {
+  return () => URL.revokeObjectURL(blobUrl)
+}, [blobUrl])
+
+// ❌ Don't block UI during generation
+const blob = await pdf(doc).toBlob()  // Can freeze for large docs
+
+// ✅ Show loading state
+const [isGenerating, setIsGenerating] = useState(false)
+async function generate() {
+  setIsGenerating(true)
+  try {
+    const blob = await pdf(doc).toBlob()
+    // ...
+  } finally {
+    setIsGenerating(false)
+  }
+}
+
+// ❌ Don't use unsupported CSS properties
+<Text style={{ textDecoration: 'underline' }}>  // Limited support
+
+// ✅ Check @react-pdf/renderer docs for supported styles
+```
+
+## Performance Tips
+
+1. **Large datasets**: Paginate data, don't render thousands of rows
+2. **Lazy generation**: Only generate PDF when user clicks download
+3. **Web Workers**: Move heavy Excel generation to a worker
+4. **Streaming**: For very large exports, consider server-side generation
+5. **Caching**: Cache generated blobs if data hasn't changed

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Building2, ChevronRight, Globe2, Landmark, Search, ToggleLeft, ToggleRight } from "lucide-react";
 import { logError } from "@/lib/error-logger";
+import { ReportModal } from "./organization-report-modal";
 
 type Alliance = {
   id: string;
@@ -64,6 +65,7 @@ export function OrganizationTab() {
 
   const [includeInactive, setIncludeInactive] = useState(false);
   const [search, setSearch] = useState("");
+  const [reportOpen, setReportOpen] = useState(false);
 
   const [alliances, setAlliances] = useState<Alliance[]>([]);
   const [associations, setAssociations] = useState<Association[]>([]);
@@ -242,14 +244,23 @@ export function OrganizationTab() {
             Browse YMCA alliances, associations, and branches (read-only).
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setIncludeInactive((v) => !v)}
-          className="btn-pill inline-flex items-center gap-2 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/15"
-        >
-          {includeInactive ? <ToggleRight className="h-4 w-4" /> : <ToggleLeft className="h-4 w-4" />}
-          {includeInactive ? "Including inactive" : "Active only"}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setReportOpen(true)}
+            className="btn-pill inline-flex items-center gap-2 bg-[var(--cta)] px-4 py-2 text-sm font-semibold text-[var(--cta-foreground)] shadow-sm hover:opacity-90"
+          >
+            Generate Hierarchy Report
+          </button>
+          <button
+            type="button"
+            onClick={() => setIncludeInactive((v) => !v)}
+            className="btn-pill inline-flex items-center gap-2 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/15"
+          >
+            {includeInactive ? <ToggleRight className="h-4 w-4" /> : <ToggleLeft className="h-4 w-4" />}
+            {includeInactive ? "Including inactive" : "Active only"}
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -307,7 +318,7 @@ export function OrganizationTab() {
             ) : null}
           </div>
 
-          <div className="max-h-[520px] overflow-auto">
+          <div className="max-h-[520px] overflow-auto scrollbar-thin scrollbar-thumb-[var(--brand)] scrollbar-track-transparent">
             {filteredAlliances.map((a) => {
               const isSelected = selectedAllianceId === a.id;
               const allianceNameDisplay = formatNameWithYMCA(a.name);
@@ -374,7 +385,7 @@ export function OrganizationTab() {
             ) : null}
           </div>
 
-          <div className="max-h-[520px] overflow-auto">
+          <div className="max-h-[520px] overflow-auto scrollbar-thin scrollbar-thumb-[var(--brand)] scrollbar-track-transparent">
             {filteredAssociations.map((a) => {
               const isSelected = selectedAssociationId === a.id;
               const associationNameDisplay = formatNameWithYMCA(a.name);
@@ -431,7 +442,7 @@ export function OrganizationTab() {
             ) : null}
           </div>
 
-          <div className="max-h-[520px] overflow-auto">
+          <div className="max-h-[520px] overflow-auto scrollbar-thin scrollbar-thumb-[var(--brand)] scrollbar-track-transparent">
             {filteredBranches.map((b) => {
               const codeDisplay = (b.short_code ?? b.code ?? "").toUpperCase();
               return (
@@ -471,6 +482,7 @@ export function OrganizationTab() {
           </div>
         </div>
       </div>
+      <ReportModal open={reportOpen} onClose={() => setReportOpen(false)} />
     </div>
   );
 }

@@ -65,10 +65,18 @@ function sanitizeReadableIdPart(input: string): string {
     .replace(/[^A-Z0-9_-]/g, "");
 }
 
+type AssociationMeta = { code: string };
+
+type BranchMetaRaw = {
+  id: string;
+  short_code: string;
+  association: AssociationMeta | AssociationMeta[] | null;
+};
+
 type BranchMeta = {
   id: string;
   short_code: string;
-  association: { code: string } | null;
+  association: AssociationMeta | null;
 };
 
 async function getNextReadableId(
@@ -233,19 +241,26 @@ export async function POST(req: Request) {
   const raw_name = `${first_name.trim()} ${last_name.trim()}`;
 
   // Build readable_id (stable and memorable): ASSOC-BRANCHSHORT-NICKNAME
-  const { data: branchMeta, error: branchMetaError } = await supabase
+  const { data: branchMetaData, error: branchMetaError } = await supabase
     .from("ymca_branches")
     .select("id, short_code, association:ymca_associations(code)")
     .eq("id", branch_id)
-    .returns<BranchMeta>()
     .single();
 
-  if (branchMetaError || !branchMeta) {
+  if (branchMetaError || !branchMetaData) {
     return NextResponse.json({ error: "Branch not found" }, { status: 404 });
   }
 
-  const assocCode = branchMeta.association?.code;
-  const branchShort = branchMeta.short_code;
+  // Cast to handle Supabase returning association as array
+  const branchMetaRaw = branchMetaData as unknown as BranchMetaRaw;
+  
+  // Handle association being returned as array by Supabase
+  const association = Array.isArray(branchMetaRaw.association)
+    ? branchMetaRaw.association[0] ?? null
+    : branchMetaRaw.association;
+
+  const assocCode = association?.code;
+  const branchShort = branchMetaRaw.short_code;
   if (!assocCode || !branchShort) {
     return NextResponse.json(
       { error: "Branch hierarchy metadata missing (association code / short_code)" },
