@@ -20,7 +20,7 @@ When responding to requests, always identify the work area and apply the corresp
   - Apply: `maintenance.mdc`, `react.mdc`, `react-query.mdc`, `tailwind.mdc`
 
 - **Scheduling / Smart Scheduler** (`/app/scheduling/**`, schedule components):
-  - Apply: `scheduling.mdc`, `react.mdc`, `react-query.mdc`, `reports.mdc` (for exports)
+  - Apply: `scheduling.mdc`, `react.mdc`, `react-query.mdc`, `reports.mdc` (for exports), `popovers-tooltips.mdc` (refresh/help tooltips), `selection-lists.mdc` (dropdowns)
 
 - **Email / recipients**:
   - Apply: `email.mdc`, `modals.mdc`, `selection-lists.mdc`, `nextjs-api.mdc`
