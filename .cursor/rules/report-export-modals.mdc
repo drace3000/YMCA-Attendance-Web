@@ -1,0 +1,89 @@
+---
+description: Standards for “Generate/Export Report” popups/modals (Preview PDF/Excel, Print, Email). Applies to Attendance Insights, Org Hierarchy, Trends, Scheduling exports.
+globs: **/*Report*Modal*.tsx, **/*report*modal*.tsx, **/*Generate*Report*Modal*.tsx, **/*Generate*Schedule*Modal*.tsx, **/*Generate*Trends*Report*Modal*.tsx, **/app/maintenance/organization-report-modal.tsx, **/components/attendance-report-pdf/GenerateReportModal.tsx, **/components/trends-report-pdf/GenerateTrendsReportModal.tsx, **/components/schedule-report/GenerateScheduleModal.tsx
+alwaysApply: false
+---
+
+# Report Export Modal Standards (Popup)
+
+Build “Generate / Export Report” popups that match the app’s established UX (Attendance Insights + Organization Hierarchy).
+
+## Required user experience
+
+- **Primary actions (recommended order)**:
+  - Preview PDF
+  - Preview Excel (if Excel is supported)
+  - Print
+  - Email Report
+- **Disable actions** while:
+  - report data is loading, or
+  - an action is in progress (PDF/Excel generation, print, email)
+- Provide a clear **error banner** in the modal body for failures.
+- Show a **loading overlay / spinner** during long operations.
+- Apply a **wait cursor** during generation.
+
+## Hook-order safety (critical)
+
+- Never `return null` before hooks.
+- Always declare hooks first, then conditionally render:
+
+```tsx
+export function ReportModal({ open }: { open: boolean }) {
+  const [busy, setBusy] = useState(false)
+  // ... other hooks
+
+  if (!open) return null
+  return <div />
+}
+```
+
+## Data flow pattern
+
+- Modal receives selection context (example: selected IDs, date range, includeInactive, etc.).
+- On open (and when required IDs change), fetch report data from a dedicated API route.
+- On failure, log with `logError(...)` and display a user-safe message with the returned error code:
+  - `Failed to load data (${errorCode})`
+
+## PDF generation
+
+- Prefer utility functions:
+  - `generate<Report>PDFBlob(...)` (for email attachment)
+  - `preview<Report>PDF(...)`
+  - `print<Report>PDF(...)`
+- Use shared helpers in `lib/pdf-utils.ts` when appropriate.
+- PDF readability requirements:
+  - Avoid fixed widths unless necessary
+  - For row-like entries that must stay intact, use `wrap={false}` in React-PDF blocks
+
+## Excel generation
+
+- Build `XLSX.WorkBook` via a utility function (example: `build<Report>ExcelWorkbook(...)`).
+- For preview:
+  - Store the workbook in a `useRef`
+  - Render a preview overlay/table
+  - Provide a “Download” action from the preview if desired
+
+## Email integration (required)
+
+- Email button must use the standard email modal:
+  - Generate PDF blob on demand
+  - Open `EmailPdfModal`
+  - Recipient lookup must use the **app branch id** (`branch_schedule_recipients.branch_id`), not a hierarchy id
+- Support **To / CC / BCC** via `RecipientPicker`.
+- Server route should be `/api/email/send-pdf` (validate addresses + attachment size).
+
+## Styling
+
+- Match the app’s export modal look (see Attendance Insights):
+  - Surface: `bg-[rgb(var(--brand-rgb)/0.95)]`
+  - Border: `border-[var(--brand-strong)]`
+  - Icons: consistent sizing and accent color
+  - Buttons: full-width stacked actions with consistent hover/disabled states
+
+## Reference implementations (in this repo)
+
+- Attendance Insights: `components/attendance-report-pdf/GenerateReportModal.tsx`
+- Organization Hierarchy: `app/maintenance/organization-report-modal.tsx`
+- Email modal: `components/email-pdf-modal/EmailPdfModal.tsx`
+- Recipient multi-select: `components/email-pdf-modal/RecipientPicker.tsx`
+

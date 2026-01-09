@@ -1,0 +1,76 @@
+---
+description: Standards for Popover-based tooltips and dropdown popovers. Ensures consistent styling and hover/focus behavior (e.g., the Refresh button tooltip on Attendance Insights).
+globs: **/app/**/*.tsx, **/components/**/*.tsx, **/components/ui/popover.tsx
+alwaysApply: false
+---
+
+# Popovers + Tooltips Standards
+
+Use the shared Radix wrapper in `components/ui/popover.tsx` for all popovers/tooltips.
+
+## Tooltip-style popovers (for icon buttons like Refresh/Reset)
+
+Use this pattern for icon-only header actions (Refresh, Reset, Help icons) so users understand what the button does.
+
+### Requirements
+
+- Show on **hover** and **keyboard focus**
+- Hide on **mouse leave** and **blur**
+- Tooltip body should be **non-interactive** (`pointer-events-none`) to avoid flicker
+- Match the app’s tooltip styling:
+  - rounded-2xl
+  - brand border (`border-[var(--brand-strong)]`)
+  - translucent brand surface (`bg-[rgb(var(--brand-soft-rgb)/0.35)]`)
+  - small text (`text-xs`)
+  - include a `PopoverArrow` with matching fill + stroke
+
+### Reference implementation (copy/paste)
+
+```tsx
+const [tooltipOpen, setTooltipOpen] = useState(false)
+const isDisabled = false
+
+<Popover open={!isDisabled && tooltipOpen} onOpenChange={() => {}}>
+  <PopoverTrigger asChild>
+    <button
+      type="button"
+      aria-label="Refresh data"
+      disabled={isDisabled}
+      onClick={handleRefresh}
+      onMouseEnter={() => !isDisabled && setTooltipOpen(true)}
+      onMouseLeave={() => setTooltipOpen(false)}
+      onFocus={() => !isDisabled && setTooltipOpen(true)}
+      onBlur={() => setTooltipOpen(false)}
+      className={`btn-pill inline-flex h-8 w-8 items-center justify-center shadow-sm ring-1 ring-black/10 transition ${
+        isDisabled
+          ? "cursor-not-allowed bg-gray-400/50 text-gray-500"
+          : "bg-[var(--cta)] text-[var(--cta-foreground)] hover:-translate-y-0.5 hover:shadow-md active:translate-y-px active:scale-[0.98]"
+      }`}
+    >
+      <RotateCcw className="h-4 w-4" />
+    </button>
+  </PopoverTrigger>
+  <PopoverContent
+    side="right"
+    align="center"
+    sideOffset={8}
+    className="pointer-events-none w-auto rounded-2xl border-[var(--brand-strong)] bg-[rgb(var(--brand-soft-rgb)/0.35)] px-3 py-2 text-xs text-foreground shadow-lg backdrop-blur-md"
+  >
+    <PopoverArrow
+      width={12}
+      height={8}
+      className="fill-[rgb(var(--brand-soft-rgb)/0.35)] stroke-[var(--brand-strong)] stroke-1"
+    />
+    Reload data
+  </PopoverContent>
+</Popover>
+```
+
+## Dropdown-style popovers (interactive)
+
+If the popover contains clickable items (dropdown menus, searchable lists), do NOT use `pointer-events-none` on the content.
+
+- Close on outside click
+- Close on Escape
+- Ensure the trigger has `aria-expanded`
+

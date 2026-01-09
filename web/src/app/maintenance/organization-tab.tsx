@@ -1,7 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Building2, ChevronRight, Globe2, Landmark, Printer, Search } from "lucide-react";
+import { Building2, ChevronRight, Globe2, Landmark, Printer, RotateCcw, Search } from "lucide-react";
+import {
+  Popover,
+  PopoverArrow,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { logError } from "@/lib/error-logger";
 import { useThemeSettings } from "@/components/theme-settings-provider";
 import { ReportModal } from "./organization-report-modal";
@@ -68,6 +74,7 @@ export function OrganizationTab() {
 
   const [search, setSearch] = useState("");
   const [reportOpen, setReportOpen] = useState(false);
+  const [refreshPopoverOpen, setRefreshPopoverOpen] = useState(false);
 
   const [alliances, setAlliances] = useState<Alliance[]>([]);
   const [associations, setAssociations] = useState<Association[]>([]);
@@ -247,6 +254,43 @@ export function OrganizationTab() {
             <Printer className="h-4 w-4" />
             Generate Report
           </button>
+          <Popover open={!loading && refreshPopoverOpen} onOpenChange={() => {}}>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                aria-label="Refresh organization hierarchy"
+                disabled={loading}
+                onClick={() => {
+                  void loadOrg();
+                  setRefreshPopoverOpen(false);
+                }}
+                onMouseEnter={() => !loading && setRefreshPopoverOpen(true)}
+                onMouseLeave={() => setRefreshPopoverOpen(false)}
+                onFocus={() => !loading && setRefreshPopoverOpen(true)}
+                onBlur={() => setRefreshPopoverOpen(false)}
+                className={`btn-pill inline-flex h-8 w-8 items-center justify-center shadow-sm ring-1 ring-black/10 transition ${
+                  loading
+                    ? "cursor-not-allowed bg-gray-400/50 text-gray-500"
+                    : "bg-[var(--cta)] text-[var(--cta-foreground)] hover:-translate-y-0.5 hover:shadow-md active:translate-y-px active:scale-[0.98]"
+                }`}
+              >
+                <RotateCcw className="h-4 w-4" />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent
+              side="right"
+              align="center"
+              sideOffset={8}
+              className="pointer-events-none w-auto rounded-2xl border-[var(--brand-strong)] bg-[rgb(var(--brand-soft-rgb)/0.35)] px-3 py-2 text-xs text-foreground shadow-lg backdrop-blur-md"
+            >
+              <PopoverArrow
+                width={12}
+                height={8}
+                className="fill-[rgb(var(--brand-soft-rgb)/0.35)] stroke-[var(--brand-strong)] stroke-1"
+              />
+              Reload YMCA alliances, associations, and branches
+            </PopoverContent>
+          </Popover>
           {selectedAlliance && selectedAssociation ? (
             <span className="max-w-[420px] truncate text-sm font-semibold text-[var(--brand)]">
               {formatNameWithYMCA(selectedAlliance.name)} -{" "}

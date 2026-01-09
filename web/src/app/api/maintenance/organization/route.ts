@@ -39,7 +39,7 @@ type BranchRow = {
   is_main_branch: boolean;
 };
 
-export async function GET(req: Request) {
+export async function GET(req: Request): Promise<Response> {
   try {
     const { searchParams } = new URL(req.url);
     const includeInactive = searchParams.get("include_inactive") === "true";

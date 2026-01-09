@@ -14,7 +14,7 @@ type InstructorRow = {
   nickname: string | null;
 };
 
-export async function GET() {
+export async function GET(): Promise<Response> {
   const supabase = createSupabaseServerClient();
 
   // Prefer a best-effort "display_name" composed in SQL via COALESCE-like behavior.

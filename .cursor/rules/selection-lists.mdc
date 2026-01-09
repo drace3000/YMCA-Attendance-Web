@@ -1,0 +1,146 @@
+---
+description: Standards for selection lists (native select, dropdown, searchable combobox, multi-select). Covers accessibility, sorting, large-list behavior, and consistent styling.
+globs: **/app/**/*.tsx, **/components/**/*.tsx, **/*Dropdown*.tsx, **/*Select*.tsx, **/*Picker*.tsx
+alwaysApply: false
+---
+
+# Selection Lists Standards (Pull-downs, Dropdowns, Pickers)
+
+Use consistent, accessible selection components across the app.
+
+## Standard dropdown (Smart Scheduler style)
+
+When you need a dropdown selection list like the Smart Scheduler grid (teal popover with a scrollable list and **yellow** selected option), use a Radix `Popover` dropdown and these styling conventions.
+
+### Visual requirements (match Smart Scheduler)
+
+- **Popover surface**: teal/brand surface with blur
+- **Border**: `border-[var(--brand-strong)]`
+- **Rounded**: `rounded-xl` (or `rounded-2xl` for larger menus)
+- **Selected row**: `bg-[var(--cta)] text-[var(--cta-foreground)]`
+- **Hover row**: `hover:bg-[var(--brand-strong)]/50`
+- **Scrollable list**: `max-h-[300px] overflow-y-auto`
+
+### Reference implementation (copy/paste)
+
+```tsx
+import { useState } from "react"
+import { ChevronDown } from "lucide-react"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+
+type Option = { id: string; code: string; name: string }
+
+export function SmartSchedulerStyleDropdown({
+  label,
+  valueId,
+  options,
+  onChange,
+}: {
+  label: string
+  valueId: string | null
+  options: Option[]
+  onChange: (nextId: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const selected = options.find((o) => o.id === valueId) ?? null
+
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-sm font-medium">{label}</span>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            className="btn-pill flex min-w-[280px] items-center justify-between gap-2 border border-white/10 bg-card/60 px-4 py-2 text-sm shadow-sm ring-1 ring-white/5 transition hover:bg-card hover:ring-white/10"
+            aria-expanded={open}
+          >
+            <span className="truncate">
+              {selected ? `${selected.code} - ${selected.name}` : "Select..."}
+            </span>
+            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          </button>
+        </PopoverTrigger>
+
+        <PopoverContent
+          align="start"
+          sideOffset={4}
+          className="w-[320px] rounded-xl border border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] p-1 shadow-xl backdrop-blur-md"
+        >
+          <div className="max-h-[300px] overflow-y-auto">
+            {options.map((opt) => {
+              const isSelected = opt.id === valueId
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => {
+                    onChange(opt.id)
+                    setOpen(false)
+                  }}
+                  className={`flex w-full items-center rounded-lg px-3 py-2 text-left text-sm transition ${
+                    isSelected
+                      ? "bg-[var(--cta)] text-[var(--cta-foreground)]"
+                      : "text-foreground hover:bg-[var(--brand-strong)]/50"
+                  }`}
+                >
+                  {opt.code} - {opt.name}
+                </button>
+              )
+            })}
+          </div>
+        </PopoverContent>
+      </Popover>
+    </div>
+  )
+}
+```
+
+## Choose the right control
+
+- **Native `<select>`**
+  - Use when the list is small (roughly <= 20–30 options) and no search is required.
+  - Prefer for Settings-style single selection (e.g., branch selection).
+- **Searchable dropdown / combobox**
+  - Use when list is large or users must search by name/code/email.
+- **Multi-select with chips**
+  - Use when multiple items can be selected (e.g., To/CC/BCC recipients).
+
+## Required behaviors
+
+- **Deterministic sorting**: always sort options predictably (usually by display name).
+- **Stable keys**: never use array index as React key.
+- **Clear empty states**:
+  - “No options available”
+  - “No matches”
+- **Close behaviors**:
+  - close on outside click
+  - close on Escape (for custom dropdowns)
+
+## Accessibility (required)
+
+- Every selection control must have a visible `<label>` or equivalent.
+- For custom dropdowns/comboboxes:
+  - trigger must expose `aria-expanded`
+  - list should be keyboard navigable (Arrow keys), and Enter selects
+  - focus should move to the search input when opening (if searchable)
+
+## Styling standards (this repo)
+
+- **Native select**:
+  - Use `className="ymca-select w-full text-sm font-semibold"` unless there is a strong reason not to.
+- **Custom dropdown**:
+  - Use the app’s brand surface + border
+  - Provide a visible focus ring: `focus:ring-1 focus:ring-[var(--brand)]/50`
+
+## Large-list performance
+
+- Use `useMemo` for filtered lists.
+- If the list is very large, prefer server-side search or virtualization (`@tanstack/react-virtual`).
+
+## Reference patterns (in this repo)
+
+- Multi-select + chips + search: `components/email-pdf-modal/RecipientPicker.tsx`
+- Button + list dropdown: `ColorDropdown` in `app/settings/page.tsx`
+- Native select: branch selection in `app/settings/page.tsx`
+- Accessible popover primitive wrapper: `components/ui/popover.tsx`
+

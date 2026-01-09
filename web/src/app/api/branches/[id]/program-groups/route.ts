@@ -30,7 +30,7 @@ const UUID_REGEX =
 export async function GET(
   _req: Request,
   context: Params
-) {
+): Promise<Response> {
   const { id: branchId } = await context.params;
   if (!UUID_REGEX.test(branchId)) {
     return NextResponse.json({ error: "Invalid branch id" }, { status: 400 });
@@ -74,7 +74,7 @@ export async function GET(
 export async function PUT(
   req: Request,
   context: Params
-) {
+): Promise<Response> {
   const { id: branchId } = await context.params;
   if (!UUID_REGEX.test(branchId)) {
     return NextResponse.json({ error: "Invalid branch id" }, { status: 400 });

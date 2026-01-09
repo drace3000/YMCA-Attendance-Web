@@ -85,32 +85,34 @@ export default function TrendsPage() {
     fetchBranchDetails();
   }, [branch.id]);
 
-  const load = async (signal?: AbortSignal) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const params = new URLSearchParams({ year });
-      if (quarter) params.set("quarter", quarter);
-      const res = await fetch(`/api/trends?${params.toString()}`, { signal });
-      if (!res.ok) throw new Error(`Failed to load trends (${res.status})`);
-      const payload: TrendsPayload = await res.json();
-      if (signal?.aborted) return;
-      setData(payload);
-    } catch (e) {
-      if (signal?.aborted) return;
-      setError(e instanceof Error ? e.message : "Failed to load trends");
-    } finally {
-      if (signal?.aborted) return;
-      setLoading(false);
-    }
-  };
+  const load = useCallback(
+    async (signal?: AbortSignal) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const params = new URLSearchParams({ year });
+        if (quarter) params.set("quarter", quarter);
+        const res = await fetch(`/api/trends?${params.toString()}`, { signal });
+        if (!res.ok) throw new Error(`Failed to load trends (${res.status})`);
+        const payload: TrendsPayload = await res.json();
+        if (signal?.aborted) return;
+        setData(payload);
+      } catch (e) {
+        if (signal?.aborted) return;
+        setError(e instanceof Error ? e.message : "Failed to load trends");
+      } finally {
+        if (signal?.aborted) return;
+        setLoading(false);
+      }
+    },
+    [year, quarter]
+  );
 
   useEffect(() => {
     const controller = new AbortController();
     void load(controller.signal);
     return () => controller.abort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [year, quarter]);
+  }, [load]);
 
   // Quarter selector
   const handleQuarterChange = (value: string) => {

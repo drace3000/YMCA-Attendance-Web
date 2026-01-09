@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
 
 // GET - List all schedules
-export async function GET(req: Request) {
+export async function GET(req: Request): Promise<Response> {
   const { searchParams } = new URL(req.url);
   const branchId = searchParams.get("branch_id");
   const programGroupId = searchParams.get("program_group_id");

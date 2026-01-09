@@ -1,0 +1,26 @@
+---
+description: Rules for email/report sending (UI + API). Covers recipient selection, To/CC/BCC behavior, and safe payload handling.
+globs: **/components/email-*/**/*.tsx, **/components/email-*/**/*.ts, **/components/**/RecipientPicker*.tsx, **/app/api/email/**/*.ts, **/app/api/maintenance/recipients/**/*.ts
+alwaysApply: false
+---
+
+# Email Rules
+
+You are an expert in email/report delivery UX.
+
+## Recipient selection
+
+- Support **To**, **CC**, and **BCC** (do not disable email UI without a clear reason).
+- Recipient pickers should be backed by the recipients API and scoped correctly to the app’s `branch_id`.
+
+## Payload safety
+
+- Validate email addresses server-side.
+- Enforce reasonable attachment size limits.
+- Never include secrets in client payloads.
+
+## UX
+
+- Provide clear success/error messaging.
+- For long-running sends, show a loading state and prevent double-submits.
+

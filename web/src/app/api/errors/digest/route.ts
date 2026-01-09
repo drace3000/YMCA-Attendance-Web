@@ -41,7 +41,7 @@ interface AdminRecipient {
   last_name: string | null;
 }
 
-export async function POST(req: Request) {
+export async function POST(req: Request): Promise<Response> {
   try {
     // Verify authorization (cron secret or admin token)
     const authHeader = req.headers.get("authorization");
@@ -212,7 +212,7 @@ To resolve an error, set resolved_at to the current timestamp.`;
 }
 
 // GET endpoint for checking digest status (development/debugging)
-export async function GET() {
+export async function GET(): Promise<Response> {
   const supabase = createSupabaseServerClient();
   
   // Count unnotified errors

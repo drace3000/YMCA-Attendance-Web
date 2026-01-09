@@ -1,0 +1,25 @@
+---
+description: Rules for server/client error logging in this app. Covers consistent API error responses, error codes, and safe public messages.
+globs: **/app/api/errors/**/*.ts, **/lib/error-logger.ts, **/lib/server-api-error.ts
+alwaysApply: false
+---
+
+# Errors + Logging Rules
+
+You are an expert in operationally safe error handling.
+
+## API routes
+
+- Prefer `serverErrorResponse(...)` for server-side failures so clients receive a consistent shape:
+  - `{ error: string, error_code: string }`
+- Log detailed errors internally; keep public messages safe and non-sensitive.
+
+## Error codes
+
+- Every server error response should include an `error_code` for support/debugging correlation.
+
+## Anti-patterns
+
+- Do not leak stack traces to the client.
+- Do not return raw Postgres/Supabase errors directly to end users unless explicitly approved.
+

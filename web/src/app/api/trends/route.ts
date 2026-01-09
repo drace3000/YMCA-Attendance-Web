@@ -104,7 +104,7 @@ function linearRegressionSlope(y: number[]) {
   return (n * sumXY - sumX * sumY) / denom;
 }
 
-export async function GET(req: Request) {
+export async function GET(req: Request): Promise<Response> {
   const { searchParams } = new URL(req.url);
   const year = Number(searchParams.get("year") ?? "2025");
   const quarterParam = searchParams.get("quarter");

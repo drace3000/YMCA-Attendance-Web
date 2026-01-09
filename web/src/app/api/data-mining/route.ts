@@ -59,7 +59,7 @@ const DEFAULT_ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022";
 const FALLBACK_ANTHROPIC_MODEL = "claude-3-5-sonnet-20240620";
 const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
 
-export async function POST(req: NextRequest) {
+export async function POST(req: NextRequest): Promise<Response> {
   try {
     const body = await req.json().catch(() => ({}));
     const query = typeof body?.query === "string" ? body.query.trim() : "";

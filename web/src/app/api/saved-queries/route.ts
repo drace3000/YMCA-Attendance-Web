@@ -10,7 +10,7 @@ interface SavedQuery {
 }
 
 // GET - Fetch all saved queries for a branch
-export async function GET(request: Request) {
+export async function GET(request: Request): Promise<Response> {
   const { searchParams } = new URL(request.url);
   const branchId = searchParams.get("branch_id");
 
@@ -49,7 +49,7 @@ export async function GET(request: Request) {
 }
 
 // POST - Save a new query
-export async function POST(request: Request) {
+export async function POST(request: Request): Promise<Response> {
   try {
     const body = await request.json();
     const { branchId, name, queryText } = body;
@@ -114,7 +114,7 @@ export async function POST(request: Request) {
 }
 
 // PUT - Update an existing query
-export async function PUT(request: Request) {
+export async function PUT(request: Request): Promise<Response> {
   try {
     const body = await request.json();
     const { id, queryText } = body;
@@ -154,7 +154,7 @@ export async function PUT(request: Request) {
 }
 
 // DELETE - Delete a saved query
-export async function DELETE(request: Request) {
+export async function DELETE(request: Request): Promise<Response> {
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");
 

@@ -1,0 +1,61 @@
+---
+description: Always-on routing rule to ensure the right area-specific standards are applied as work progresses. Use this to decide which rule files to consult based on user intent and file locations.
+globs: **/*
+alwaysApply: true
+---
+
+# Skills Router (Always Apply)
+
+When responding to requests, always identify the work area and apply the corresponding `.mdc` rule sets.
+
+## Routing by work area
+
+- **API work** (`/app/api/**/route.ts`):
+  - Apply: `nextjs-api.mdc`, `typescript.mdc`, `supabase.mdc` (and `errors-logging.mdc` if error handling/logging)
+
+- **Reports (PDF/Excel)**:
+  - Apply: `reports.mdc`, `modals.mdc`, `report-export-modals.mdc`, `typescript.mdc`
+
+- **Maintenance UI + hierarchy** (`/app/maintenance/**`):
+  - Apply: `maintenance.mdc`, `react.mdc`, `react-query.mdc`, `tailwind.mdc`
+
+- **Scheduling / Smart Scheduler** (`/app/scheduling/**`, schedule components):
+  - Apply: `scheduling.mdc`, `react.mdc`, `react-query.mdc`, `reports.mdc` (for exports)
+
+- **Email / recipients**:
+  - Apply: `email.mdc`, `modals.mdc`, `selection-lists.mdc`, `nextjs-api.mdc`
+
+- **Selection lists / dropdowns / pickers**:
+  - Apply: `selection-lists.mdc`, `react.mdc`, `tailwind.mdc`
+
+- **Popovers / tooltips** (icon tooltips, dropdown popovers):
+  - Apply: `popovers-tooltips.mdc`, `react.mdc`, `tailwind.mdc`
+
+- **Supabase migrations / schema**:
+  - Apply: `supabase-migrations.mdc`, `supabase.mdc`, `docker-supabase.mdc`
+
+- **Local DB backup/restore**:
+  - Apply: `supabase-local-restore.mdc`, `docker-supabase.mdc`
+
+- **Forms**:
+  - Apply: `forms.mdc` (react-hook-form + zod), `typescript.mdc`
+
+- **Tables / grids**:
+  - Apply: `react-table.mdc`, `tailwind.mdc`
+
+- **Drag-and-drop**:
+  - Apply: `drag-and-drop.mdc`, `react.mdc`
+
+- **Testing**:
+  - Apply: `testing.mdc`
+
+- **Git workflow**:
+  - Apply: `git.mdc`
+
+## Naming guidance (to trigger the right rules)
+
+- Put report-related code in files/folders containing: `report`, `pdf`, `excel`, or `export`
+- Put modal code in files containing: `modal` or `Modal`
+- Keep Maintenance work under `app/maintenance/**`
+- Keep Scheduling work under `app/scheduling/**`
+

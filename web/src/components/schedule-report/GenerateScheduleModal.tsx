@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { X, FileText, Download, Printer, Eye, Loader2, FileSpreadsheet } from "lucide-react";
 import * as XLSX from "xlsx";
 import {
@@ -104,22 +104,22 @@ export function GenerateScheduleModal({
     sessions.length > 0 &&
     sessions.every((s) => s.branch_id === branch.id && s.schedule_id === schedule.id);
 
-  const formatLocation = (loc: Session["location"]): string => {
+  const formatLocation = useCallback((loc: Session["location"]): string => {
     if (!loc) return "-";
     const code = (loc.code || "").trim();
     const name = (loc.name || "").trim();
     if (!code && !name) return "-";
     if (!name) return code;
     return `${code} - ${name}`;
-  };
+  }, []);
 
-  const formatInstructors = (instructors: Session["instructors"]): string => {
+  const formatInstructors = useCallback((instructors: Session["instructors"]): string => {
     if (!instructors || instructors.length === 0) return "-";
     return instructors
       .map((i) => (i.nickname || `${i.first_name} ${i.last_name}`.trim()).trim())
       .filter(Boolean)
       .join("/");
-  };
+  }, []);
 
   const branchForReport = useMemo(() => {
     if (!branch) return null;
@@ -212,7 +212,7 @@ export function GenerateScheduleModal({
       Headcount: String(s.headcount ?? "-"),
     }));
     return { headers, rows };
-  }, [uniqueSessions]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [uniqueSessions, formatLocation, formatInstructors]);
 
   const handleAction = async (action: ActionType) => {
     if (!branchForReport || !schedule || !action) return;

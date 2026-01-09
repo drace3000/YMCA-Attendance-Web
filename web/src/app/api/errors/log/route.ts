@@ -33,7 +33,7 @@ type AdminRecipient = {
   on_hold?: boolean | null;
 };
 
-export async function POST(req: Request) {
+export async function POST(req: Request): Promise<Response> {
   try {
     const body: ErrorLogPayload = await req.json();
     const supabase = createSupabaseServerClient();

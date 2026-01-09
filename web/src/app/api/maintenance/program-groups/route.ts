@@ -39,7 +39,7 @@ function toCodeFromName(name: string): string {
 }
 
 // GET - list program groups (maintenance)
-export async function GET() {
+export async function GET(): Promise<Response> {
   const supabase = createSupabaseServerClient();
 
   const { data, error } = await supabase
@@ -53,7 +53,7 @@ export async function GET() {
 }
 
 // POST - create program group
-export async function POST(req: Request) {
+export async function POST(req: Request): Promise<Response> {
   const supabase = createSupabaseServerClient();
 
   let body: CreateProgramGroupPayload;
@@ -115,7 +115,7 @@ export async function POST(req: Request) {
 }
 
 // PUT - update program group
-export async function PUT(req: Request) {
+export async function PUT(req: Request): Promise<Response> {
   const supabase = createSupabaseServerClient();
 
   let body: UpdateProgramGroupPayload;

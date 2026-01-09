@@ -111,7 +111,7 @@ async function getNextReadableId(
 }
 
 // GET - List all instructors or check nickname availability
-export async function GET(req: Request) {
+export async function GET(req: Request): Promise<Response> {
   const { searchParams } = new URL(req.url);
   const checkNickname = searchParams.get("check_nickname");
   const branchId = searchParams.get("branch_id");
@@ -192,7 +192,7 @@ export async function GET(req: Request) {
 }
 
 // POST - Create a new instructor
-export async function POST(req: Request) {
+export async function POST(req: Request): Promise<Response> {
   const supabase = createSupabaseServerClient();
 
   let body: CreateInstructorPayload;
@@ -301,7 +301,7 @@ export async function POST(req: Request) {
 }
 
 // PUT - Update an instructor
-export async function PUT(req: Request) {
+export async function PUT(req: Request): Promise<Response> {
   const supabase = createSupabaseServerClient();
 
   let body: UpdateInstructorPayload;
@@ -378,7 +378,7 @@ export async function PUT(req: Request) {
 }
 
 // PATCH - Toggle is_active status (soft delete/restore)
-export async function PATCH(req: Request) {
+export async function PATCH(req: Request): Promise<Response> {
   const supabase = createSupabaseServerClient();
 
   let body: { id: string; is_active: boolean };

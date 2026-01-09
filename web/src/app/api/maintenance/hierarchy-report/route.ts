@@ -38,7 +38,7 @@ type Branch = {
   is_main_branch: boolean;
 };
 
-export async function GET(request: NextRequest) {
+export async function GET(request: NextRequest): Promise<Response> {
   try {
     const supabase = createSupabaseServerClient();
 

@@ -421,6 +421,15 @@ if (condition) {
 const [state, setState] = useState()
 if (condition) { /* use state */ }
 
+// ❌ Don't early-return before hooks (common modal bug)
+// This causes hook-order errors / hydration failures:
+// if (!open) return null
+// const [state, setState] = useState(...)
+//
+// ✅ Call hooks first, then return:
+// const [state, setState] = useState(...)
+// if (!open) return null
+
 // ❌ Don't create components inside components
 function Parent() {
   function Child() { return <div /> }  // Recreated every render!

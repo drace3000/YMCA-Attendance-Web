@@ -199,8 +199,8 @@ export function SessionsTab({ scheduleId, branchId, programGroupId, refreshKey, 
   // Clear sessions and refetch when branch or schedule changes
   useEffect(() => {
     setSessions([]); // Clear stale data immediately
-    fetchSessions();
-  }, [scheduleId, branchId, refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
+    void fetchSessions();
+  }, [fetchSessions, refreshKey]);
 
   // Callback refs to scroll to selected item when dropdown content mounts
   const scrollToSelected = useCallback((node: HTMLDivElement | null) => {

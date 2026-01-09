@@ -64,7 +64,7 @@ function validateZip(zip: string): boolean {
 }
 
 // GET - List recipients for a branch
-export async function GET(req: Request) {
+export async function GET(req: Request): Promise<Response> {
   const { searchParams } = new URL(req.url);
   const branchId = searchParams.get("branch_id");
 
@@ -100,7 +100,7 @@ export async function GET(req: Request) {
 }
 
 // POST - Create a new recipient
-export async function POST(req: Request) {
+export async function POST(req: Request): Promise<Response> {
   const supabase = createSupabaseServerClient();
 
   let body: CreateRecipientPayload;
@@ -185,7 +185,7 @@ export async function POST(req: Request) {
 }
 
 // PUT - Update an existing recipient (modify contact details or on_hold)
-export async function PUT(req: Request) {
+export async function PUT(req: Request): Promise<Response> {
   const supabase = createSupabaseServerClient();
 
   let body: UpdateRecipientPayload;
@@ -285,7 +285,7 @@ export async function PUT(req: Request) {
 }
 
 // PATCH - Toggle on_hold only
-export async function PATCH(req: Request) {
+export async function PATCH(req: Request): Promise<Response> {
   const supabase = createSupabaseServerClient();
 
   let body: { id?: string; on_hold?: boolean };
@@ -325,7 +325,7 @@ export async function PATCH(req: Request) {
 }
 
 // DELETE - Remove a recipient
-export async function DELETE(req: Request) {
+export async function DELETE(req: Request): Promise<Response> {
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
 

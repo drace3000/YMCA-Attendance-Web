@@ -31,7 +31,7 @@ type UpdateClassPayload = {
 };
 
 // GET - List all classes or check name availability
-export async function GET(req: Request) {
+export async function GET(req: Request): Promise<Response> {
   const { searchParams } = new URL(req.url);
   const checkName = searchParams.get("check_name");
   const excludeId = searchParams.get("exclude_id");
@@ -88,7 +88,7 @@ export async function GET(req: Request) {
 }
 
 // POST - Create a new class
-export async function POST(req: Request) {
+export async function POST(req: Request): Promise<Response> {
   const supabase = createSupabaseServerClient();
 
   let body: CreateClassPayload;
@@ -146,7 +146,7 @@ export async function POST(req: Request) {
 }
 
 // PUT - Update a class
-export async function PUT(req: Request) {
+export async function PUT(req: Request): Promise<Response> {
   const supabase = createSupabaseServerClient();
 
   let body: UpdateClassPayload;
@@ -217,7 +217,7 @@ export async function PUT(req: Request) {
 }
 
 // PATCH - Toggle is_active status (soft delete/restore)
-export async function PATCH(req: Request) {
+export async function PATCH(req: Request): Promise<Response> {
   const supabase = createSupabaseServerClient();
 
   let body: { id: string; is_active: boolean };

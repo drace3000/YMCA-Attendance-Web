@@ -78,6 +78,16 @@ function greet(name: string, greeting: string = 'Hello'): string {
 }
 ```
 
+### Next.js route handlers (App Router)
+
+Always type exported route handler return values explicitly:
+
+```typescript
+export async function GET(req: Request): Promise<Response> {
+  // ...
+}
+```
+
 ### Async Functions
 ```typescript
 // Async always returns Promise<T>

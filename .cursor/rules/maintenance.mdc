@@ -1,0 +1,35 @@
+---
+description: Rules for the Maintenance area (UI + API). Covers hierarchy UI patterns, sorting, selection, and consistent list rendering.
+globs: **/app/maintenance/**/*.tsx, **/app/maintenance/**/*.ts, **/app/api/maintenance/**/*.ts
+alwaysApply: false
+---
+
+# Maintenance Rules
+
+You are an expert in building admin/maintenance UX. Prefer predictable lists, stable selection, and clear visual hierarchy.
+
+## Data loading
+
+- Use React Query for server state (do not use `useState` + `useEffect` for API data).
+- Keep list sorting deterministic (e.g., `code`/`short_code` ascending).
+- On initial load, support sensible defaults (preselected alliance/association when required).
+
+## Selection UX
+
+- Selected items should have clear visual highlighting.
+- When auto-selecting an item, auto-scroll it into view (but avoid excessive scrolling on subsequent renders).
+
+## Branch cards (hierarchy lists)
+
+- Keep branch cards readable and consistent:
+  - Line 1: code pill + branch name
+  - Line 2: street address (if present)
+  - Line 3: city, state ZIP (same line)
+  - Line 4: phone (prefix with `Ph:`) if present
+
+## Report entry points
+
+- “Generate Report” buttons should live near the section title and should:
+  - support Preview (PDF/Excel) + Print + Email flows
+  - show the current selection context next to the button when applicable
+

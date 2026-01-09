@@ -1,0 +1,44 @@
+---
+description: Rules for modal components (dialogs, popups). Covers hook-order safety, accessibility, loading states, and cleanup. Applies to modal files across the app.
+globs: **/*Modal*.tsx, **/*modal*.tsx, **/components/**/modal*/**/*.tsx, **/app/**/modal*/**/*.tsx
+alwaysApply: false
+---
+
+# Modal Rules
+
+You are an expert in React modal UX. Implement modals that are safe, accessible, and predictable.
+
+## Hook-order safety (critical)
+
+- Never return early (e.g., `if (!open) return null`) **before** hooks.
+- Always declare hooks first, then do conditional rendering/early returns.
+
+```tsx
+export function MyModal({ open }: { open: boolean }) {
+  const [value, setValue] = useState("")
+  const [busy, setBusy] = useState(false)
+
+  if (!open) return null
+
+  return <div>{value}</div>
+}
+```
+
+## Accessibility basics
+
+- Use a real dialog pattern (or a library dialog component) with:
+  - focus trap
+  - ESC-to-close
+  - `aria-labelledby` + visible title
+- Ensure primary/secondary actions are keyboard reachable.
+
+## Loading states
+
+- For slow actions (PDF/Excel generation, API calls), show a blocking overlay or disable the primary button and show progress.
+- Always guard against double-click re-entry (idempotent button handlers).
+
+## Cleanup
+
+- If you create `URL.createObjectURL(blob)`, revoke it on close/unmount.
+- Clear timers/subscriptions in `useEffect` cleanup.
+

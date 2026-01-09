@@ -1,12 +1,22 @@
 ---
 description: Rules for generating PDF reports and Excel exports. Covers @react-pdf/renderer patterns, xlsx library usage, and download handling. Use when building report generation features.
-globs: **/*report*.tsx, **/*Report*.tsx, **/*pdf*.tsx, **/*PDF*.tsx, **/*excel*.ts, **/*Excel*.ts, **/*export*.ts
+globs: **/*report*.ts, **/*report*.tsx, **/*Report*.ts, **/*Report*.tsx, **/*pdf*.ts, **/*pdf*.tsx, **/*PDF*.ts, **/*PDF*.tsx, **/*excel*.ts, **/*excel*.tsx, **/*Excel*.ts, **/*Excel*.tsx, **/*export*.ts, **/*export*.tsx, **/components/schedule-report/**/*.tsx, **/components/schedule-pdf/**/*.tsx, **/components/hierarchy-report-pdf/**/*.tsx, **/components/attendance-report-pdf/**/*.tsx, **/components/trends-report-pdf/**/*.tsx, **/lib/pdf-utils.ts, **/lib/*report*.ts, **/lib/*report*.tsx, **/lib/*excel*.ts, **/lib/*excel*.tsx
 alwaysApply: false
 ---
 
 # Report Generation Rules (PDF + Excel)
 
 You are an expert in generating reports. Build well-structured, printable documents.
+
+## Naming conventions (to ensure rules auto-apply)
+
+Cursor applies this rule file primarily based on file-path patterns (`globs` above). To ensure these standards are invoked automatically as the codebase grows:
+
+- **Report/PDF/Excel files**: include one of `report`, `pdf`, `excel`, or `export` in the filename for report-related code (components and utilities).
+  - Examples: `HierarchyPDFDocument.tsx`, `hierarchy-report-utils.tsx`, `pdf-utils.ts`, `attendance-insights-report.tsx`
+- **UI entry points** (modals/pages) that primarily generate/preview/download reports: include `Report` or `Export` in the filename.
+
+If a module is report-related but does not match these naming patterns, either rename it or explicitly reference these rules when requesting changes.
 
 ## PDF Generation with @react-pdf/renderer
 
@@ -163,6 +173,20 @@ function MultiPageReport({ data }: { data: Item[] }) {
   )
 }
 ```
+
+### Prevent splitting a row/block across pages (critical for readability)
+
+For “row-like” content (e.g., a Branch entry in a hierarchy), prevent page splits by wrapping the container:
+
+```tsx
+<View wrap={false}>
+  <Text>Branch Name</Text>
+  <Text>Street Address, City, ST ZIP</Text>
+  <Text>Ph: (555) 555-5555</Text>
+</View>
+```
+
+Use this whenever a single logical entry must not be split between pages.
 
 ### PDF Download/Preview
 ```tsx
@@ -403,6 +427,15 @@ function HierarchyPDFDocument({ alliances }: HierarchyReportProps) {
   )
 }
 ```
+
+### Hierarchy PDF layout guidelines (Alliance → Association → Branch)
+
+- Avoid fixed column widths unless absolutely necessary; let text flow naturally.
+- Prefer a stacked, two-line branch layout:
+  - Line 1: Branch name (and code/tag if needed)
+  - Line 2: Address line (e.g., `Street Address, City, ST ZIP`) and/or phone
+- For Branch blocks, use `wrap={false}` to avoid splitting across pages.
+- Sort branch entries deterministically (typically by `branch.name`).
 
 ## Data Transformation
 

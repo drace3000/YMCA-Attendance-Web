@@ -14,7 +14,7 @@ type RegisterManagerPayload = {
 };
 
 // GET - Check if email is a branch manager
-export async function GET(req: Request) {
+export async function GET(req: Request): Promise<Response> {
   const { searchParams } = new URL(req.url);
   const email = searchParams.get("email");
 
@@ -51,7 +51,7 @@ export async function GET(req: Request) {
 }
 
 // POST - Register as a new branch manager
-export async function POST(req: Request) {
+export async function POST(req: Request): Promise<Response> {
   const supabase = createSupabaseServerClient();
 
   let body: RegisterManagerPayload;

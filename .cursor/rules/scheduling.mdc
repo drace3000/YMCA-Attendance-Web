@@ -1,0 +1,30 @@
+---
+description: Rules for Scheduling and Smart Scheduler work (UI + API). Covers stable data flows, session handling, and report generation patterns.
+globs: **/app/scheduling/**/*.tsx, **/app/scheduling/**/*.ts, **/app/api/scheduling/**/*.ts, **/components/schedule-*/**/*.tsx, **/components/schedule-report/**/*.tsx, **/components/schedule-pdf/**/*.tsx, **/lib/*schedule*.ts, **/lib/*schedule*.tsx
+alwaysApply: false
+---
+
+# Scheduling Rules
+
+You are an expert in scheduler UX and data integrity.
+
+## Data flows
+
+- Use React Query for server state (sessions, schedules, program groups).
+- Avoid `react-hooks/exhaustive-deps` suppressions; make callbacks stable (`useCallback`) and depend on them.
+
+## Session identity & deduplication (reports)
+
+- When generating reports that need uniqueness, dedupe by a stable composite key that matches user expectations (e.g., class name + start/end + location code).
+- Prefer deduplication in one place (utility) and keep it deterministic.
+
+## Time/date handling
+
+- Treat time values as strings consistently (`HH:MM:SS` or `HH:MM`) and normalize before display.
+- Never assume local timezone when comparing date strings; use ISO slices where possible.
+
+## Modals
+
+- Follow `modals.mdc`: hooks first, then conditional rendering.
+- Provide loading overlays for PDF/Excel generation and clean up blob URLs.
+

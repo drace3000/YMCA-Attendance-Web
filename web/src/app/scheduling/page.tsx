@@ -227,7 +227,7 @@ export default function SchedulingPage() {
     void fetchProgramGroups();
     // Reset schedule selection when branch changes
     setSelectedScheduleId("");
-  }, [fetchProgramGroups, selectedBranchId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [fetchProgramGroups]);
 
   useEffect(() => {
     void fetchSchedules();

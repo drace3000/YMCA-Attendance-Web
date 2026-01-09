@@ -8,16 +8,64 @@ alwaysApply: false
 
 You are an expert in Next.js App Router API routes. Build secure, well-typed endpoints.
 
+## Required: Explicit return types (App Router)
+
+All exported route handlers must declare a return type:
+
+- Prefer `Promise<Response>`
+- `Promise<NextResponse>` is also acceptable when you want to be explicit about `NextResponse`
+
+In this repo, prefer `createSupabaseServerClient()` and `serverErrorResponse(...)`:
+
+```typescript
+import { NextRequest, NextResponse } from "next/server"
+import { createSupabaseServerClient } from "@/lib/supabaseServer"
+import { serverErrorResponse } from "@/lib/server-api-error"
+
+export async function GET(req: NextRequest): Promise<Response> {
+  try {
+    const supabase = createSupabaseServerClient()
+
+    const { data, error } = await supabase
+      .from("ymca_branches")
+      .select("id, name")
+      .order("name", { ascending: true })
+
+    if (error) {
+      return await serverErrorResponse({
+        req,
+        errorType: "DB_ERROR",
+        publicMessage: "Failed to fetch branches",
+        logMessage: error.message,
+        context: { module: "api.branches", action: "select_branches" },
+        err: error,
+      })
+    }
+
+    return NextResponse.json({ branches: data ?? [] })
+  } catch (err) {
+    return await serverErrorResponse({
+      req,
+      errorType: "UNHANDLED_ERROR",
+      publicMessage: "Internal server error",
+      logMessage: "Unhandled error in GET /api/branches",
+      context: { module: "api.branches", action: "unhandled" },
+      err,
+    })
+  }
+}
+```
+
 ## Route Handler Structure
 
 ### Basic Route (app/api/users/route.ts)
 ```typescript
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createSupabaseServerClient } from '@/lib/supabaseServer'
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient()
+    const supabase = createSupabaseServerClient()
     
     const { data, error } = await supabase
       .from('users')
@@ -46,6 +94,7 @@ export async function GET(request: NextRequest) {
 ### Dynamic Route (app/api/users/[id]/route.ts)
 ```typescript
 import { NextRequest, NextResponse } from 'next/server'
+import { createSupabaseServerClient } from '@/lib/supabaseServer'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -65,11 +114,11 @@ export async function GET(
     )
   }
   
-  const supabase = await createClient()
+  const supabase = createSupabaseServerClient()
   
   const { data, error } = await supabase
     .from('users')
-    .select('*')
+    .select('id, name, email, role, created_at')
     .eq('id', id)
     .single()
   
@@ -102,8 +151,13 @@ export async function GET(request: NextRequest) {
   const search = searchParams.get('search') || ''
   const status = searchParams.get('status') // may be null
   
+  const supabase = createSupabaseServerClient()
+
   // Build query
-  let query = supabase.from('items').select('*', { count: 'exact' })
+  // Prefer selecting explicit columns instead of '*'
+  let query = supabase
+    .from('items')
+    .select('id, name, status, created_at', { count: 'exact' })
   
   if (search) {
     query = query.ilike('name', `%${search}%`)
@@ -158,12 +212,12 @@ export async function POST(request: NextRequest) {
     
     const { email, name, role } = result.data
     
-    const supabase = await createClient()
+    const supabase = createSupabaseServerClient()
     
     const { data, error } = await supabase
       .from('users')
       .insert({ email, name, role })
-      .select()
+      .select('id, email, name, role')
       .single()
     
     if (error) {
@@ -240,7 +294,7 @@ return errorResponse('Validation failed', 400, { email: ['Invalid format'] })
 ### Check Auth in Route
 ```typescript
 export async function GET(request: NextRequest) {
-  const supabase = await createClient()
+  const supabase = createSupabaseServerClient()
   
   const { data: { user }, error: authError } = await supabase.auth.getUser()
   
@@ -254,7 +308,7 @@ export async function GET(request: NextRequest) {
   // User is authenticated, proceed...
   const { data, error } = await supabase
     .from('private_data')
-    .select('*')
+    .select('id, user_id, created_at')
     .eq('user_id', user.id)
   
   return NextResponse.json(data)
@@ -267,7 +321,7 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const supabase = await createClient()
+  const supabase = createSupabaseServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   
   if (!user) {
@@ -319,8 +373,8 @@ import { createClient } from '@supabase/supabase-js'
 const supabase = createClient(url, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 
 // ✅ Use server client that respects RLS
-import { createClient } from '@/lib/supabase/server'
-const supabase = await createClient()
+import { createSupabaseServerClient } from '@/lib/supabaseServer'
+const supabase = createSupabaseServerClient()
 
 // ❌ Don't return raw database errors to client
 if (error) {
@@ -332,6 +386,11 @@ if (error) {
   console.error('Database error:', error)
   return NextResponse.json({ error: 'Failed to fetch data' }, { status: 500 })
 }
+
+// ⚠️ Supabase relation gotcha: joined relations may be arrays
+// PostgREST can return related rows as an array even for many-to-one/one-to-one joins.
+// Normalize before reading fields:
+// const association = Array.isArray(row.association) ? row.association[0] : row.association
 
 // ❌ Don't skip input validation
 const { email } = await request.json()
@@ -357,11 +416,11 @@ try {
 }
 
 // ❌ Don't forget to handle missing resources
-const { data } = await supabase.from('users').select().eq('id', id).single()
+const { data } = await supabase.from('users').select('id, name, email').eq('id', id).single()
 return NextResponse.json(data)  // data could be null!
 
 // ✅ Check for null/error
-const { data, error } = await supabase.from('users').select().eq('id', id).single()
+const { data, error } = await supabase.from('users').select('id, name, email').eq('id', id).single()
 if (error || !data) {
   return errorResponse('User not found', 404)
 }

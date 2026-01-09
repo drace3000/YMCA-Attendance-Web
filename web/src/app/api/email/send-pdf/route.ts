@@ -13,7 +13,7 @@ type SendPdfPayload = {
   fromName?: string;
 };
 
-export async function POST(req: Request) {
+export async function POST(req: Request): Promise<Response> {
   const apiKey = process.env.RESEND_API_KEY;
   
   if (!apiKey) {
