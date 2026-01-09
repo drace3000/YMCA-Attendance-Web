@@ -39,6 +39,7 @@ interface Branch {
   name: string;
   short_name: string | null;
   association_id: string;
+  address: string | null;
   city: string | null;
   state_code: string | null;
   zip: string | null;
@@ -124,7 +125,7 @@ function formatNameWithYMCA(name: string): string {
 /**
  * Export hierarchy data to Excel with multiple sheets
  */
-export function downloadHierarchyExcel(data: HierarchyReportData): void {
+export function buildHierarchyExcelWorkbook(data: HierarchyReportData): XLSX.WorkBook {
   const wb = XLSX.utils.book_new();
 
   // Sheet 1: Summary
@@ -195,6 +196,7 @@ export function downloadHierarchyExcel(data: HierarchyReportData): void {
         Name: formatNameWithYMCA(b.name),
         "Short Name": b.short_name ?? "",
         Association: association ? formatNameWithYMCA(association.name) : "",
+        Address: b.address ?? "",
         City: b.city ?? "",
         State: b.state_code ?? "",
         ZIP: b.zip ?? "",
@@ -209,6 +211,7 @@ export function downloadHierarchyExcel(data: HierarchyReportData): void {
     { wch: 35 },
     { wch: 20 },
     { wch: 30 },
+    { wch: 28 },
     { wch: 15 },
     { wch: 8 },
     { wch: 10 },
@@ -226,6 +229,7 @@ export function downloadHierarchyExcel(data: HierarchyReportData): void {
     "Assoc Code": string;
     Branch: string;
     "Branch Code": string;
+    Address: string;
     City: string;
     State: string;
     ZIP: string;
@@ -254,6 +258,7 @@ export function downloadHierarchyExcel(data: HierarchyReportData): void {
             "Assoc Code": assoc.code,
             Branch: "",
             "Branch Code": "",
+            Address: "",
             City: "",
             State: "",
             ZIP: "",
@@ -268,6 +273,7 @@ export function downloadHierarchyExcel(data: HierarchyReportData): void {
               "Assoc Code": assoc.code,
               Branch: formatNameWithYMCA(branch.name),
               "Branch Code": branch.short_code ?? branch.code,
+              Address: branch.address ?? "",
               City: branch.city ?? "",
               State: branch.state_code ?? "",
               ZIP: branch.zip ?? "",
@@ -286,6 +292,7 @@ export function downloadHierarchyExcel(data: HierarchyReportData): void {
     { wch: 10 },
     { wch: 30 },
     { wch: 12 },
+    { wch: 28 },
     { wch: 15 },
     { wch: 8 },
     { wch: 10 },
@@ -293,7 +300,11 @@ export function downloadHierarchyExcel(data: HierarchyReportData): void {
   ];
   XLSX.utils.book_append_sheet(wb, hierarchySheet, "Full Hierarchy");
 
-  // Generate and download
+  return wb;
+}
+
+export function downloadHierarchyExcel(data: HierarchyReportData, fileName?: string): void {
+  const wb = buildHierarchyExcelWorkbook(data);
   const timestamp = new Date().toISOString().split("T")[0];
-  XLSX.writeFile(wb, `ymca-hierarchy-report-${timestamp}.xlsx`);
+  XLSX.writeFile(wb, fileName ?? `ymca-hierarchy-report-${timestamp}.xlsx`);
 }

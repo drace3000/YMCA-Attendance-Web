@@ -29,6 +29,7 @@ type BranchRow = {
   name: string;
   short_name: string | null;
   association_id: string;
+  address: string | null;
   city: string | null;
   state_code: string | null;
   zip: string | null;
@@ -100,7 +101,7 @@ export async function GET(req: Request) {
 
     let branchesQuery = supabase
       .from("ymca_branches")
-      .select("id, code, short_code, name, short_name, association_id, city, state_code, zip, phone, is_active, is_main_branch")
+      .select("id, code, short_code, name, short_name, association_id, address, city, state_code, zip, phone, is_active, is_main_branch")
       .order("name", { ascending: true });
     if (!includeInactive) branchesQuery = branchesQuery.eq("is_active", true);
 

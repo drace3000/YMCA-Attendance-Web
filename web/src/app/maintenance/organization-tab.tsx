@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Building2, ChevronRight, Globe2, Landmark, Search, ToggleLeft, ToggleRight } from "lucide-react";
+import { Building2, ChevronRight, Globe2, Landmark, Printer, Search } from "lucide-react";
 import { logError } from "@/lib/error-logger";
+import { useThemeSettings } from "@/components/theme-settings-provider";
 import { ReportModal } from "./organization-report-modal";
 
 type Alliance = {
@@ -33,6 +34,7 @@ type Branch = {
   name: string;
   short_name: string | null;
   association_id: string;
+  address: string | null;
   city: string | null;
   state_code: string | null;
   zip: string | null;
@@ -60,10 +62,10 @@ function formatNameWithYMCA(name: string): string {
 }
 
 export function OrganizationTab() {
+  const { branch: currentBranch } = useThemeSettings();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [includeInactive, setIncludeInactive] = useState(false);
   const [search, setSearch] = useState("");
   const [reportOpen, setReportOpen] = useState(false);
 
@@ -81,10 +83,7 @@ export function OrganizationTab() {
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams();
-      if (includeInactive) params.set("include_inactive", "true");
-
-      const res = await fetch(`/api/maintenance/organization?${params}`);
+      const res = await fetch("/api/maintenance/organization");
       const data = (await res.json().catch(() => ({}))) as Partial<OrgPayload> & { error?: string };
       if (!res.ok) {
         throw new Error(data.error ?? "Failed to load organization hierarchy");
@@ -100,13 +99,13 @@ export function OrganizationTab() {
         description: "Failed to load YMCA alliances/associations/branches for Maintenance → Organization tab.",
         page: "maintenance",
         action: "loadOrganizationHierarchy",
-        params: { includeInactive },
+        params: {},
       });
       setError(`Failed to load organization hierarchy. ${errorCode}`);
     } finally {
       setLoading(false);
     }
-  }, [includeInactive]);
+  }, []);
 
   useEffect(() => {
     void loadOrg();
@@ -237,30 +236,27 @@ export function OrganizationTab() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="text-lg font-semibold text-foreground">Organization Hierarchy</h2>
-          <p className="text-sm text-muted-foreground">
-            Browse YMCA alliances, associations, and branches (read-only).
-          </p>
-        </div>
+      <div className="space-y-1">
         <div className="flex flex-wrap items-center gap-2">
+          <h2 className="text-lg font-semibold text-foreground">Organization Hierarchy</h2>
           <button
             type="button"
             onClick={() => setReportOpen(true)}
             className="btn-pill inline-flex items-center gap-2 bg-[var(--cta)] px-4 py-2 text-sm font-semibold text-[var(--cta-foreground)] shadow-sm hover:opacity-90"
           >
-            Generate Hierarchy Report
+            <Printer className="h-4 w-4" />
+            Generate Report
           </button>
-          <button
-            type="button"
-            onClick={() => setIncludeInactive((v) => !v)}
-            className="btn-pill inline-flex items-center gap-2 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/15"
-          >
-            {includeInactive ? <ToggleRight className="h-4 w-4" /> : <ToggleLeft className="h-4 w-4" />}
-            {includeInactive ? "Including inactive" : "Active only"}
-          </button>
+          {selectedAlliance && selectedAssociation ? (
+            <span className="max-w-[420px] truncate text-sm font-semibold text-[var(--brand)]">
+              {formatNameWithYMCA(selectedAlliance.name)} -{" "}
+              {formatNameWithYMCA(selectedAssociation.name)}
+            </span>
+          ) : null}
         </div>
+        <p className="text-sm text-muted-foreground">
+          Browse YMCA alliances, associations, and branches (read-only).
+        </p>
       </div>
 
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -445,6 +441,11 @@ export function OrganizationTab() {
           <div className="max-h-[520px] overflow-auto scrollbar-thin scrollbar-thumb-[var(--brand)] scrollbar-track-transparent">
             {filteredBranches.map((b) => {
               const codeDisplay = (b.short_code ?? b.code ?? "").toUpperCase();
+              const state = b.state_code ? b.state_code.toUpperCase() : null;
+              const cityStateZip =
+                b.city || state || b.zip
+                  ? `${b.city ?? ""}${b.city && (state || b.zip) ? ", " : ""}${state ?? ""}${b.zip ? ` ${b.zip}` : ""}`.trim()
+                  : null;
               return (
                 <div key={b.id} className="px-4 py-3 text-sm hover:bg-muted/40">
                   <div className="flex items-center gap-2">
@@ -454,16 +455,11 @@ export function OrganizationTab() {
                     <span className="font-semibold text-foreground">{b.name}</span>
                   </div>
                   <div className="mt-1 flex flex-col gap-1 text-xs">
-                    {(b.city || b.state_code || b.zip) ? (
-                      <span className="text-muted-foreground">
-                        {[
-                          b.city || null,
-                          b.state_code ? b.state_code.toUpperCase() : null,
-                          b.zip || null,
-                        ]
-                          .filter(Boolean)
-                          .join(", ")}
-                      </span>
+                    {b.address ? (
+                      <span className="text-muted-foreground">{b.address}</span>
+                    ) : null}
+                    {cityStateZip ? (
+                      <span className="text-muted-foreground">{cityStateZip}</span>
                     ) : null}
                     {b.phone ? <span className="text-foreground">Ph: {b.phone}</span> : null}
                     {!b.is_active ? <span className="text-red-300">inactive</span> : null}
@@ -482,7 +478,13 @@ export function OrganizationTab() {
           </div>
         </div>
       </div>
-      <ReportModal open={reportOpen} onClose={() => setReportOpen(false)} />
+      <ReportModal
+        open={reportOpen}
+        onClose={() => setReportOpen(false)}
+        selectedAllianceId={selectedAllianceId}
+        selectedAssociationId={selectedAssociationId}
+        recipientBranchId={currentBranch?.id ?? null}
+      />
     </div>
   );
 }

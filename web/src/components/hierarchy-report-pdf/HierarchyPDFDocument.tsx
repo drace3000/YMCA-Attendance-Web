@@ -1,6 +1,7 @@
 /**
  * Hierarchy Report PDF Document Component
  * Letter (8.5x11) portrait format showing Alliance > Association > Branch structure
+ * Readable, nested hierarchy layout: Alliance > Association > Branch
  */
 
 import {
@@ -40,6 +41,7 @@ interface Branch {
   name: string;
   short_name: string | null;
   association_id: string;
+  address: string | null;
   city: string | null;
   state_code: string | null;
   zip: string | null;
@@ -61,40 +63,40 @@ function createStyles(themeColor: string) {
     page: {
       flexDirection: "column",
       backgroundColor: "#FFFFFF",
-      paddingTop: 30,
-      paddingHorizontal: 40,
+      paddingTop: 28,
+      paddingHorizontal: 36,
       paddingBottom: 50,
       fontFamily: "Helvetica",
     },
     header: {
-      marginBottom: 20,
+      marginBottom: 16,
       paddingBottom: 10,
       borderBottomWidth: 2,
       borderBottomColor: themeColor,
     },
     title: {
-      fontSize: 20,
+      fontSize: 18,
       fontFamily: "Helvetica-Bold",
       color: themeColor,
       marginBottom: 4,
     },
     subtitle: {
-      fontSize: 10,
+      fontSize: 9,
       color: "#666666",
     },
     statsRow: {
       flexDirection: "row",
       marginTop: 10,
-      gap: 20,
     },
     statBox: {
       paddingHorizontal: 12,
       paddingVertical: 6,
       backgroundColor: "#f5f5f5",
       borderRadius: 4,
+      marginRight: 12,
     },
     statLabel: {
-      fontSize: 8,
+      fontSize: 7,
       color: "#666666",
       textTransform: "uppercase",
     },
@@ -103,119 +105,127 @@ function createStyles(themeColor: string) {
       fontFamily: "Helvetica-Bold",
       color: themeColor,
     },
+    // Alliance Section
     allianceSection: {
-      marginBottom: 16,
+      marginBottom: 14,
     },
     allianceHeader: {
       backgroundColor: themeColor,
       paddingHorizontal: 10,
       paddingVertical: 6,
-      marginBottom: 8,
+      marginBottom: 6,
     },
     allianceName: {
-      fontSize: 12,
+      fontSize: 11,
       fontFamily: "Helvetica-Bold",
       color: "#FFFFFF",
     },
-    allianceCode: {
-      fontSize: 9,
+    allianceMeta: {
+      fontSize: 8,
       color: "#FFFFFF",
-      opacity: 0.8,
+      opacity: 0.85,
+      marginTop: 2,
     },
+    // Association Section
     associationSection: {
-      marginLeft: 15,
+      marginLeft: 10,
       marginBottom: 10,
+      paddingLeft: 10,
+      borderLeftWidth: 2,
+      borderLeftColor: "#e6e6e6",
     },
     associationHeader: {
       flexDirection: "row",
       alignItems: "center",
-      marginBottom: 4,
-      paddingBottom: 3,
+      paddingBottom: 4,
+      marginBottom: 6,
       borderBottomWidth: 1,
-      borderBottomColor: "#dddddd",
+      borderBottomColor: "#eaeaea",
     },
     associationCode: {
-      fontSize: 9,
+      fontSize: 8,
       fontFamily: "Helvetica-Bold",
       color: "#FFFFFF",
       backgroundColor: themeColor,
-      paddingHorizontal: 6,
+      paddingHorizontal: 5,
       paddingVertical: 2,
-      borderRadius: 3,
+      borderRadius: 2,
       marginRight: 8,
     },
     associationName: {
       fontSize: 10,
       fontFamily: "Helvetica-Bold",
-      color: "#333333",
+      color: themeColor,
+      flex: 1,
     },
-    associationState: {
+    associationMeta: {
       fontSize: 8,
-      color: "#666666",
-      marginLeft: 8,
+      color: "#888888",
     },
+    // Branch list
     branchList: {
-      marginLeft: 20,
       marginTop: 4,
     },
-    branchRow: {
+    // Two-line branch entry - wrap={false} keeps it together
+    branchEntry: {
+      marginBottom: 8,
+      paddingBottom: 6,
+      borderBottomWidth: 1,
+      borderBottomColor: "#eeeeee",
+    },
+    branchTopRow: {
       flexDirection: "row",
       alignItems: "center",
-      paddingVertical: 3,
-      borderBottomWidth: 1,
-      borderBottomColor: "#f0f0f0",
+      marginBottom: 3,
     },
     branchCode: {
-      fontSize: 7,
+      fontSize: 8,
       fontFamily: "Helvetica-Bold",
       color: themeColor,
       backgroundColor: "#f0f0f0",
-      paddingHorizontal: 4,
+      paddingHorizontal: 5,
       paddingVertical: 2,
-      borderRadius: 2,
-      marginRight: 8,
-      width: 50,
-      textAlign: "center",
+      borderRadius: 3,
+      marginLeft: 8,
     },
     branchName: {
-      fontSize: 9,
+      fontSize: 10,
+      fontFamily: "Helvetica-Bold",
       color: "#333333",
       flex: 1,
     },
-    branchLocation: {
-      fontSize: 8,
-      color: "#666666",
-      width: 120,
+    branchBottomRow: {
+      marginLeft: 0,
     },
-    branchPhone: {
-      fontSize: 8,
+    branchDetails: {
+      fontSize: 9,
       color: "#666666",
-      width: 80,
     },
+    // Footer
     footer: {
       position: "absolute",
-      bottom: 25,
-      left: 40,
-      right: 40,
+      bottom: 20,
+      left: 36,
+      right: 36,
       flexDirection: "row",
       justifyContent: "space-between",
       borderTopWidth: 1,
-      borderTopColor: "#dddddd",
-      paddingTop: 8,
+      borderTopColor: "#e0e0e0",
+      paddingTop: 6,
     },
     footerText: {
-      fontSize: 8,
+      fontSize: 7,
       color: "#999999",
     },
     pageNumber: {
-      fontSize: 8,
+      fontSize: 7,
       color: "#999999",
     },
     emptyMessage: {
-      fontSize: 10,
+      fontSize: 9,
       color: "#999999",
       fontStyle: "italic",
-      marginLeft: 20,
+      marginLeft: 10,
       marginTop: 4,
     },
   });
@@ -231,6 +241,20 @@ function formatNameWithYMCA(name: string): string {
       return lower.charAt(0).toUpperCase() + lower.slice(1);
     })
     .join(" ");
+}
+
+function formatBranchDetails(branch: Branch): string {
+  // Street Address, City, State ZIP (one line)
+  const cityState = [branch.city, branch.state_code].filter(Boolean).join(", ");
+  const cityStateZip = `${cityState}${branch.zip ? ` ${branch.zip}` : ""}`.trim();
+
+  return [branch.address, cityStateZip]
+    .filter((p): p is string => typeof p === "string" && p.trim().length > 0)
+    .join(", ");
+}
+
+function formatBranchPhone(branch: Branch): string {
+  return (branch.phone ?? "").trim();
 }
 
 export function HierarchyPDFDocument({
@@ -250,8 +274,8 @@ export function HierarchyPDFDocument({
   return (
     <Document>
       <Page size="LETTER" style={styles.page}>
-        {/* Header */}
-        <View style={styles.header}>
+        {/* Header (repeats on each page) */}
+        <View style={styles.header} fixed>
           <Text style={styles.title}>YMCA Organization Hierarchy</Text>
           <Text style={styles.subtitle}>
             Generated: {generatedAt.toLocaleDateString()} at{" "}
@@ -273,26 +297,28 @@ export function HierarchyPDFDocument({
           </View>
         </View>
 
-        {/* Hierarchy Content */}
+        {/* Hierarchy Content: Alliance > Association > Branch */}
         {sortedAlliances.map((alliance) => {
           const allianceAssociations = associations
             .filter((a) => a.alliance_id === alliance.id)
             .sort((a, b) => a.code.localeCompare(b.code));
 
           return (
-            <View key={alliance.id} style={styles.allianceSection} wrap={false}>
-              {/* Alliance Header */}
-              <View style={styles.allianceHeader}>
+            <View key={alliance.id} style={styles.allianceSection}>
+              <View style={styles.allianceHeader} wrap={false}>
                 <Text style={styles.allianceName}>
                   {formatNameWithYMCA(alliance.name)}
                 </Text>
-                <Text style={styles.allianceCode}>
-                  {alliance.code} • {alliance.alliance_type === "state" ? "State" : "Regional"} Alliance
-                  {alliance.headquarters_state_code ? ` • ${alliance.headquarters_state_code}` : ""}
+                <Text style={styles.allianceMeta}>
+                  {alliance.code} •{" "}
+                  {alliance.alliance_type === "state" ? "State" : "Regional"}{" "}
+                  Alliance
+                  {alliance.headquarters_state_code
+                    ? ` • ${alliance.headquarters_state_code}`
+                    : ""}
                 </Text>
               </View>
 
-              {/* Associations under this Alliance */}
               {allianceAssociations.length === 0 ? (
                 <Text style={styles.emptyMessage}>No associations</Text>
               ) : (
@@ -300,47 +326,109 @@ export function HierarchyPDFDocument({
                   const assocBranches = branches
                     .filter((b) => b.association_id === assoc.id)
                     .sort((a, b) =>
-                      (a.short_code ?? a.code).localeCompare(b.short_code ?? b.code)
+                      (a.name ?? "").localeCompare(b.name ?? "", undefined, {
+                        sensitivity: "base",
+                      })
                     );
 
                   return (
                     <View key={assoc.id} style={styles.associationSection}>
-                      {/* Association Header */}
-                      <View style={styles.associationHeader}>
-                        <Text style={styles.associationCode}>{assoc.code}</Text>
-                        <Text style={styles.associationName}>
-                          {formatNameWithYMCA(assoc.name)}
-                        </Text>
-                        <Text style={styles.associationState}>
-                          {assoc.state_code}
-                          {assoc.region ? ` • ${assoc.region}` : ""}
-                        </Text>
-                      </View>
-
-                      {/* Branches under this Association */}
+                      {/* Keep association header with first branch so it doesn't orphan at page bottom */}
                       {assocBranches.length === 0 ? (
-                        <Text style={styles.emptyMessage}>No branches</Text>
+                        <>
+                          <View style={styles.associationHeader} wrap={false}>
+                            <Text style={styles.associationCode}>
+                              {assoc.code}
+                            </Text>
+                            <Text style={styles.associationName}>
+                              {formatNameWithYMCA(assoc.name)}
+                            </Text>
+                            <Text style={styles.associationMeta}>
+                              {assoc.state_code}
+                              {assoc.region ? ` • ${assoc.region}` : ""}
+                            </Text>
+                          </View>
+                          <Text style={styles.emptyMessage}>No branches</Text>
+                        </>
                       ) : (
-                        <View style={styles.branchList}>
-                          {assocBranches.map((branch) => (
-                            <View key={branch.id} style={styles.branchRow}>
-                              <Text style={styles.branchCode}>
-                                {branch.short_code ?? branch.code}
-                              </Text>
-                              <Text style={styles.branchName}>
-                                {formatNameWithYMCA(branch.name)}
-                              </Text>
-                              <Text style={styles.branchLocation}>
-                                {[branch.city, branch.state_code, branch.zip]
-                                  .filter(Boolean)
-                                  .join(", ")}
-                              </Text>
-                              <Text style={styles.branchPhone}>
-                                {branch.phone ?? ""}
-                              </Text>
-                            </View>
-                          ))}
-                        </View>
+                        (() => {
+                          const [first, ...rest] = assocBranches;
+                          return (
+                            <>
+                              <View wrap={false}>
+                                <View style={styles.associationHeader}>
+                                  <Text style={styles.associationCode}>
+                                    {assoc.code}
+                                  </Text>
+                                  <Text style={styles.associationName}>
+                                    {formatNameWithYMCA(assoc.name)}
+                                  </Text>
+                                  <Text style={styles.associationMeta}>
+                                    {assoc.state_code}
+                                    {assoc.region ? ` • ${assoc.region}` : ""}
+                                  </Text>
+                                </View>
+                                <View style={styles.branchList}>
+                                  <View
+                                    key={first.id}
+                                    style={styles.branchEntry}
+                                    wrap={false}
+                                  >
+                                    <View style={styles.branchTopRow}>
+                                      <Text style={styles.branchName}>
+                                        {formatNameWithYMCA(first.name)}
+                                      </Text>
+                                      <Text style={styles.branchCode}>
+                                        {first.short_code ?? first.code}
+                                      </Text>
+                                    </View>
+                                    <View style={styles.branchBottomRow}>
+                                      <Text style={styles.branchDetails}>
+                                        {formatBranchDetails(first)}
+                                      </Text>
+                                      {formatBranchPhone(first) ? (
+                                        <Text style={styles.branchDetails}>
+                                          {formatBranchPhone(first)}
+                                        </Text>
+                                      ) : null}
+                                    </View>
+                                  </View>
+                                </View>
+                              </View>
+
+                              {rest.length > 0 ? (
+                                <View style={styles.branchList}>
+                                  {rest.map((branch) => (
+                                    <View
+                                      key={branch.id}
+                                      style={styles.branchEntry}
+                                      wrap={false}
+                                    >
+                                      <View style={styles.branchTopRow}>
+                                        <Text style={styles.branchName}>
+                                          {formatNameWithYMCA(branch.name)}
+                                        </Text>
+                                        <Text style={styles.branchCode}>
+                                          {branch.short_code ?? branch.code}
+                                        </Text>
+                                      </View>
+                                      <View style={styles.branchBottomRow}>
+                                        <Text style={styles.branchDetails}>
+                                          {formatBranchDetails(branch)}
+                                        </Text>
+                                        {formatBranchPhone(branch) ? (
+                                          <Text style={styles.branchDetails}>
+                                            {formatBranchPhone(branch)}
+                                          </Text>
+                                        ) : null}
+                                      </View>
+                                    </View>
+                                  ))}
+                                </View>
+                              ) : null}
+                            </>
+                          );
+                        })()
                       )}
                     </View>
                   );
