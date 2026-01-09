@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
+import { serverErrorResponse } from "@/lib/server-api-error";
 
 type Alliance = {
   id: string;
@@ -66,7 +67,14 @@ export async function GET(request: NextRequest) {
 
     const { data: associationRows, error: assocErr } = await associationQuery;
     if (assocErr) {
-      return NextResponse.json({ error: assocErr.message }, { status: 500 });
+      return await serverErrorResponse({
+        req: request,
+        errorType: "DB_ERROR",
+        publicMessage: assocErr.message,
+        logMessage: assocErr.message,
+        context: { module: "api.maintenance.hierarchy-report", action: "select_association" },
+        err: assocErr,
+      });
     }
     const association = (associationRows ?? [])[0] as Association | undefined;
 
@@ -97,7 +105,14 @@ export async function GET(request: NextRequest) {
 
     const { data: allianceRows, error: allianceErr } = await allianceQuery;
     if (allianceErr) {
-      return NextResponse.json({ error: allianceErr.message }, { status: 500 });
+      return await serverErrorResponse({
+        req: request,
+        errorType: "DB_ERROR",
+        publicMessage: allianceErr.message,
+        logMessage: allianceErr.message,
+        context: { module: "api.maintenance.hierarchy-report", action: "select_alliance" },
+        err: allianceErr,
+      });
     }
     const alliance = (allianceRows ?? [])[0] as Alliance | undefined;
 
@@ -123,7 +138,14 @@ export async function GET(request: NextRequest) {
 
     const { data: branchRows, error: branchErr } = await branchesQuery;
     if (branchErr) {
-      return NextResponse.json({ error: branchErr.message }, { status: 500 });
+      return await serverErrorResponse({
+        req: request,
+        errorType: "DB_ERROR",
+        publicMessage: branchErr.message,
+        logMessage: branchErr.message,
+        context: { module: "api.maintenance.hierarchy-report", action: "select_branches" },
+        err: branchErr,
+      });
     }
 
     const alliances = [alliance] as Alliance[];
@@ -137,6 +159,13 @@ export async function GET(request: NextRequest) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unexpected error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return await serverErrorResponse({
+      req: request,
+      errorType: "API_ERROR",
+      publicMessage: message,
+      logMessage: message,
+      context: { module: "api.maintenance.hierarchy-report", action: "unhandled_exception" },
+      err,
+    });
   }
 }

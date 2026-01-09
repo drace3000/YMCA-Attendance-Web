@@ -179,6 +179,13 @@ export function ReportModal({
     return { headers, rows };
   }, [data?.branches]);
 
+  const selectedOrgLabel = useMemo(() => {
+    const allianceName = data?.alliances?.[0]?.name;
+    const associationName = data?.associations?.[0]?.name;
+    if (!allianceName || !associationName) return null;
+    return `${formatNameWithYMCA(allianceName)} - ${formatNameWithYMCA(associationName)}`;
+  }, [data?.alliances, data?.associations]);
+
   const handleExcelPreview = async (): Promise<void> => {
     if (!data) return;
     setExcelLoading(true);
@@ -315,7 +322,15 @@ export function ReportModal({
                 </div>
               </div>
               <div className="mt-3 border-t border-[var(--brand-strong)]/50 pt-3 text-xs text-[var(--brand-ink)]/70">
-                Includes active records for the selected Alliance / Association. Layout matches the Organization view.
+              Includes active records for the selected{" "}
+              {selectedOrgLabel ? (
+                <span className="font-semibold text-black">
+                  {selectedOrgLabel}
+                </span>
+              ) : (
+                "Alliance / Association"
+              )}{" "}
+              and associated branches
               </div>
             </div>
 

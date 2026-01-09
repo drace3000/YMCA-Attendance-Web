@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
+import { serverErrorResponse } from "@/lib/server-api-error";
 
 type RecipientRow = {
   id: string;
@@ -85,7 +86,14 @@ export async function GET(req: Request) {
     .order("email", { ascending: true });
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return await serverErrorResponse({
+      req,
+      errorType: "DB_ERROR",
+      publicMessage: error.message,
+      logMessage: error.message,
+      context: { module: "api.maintenance.recipients", action: "list" },
+      err: error,
+    });
   }
 
   return NextResponse.json(data ?? []);
@@ -163,7 +171,14 @@ export async function POST(req: Request) {
     .single();
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return await serverErrorResponse({
+      req,
+      errorType: "DB_ERROR",
+      publicMessage: error.message,
+      logMessage: error.message,
+      context: { module: "api.maintenance.recipients", action: "create" },
+      err: error,
+    });
   }
 
   return NextResponse.json(data, { status: 201 });
@@ -256,7 +271,14 @@ export async function PUT(req: Request) {
     .eq("id", id);
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return await serverErrorResponse({
+      req,
+      errorType: "DB_ERROR",
+      publicMessage: error.message,
+      logMessage: error.message,
+      context: { module: "api.maintenance.recipients", action: "update" },
+      err: error,
+    });
   }
 
   return NextResponse.json({ success: true });
@@ -289,7 +311,14 @@ export async function PATCH(req: Request) {
     .eq("id", id);
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return await serverErrorResponse({
+      req,
+      errorType: "DB_ERROR",
+      publicMessage: error.message,
+      logMessage: error.message,
+      context: { module: "api.maintenance.recipients", action: "toggle_on_hold" },
+      err: error,
+    });
   }
 
   return NextResponse.json({ success: true });
@@ -312,7 +341,14 @@ export async function DELETE(req: Request) {
     .eq("id", id);
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return await serverErrorResponse({
+      req,
+      errorType: "DB_ERROR",
+      publicMessage: error.message,
+      logMessage: error.message,
+      context: { module: "api.maintenance.recipients", action: "delete" },
+      err: error,
+    });
   }
 
   return NextResponse.json({ success: true });
