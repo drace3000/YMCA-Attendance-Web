@@ -29,7 +29,7 @@ const tabs: Tab[] = [
   { id: "classes", label: "Classes", icon: <Building2 className="h-4 w-4" /> },
   { id: "locations", label: "Locations", icon: <MapPin className="h-4 w-4" /> },
   { id: "groups", label: "Groups", icon: <Layers3 className="h-4 w-4" /> },
-  { id: "recipients", label: "Recipients", icon: <Mail className="h-4 w-4" /> },
+  { id: "recipients", label: "Members", icon: <Mail className="h-4 w-4" /> },
   { id: "organization", label: "Organization", icon: <Network className="h-4 w-4" /> },
   { id: "helper", label: "Helper", icon: <HelpCircle className="h-4 w-4" /> },
 ];
@@ -57,7 +57,7 @@ export default function MaintenancePage() {
       case "groups":
         return "Reload program groups list from the database";
       case "recipients":
-        return "Reload email recipients list from the database";
+        return "Reload member accounts list from the database";
       case "organization":
         return "Reload YMCA alliances, associations, and branches";
       default:

@@ -15,11 +15,12 @@ export function buildWelcomeEmail(params: {
   firstName: string | null;
   toEmail: string;
   assignment: OrgAssignment;
-  tempPassword: string;
   appUrl: string;
 }): { subject: string; text: string; html: string } {
   const subject = "Welcome to YMCA Attendance & Scheduling";
   const greetingName = params.firstName?.trim() ? params.firstName.trim() : "there";
+  const baseUrl = params.appUrl.replace(/\/$/, "");
+  const otpLink = `${baseUrl}/?email=${encodeURIComponent(params.toEmail)}&mode=otp`;
 
   const allianceLine = safeLine(params.assignment.allianceName);
   const associationLine = safeLine(params.assignment.associationName);
@@ -35,12 +36,11 @@ export function buildWelcomeEmail(params: {
     `  Association: ${associationLine}`,
     `  Branch:      ${branchLine}`,
     "",
-    `Your temporary password: ${params.tempPassword}`,
-    "",
     "To get started:",
-    `1. Go to ${params.appUrl}`,
-    "2. Enter your email and temporary password",
-    "3. You will be prompted to create a new password",
+    `1. Go to ${otpLink}`,
+    "2. Click “Sign in with code”",
+    "3. Click “Send code” and enter the 6-digit code emailed to you",
+    "4. You will be prompted to create a new password",
     "",
     "The AWD Team",
   ].join("\n");
@@ -55,21 +55,23 @@ export function buildWelcomeEmail(params: {
 export function buildPasswordResetEmail(params: {
   firstName: string | null;
   toEmail: string;
-  tempPassword: string;
   appUrl: string;
 }): { subject: string; text: string; html: string } {
   const subject = "Your YMCA Attendance Password Has Been Reset";
   const greetingName = params.firstName?.trim() ? params.firstName.trim() : "there";
+  const baseUrl = params.appUrl.replace(/\/$/, "");
+  const otpLink = `${baseUrl}/?email=${encodeURIComponent(params.toEmail)}&mode=otp`;
 
   const text = [
     `Hi ${greetingName},`,
     "",
-    "Your password has been reset by an administrator.",
+    "Your password reset was requested by an administrator.",
     "",
-    `Your new temporary password: ${params.tempPassword}`,
-    "",
-    "Please log in and create a new password at your earliest convenience:",
-    params.appUrl,
+    "To regain access and set a new password:",
+    `1. Go to ${otpLink}`,
+    "2. Click “Sign in with code”",
+    "3. Click “Send code” and enter the 6-digit code emailed to you",
+    "4. Create your new password when prompted",
     "",
     "If you did not request this reset, please contact AWD Support immediately.",
     "",

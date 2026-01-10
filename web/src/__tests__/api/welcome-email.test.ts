@@ -23,7 +23,7 @@ describe("Phase 3b - POST /api/email/welcome", () => {
   it("returns 400 for invalid email", async () => {
     const req = new Request("http://localhost:3000/api/email/welcome", {
       method: "POST",
-      body: JSON.stringify({ type: "welcome", to: "not-an-email", temp_password: "TempPass1" }),
+      body: JSON.stringify({ type: "welcome", to: "not-an-email" }),
       headers: { "Content-Type": "application/json" },
     })
 
@@ -45,7 +45,6 @@ describe("Phase 3b - POST /api/email/welcome", () => {
           associationName: "YMCA of Greater Rochester",
           branchName: "Bay View Family YMCA",
         },
-        temp_password: "TempPass1",
       }),
       headers: { "Content-Type": "application/json" },
     })
@@ -64,6 +63,7 @@ describe("Phase 3b - POST /api/email/welcome", () => {
     expect(call.text).toContain("Alliance:")
     expect(call.text).toContain("Association:")
     expect(call.text).toContain("Branch:")
+    expect(call.text).toContain("mode=otp")
   })
 
   it("returns server error if sender fails", async () => {
@@ -75,7 +75,6 @@ describe("Phase 3b - POST /api/email/welcome", () => {
         type: "password_reset",
         to: "Manager@Example.com",
         first_name: "Test",
-        temp_password: "TempPass1",
       }),
       headers: { "Content-Type": "application/json" },
     })

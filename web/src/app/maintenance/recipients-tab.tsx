@@ -62,11 +62,34 @@ function formatNameWithYMCA(name: string): string {
   return name.replace(/\bymca(s?)\b/gi, (_, s: string) => (s ? "YMCAs" : "YMCA"));
 }
 
+function formatDisplayCode(code: string): string {
+  // If codes are stored lowercase (e.g., seeded data), display them uppercase for consistency.
+  return code === code.toLowerCase() ? code.toUpperCase() : code;
+}
+
+function formatDisplayName(name: string): string {
+  // If the stored name is entirely lowercase (common in seeded data), present it in Title Case.
+  // Otherwise, preserve stored casing (only canonicalizing YMCA/YMCAs).
+  const isAllLower = name === name.toLowerCase();
+  if (!isAllLower) return formatNameWithYMCA(name);
+
+  return name
+    .split(" ")
+    .filter(Boolean)
+    .map((word) => {
+      const lower = word.toLowerCase();
+      if (lower === "ymca") return "YMCA";
+      if (lower === "ymcas") return "YMCAs";
+      if (/^\([a-z0-9]+\)$/.test(lower)) return lower.toUpperCase();
+      return lower.charAt(0).toUpperCase() + lower.slice(1);
+    })
+    .join(" ");
+}
+
 // Validation patterns
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_REGEX = /^\(\d{3}\)\s\d{3}-\d{4}(?:\s?ext\s?\d{1,5})?$/;
 const ZIP_REGEX = /^\d{5}(-\d{4})?$/;
-const TEMP_PASSWORD_REGEX = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/;
 
 // Phone mask formatting
 function formatPhoneInput(value: string): string {
@@ -92,26 +115,6 @@ const US_STATES = [
   "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
   "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY",
 ];
-
-function generateTempPassword(): string {
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-  const digits = "23456789";
-  const all = alphabet + digits;
-
-  // Ensure at least one letter + one digit
-  const pick = (s: string) => s[Math.floor(Math.random() * s.length)];
-  const chars = [pick(alphabet), pick(digits)];
-
-  while (chars.length < 10) chars.push(pick(all));
-
-  // Shuffle
-  for (let i = chars.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [chars[i], chars[j]] = [chars[j], chars[i]];
-  }
-
-  return chars.join("");
-}
 
 function formatLastLogin(value: string | null | undefined): string {
   if (!value) return "Never";
@@ -232,8 +235,6 @@ export function RecipientsTab() {
   const [saving, setSaving] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [tempPassword, setTempPassword] = useState<string>("");
-  const [tempPasswordError, setTempPasswordError] = useState<string | null>(null);
 
   // Validation errors
   const [validationErrors, setValidationErrors] = useState<Partial<Record<keyof FormData, string>>>({});
@@ -250,8 +251,7 @@ export function RecipientsTab() {
 
   // Reset password modal
   const [resettingRecipient, setResettingRecipient] = useState<Recipient | null>(null);
-  const [resetPassword, setResetPassword] = useState<string>("");
-  const [resetPasswordError, setResetPasswordError] = useState<string | null>(null);
+  const [resetError, setResetError] = useState<string | null>(null);
   const [resetSaving, setResetSaving] = useState(false);
 
   const loadOrg = useCallback(async () => {
@@ -303,15 +303,19 @@ export function RecipientsTab() {
 
   const allianceOptions: DropdownOption[] = alliances.map((a) => ({
     id: a.id,
-    code: a.code,
-    name: formatNameWithYMCA(a.name),
+    code: formatDisplayCode(a.code),
+    name: formatDisplayName(a.name),
   }));
   const associationOptions: DropdownOption[] = associations
     .filter((a) => (selectedAllianceId ? a.alliance_id === selectedAllianceId : true))
-    .map((a) => ({ id: a.id, code: a.code, name: formatNameWithYMCA(a.name) }));
+    .map((a) => ({ id: a.id, code: formatDisplayCode(a.code), name: formatDisplayName(a.name) }));
   const branchOptions: DropdownOption[] = branches
     .filter((b) => (selectedAssociationId ? b.association_id === selectedAssociationId : true))
-    .map((b) => ({ id: b.id, code: b.short_code || b.code, name: formatNameWithYMCA(b.name) }))
+    .map((b) => ({
+      id: b.id,
+      code: formatDisplayCode(b.short_code || b.code),
+      name: formatDisplayName(b.name),
+    }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
   const loadRecipients = useCallback(async () => {
@@ -341,22 +345,12 @@ export function RecipientsTab() {
 
   const validateForm = (): boolean => {
     const errors: Partial<Record<keyof FormData, string>> = {};
-    let pwErr: string | null = null;
 
     // Email is required
     if (!formData.email.trim()) {
       errors.email = "Email is required";
     } else if (!EMAIL_REGEX.test(formData.email.trim())) {
       errors.email = "Invalid email format";
-    }
-
-    // For creating a login account (new recipient), require temp password
-    if (!editingId) {
-      if (!tempPassword.trim()) {
-        pwErr = "Temporary password is required";
-      } else if (!TEMP_PASSWORD_REGEX.test(tempPassword.trim())) {
-        pwErr = "Temporary password must be 8+ chars and include letters + numbers";
-      }
     }
 
     // Phone validation (optional but must match format if provided)
@@ -370,7 +364,6 @@ export function RecipientsTab() {
     }
 
     setValidationErrors(errors);
-    setTempPasswordError(pwErr);
     return Object.keys(errors).length === 0;
   };
 
@@ -407,7 +400,8 @@ export function RecipientsTab() {
         payload.id = editingId;
         payload.on_hold = formOnHold;
       } else {
-        payload.temp_password = tempPassword.trim();
+        // New workflow: onboarding via email OTP (no temporary passwords).
+        payload.create_auth_user = true;
       }
 
       const res = await fetch("/api/maintenance/recipients", {
@@ -424,8 +418,6 @@ export function RecipientsTab() {
       setFormData(emptyForm);
       setFormOnHold(false);
       setEditingId(null);
-      setTempPassword("");
-      setTempPasswordError(null);
       setValidationErrors({});
       setShowForm(false);
       await loadRecipients();
@@ -461,8 +453,6 @@ export function RecipientsTab() {
   const startEdit = (recipient: Recipient) => {
     setEditingId(recipient.id);
     setShowForm(true);
-    setTempPassword("");
-    setTempPasswordError(null);
     setFormData({
       email: recipient.email || "",
       first_name: recipient.first_name || "",
@@ -529,26 +519,21 @@ export function RecipientsTab() {
   const openResetPassword = (recipient: Recipient) => {
     if (!recipient.auth_user_id) return;
     setResettingRecipient(recipient);
-    setResetPassword(generateTempPassword());
-    setResetPasswordError(null);
+    setResetError(null);
   };
 
   const submitResetPassword = async () => {
     if (!resettingRecipient) return;
-    if (!resetPassword.trim() || !TEMP_PASSWORD_REGEX.test(resetPassword.trim())) {
-      setResetPasswordError("Temporary password must be 8+ chars and include letters + numbers");
-      return;
-    }
-    const ok = window.confirm(`Reset password for ${resettingRecipient.email}? This will email them a new temporary password.`);
+    const ok = window.confirm(
+      `Send password reset instructions to ${resettingRecipient.email}? They will sign in with a code (OTP) and create a new password.`
+    );
     if (!ok) return;
 
     setResetSaving(true);
-    setResetPasswordError(null);
+    setResetError(null);
     try {
       const res = await fetch(`/api/maintenance/recipients/${resettingRecipient.id}/reset-password`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ temp_password: resetPassword.trim() }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -557,7 +542,7 @@ export function RecipientsTab() {
       setResettingRecipient(null);
       await loadRecipients();
     } catch (e) {
-      setResetPasswordError(e instanceof Error ? e.message : "Failed to reset password");
+      setResetError(e instanceof Error ? e.message : "Failed to reset password");
     } finally {
       setResetSaving(false);
     }
@@ -592,55 +577,44 @@ export function RecipientsTab() {
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-t-2xl bg-muted px-5 py-3">
         <div className="flex items-center gap-3">
           <Mail className="h-5 w-5 text-[var(--brand)]" />
-          <div>
-            <h2 className="text-base font-semibold">Recipients & Branch Manager Accounts</h2>
-            <p className="text-xs text-muted-foreground">
-              Select a branch (Alliance → Association → Branch) then manage recipients and branch manager login accounts.
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-3">
+              <h2 className="text-base font-semibold">Member Accounts</h2>
+              <button
+                type="button"
+                onClick={() => {
+                  if (showForm) {
+                    setShowForm(false);
+                    setEditingId(null);
+                    setFormData(emptyForm);
+                    setFormOnHold(false);
+                    setValidationErrors({});
+                    setFormError(null);
+                  } else {
+                    setShowForm(true);
+                    setEditingId(null);
+                  }
+                }}
+                disabled={!selectedBranchId && !showForm}
+                className="btn-pill inline-flex items-center gap-2 bg-[var(--cta)] px-4 py-2 text-sm font-semibold text-[var(--cta-foreground)] shadow-sm hover:opacity-90 disabled:opacity-50"
+              >
+                {showForm ? (
+                  <>
+                    <ChevronUp className="h-4 w-4" />
+                    Hide Form
+                  </>
+                ) : (
+                  <>
+                    <User className="h-4 w-4" />
+                    Add Member
+                  </>
+                )}
+              </button>
+            </div>
+            <p className="mt-[5px] text-xs text-muted-foreground">
+              Select a branch (Alliance → Association → Branch) then manage member login accounts.
             </p>
           </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => void loadOrg()}
-            className="btn-pill inline-flex h-9 items-center gap-2 border border-white/10 bg-black/20 px-3 text-sm font-semibold text-foreground hover:bg-black/30"
-            title="Reload organization hierarchy"
-          >
-            <RefreshCcw className="h-4 w-4" />
-            Reload Org
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              if (showForm) {
-                setShowForm(false);
-                setEditingId(null);
-                setFormData(emptyForm);
-                setFormOnHold(false);
-                setValidationErrors({});
-                setFormError(null);
-                setTempPassword("");
-                setTempPasswordError(null);
-              } else {
-                setShowForm(true);
-                if (!editingId && !tempPassword) setTempPassword(generateTempPassword());
-              }
-            }}
-            disabled={!selectedBranchId && !showForm}
-            className="btn-pill inline-flex items-center gap-2 bg-[var(--cta)] px-4 py-2 text-sm font-semibold text-[var(--cta-foreground)] shadow-sm hover:opacity-90"
-          >
-            {showForm ? (
-              <>
-                <ChevronUp className="h-4 w-4" />
-                Hide Form
-              </>
-            ) : (
-              <>
-                <Plus className="h-4 w-4" />
-                Add Branch Manager
-              </>
-            )}
-          </button>
         </div>
       </div>
 
@@ -808,47 +782,6 @@ export function RecipientsTab() {
               </div>
             </div>
 
-            {/* Temp password (create only) */}
-            {!editingId && (
-              <div className="grid gap-4 sm:grid-cols-3">
-                <div className="sm:col-span-2">
-                  <label className="mb-1 block text-sm font-medium text-foreground/90">
-                    Temporary Password <span className="text-red-400">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={tempPassword}
-                    onChange={(e) => {
-                      setTempPassword(e.target.value);
-                      setTempPasswordError(null);
-                    }}
-                    placeholder="Minimum 8 chars, letters + numbers"
-                    className={`w-full rounded-xl border px-3 py-2 text-sm text-foreground placeholder:text-foreground/50 focus:outline-none focus:ring-2 ${
-                      tempPasswordError
-                        ? "border-red-500/50 bg-red-950/20 focus:ring-red-500/50"
-                        : "border-white/15 bg-black/20 focus:ring-[var(--brand)]/50"
-                    }`}
-                  />
-                  {tempPasswordError && (
-                    <p className="mt-1 text-xs text-red-400">{tempPasswordError}</p>
-                  )}
-                </div>
-                <div className="flex items-end">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setTempPassword(generateTempPassword());
-                      setTempPasswordError(null);
-                    }}
-                    className="btn-pill inline-flex w-full items-center justify-center gap-2 border border-white/10 bg-black/20 px-3 py-2 text-sm font-semibold text-foreground hover:bg-black/30"
-                  >
-                    <KeyRound className="h-4 w-4" />
-                    Generate
-                  </button>
-                </div>
-              </div>
-            )}
-
             {/* Row 2: First Name and Last Name */}
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
@@ -962,8 +895,6 @@ export function RecipientsTab() {
                   setFormOnHold(false);
                   setValidationErrors({});
                   setFormError(null);
-                  setTempPassword("");
-                  setTempPasswordError(null);
                 }}
                 className="btn-pill border border-white/15 bg-black/20 px-4 py-2 text-sm font-semibold text-foreground hover:bg-black/30"
               >
@@ -1007,7 +938,7 @@ export function RecipientsTab() {
                 <div>
                   <h3 className="text-lg font-bold">Reset Password</h3>
                   <p className="text-xs text-muted-foreground">
-                    This will email a new temporary password to {resettingRecipient.email}
+                    This will email a sign-in link (OTP) to {resettingRecipient.email} and require them to create a new password.
                   </p>
                 </div>
                 <button
@@ -1021,45 +952,21 @@ export function RecipientsTab() {
               </div>
 
               <div className="mt-4 space-y-3">
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-foreground/90">New Temporary Password</label>
-                  <input
-                    type="text"
-                    value={resetPassword}
-                    onChange={(e) => {
-                      setResetPassword(e.target.value);
-                      setResetPasswordError(null);
-                    }}
-                    className={`w-full rounded-xl border px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 ${
-                      resetPasswordError
-                        ? "border-red-500/50 bg-red-950/20 focus:ring-red-500/50"
-                        : "border-white/15 bg-black/20 focus:ring-[var(--brand)]/50"
-                    }`}
-                  />
-                  {resetPasswordError && (
-                    <p className="mt-1 text-xs text-red-400">{resetPasswordError}</p>
-                  )}
-                </div>
+                {resetError && (
+                  <div className="flex items-center gap-2 rounded-xl bg-red-500/20 px-4 py-2 text-sm text-red-300">
+                    <AlertCircle className="h-4 w-4" />
+                    {resetError}
+                  </div>
+                )}
 
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setResetPassword(generateTempPassword())}
-                    disabled={resetSaving}
-                    className="btn-pill inline-flex flex-1 items-center justify-center gap-2 border border-white/10 bg-black/20 px-3 py-2 text-sm font-semibold text-foreground hover:bg-black/30 disabled:opacity-50"
-                  >
-                    <KeyRound className="h-4 w-4" />
-                    Generate
-                  </button>
-                  <button
-                    type="button"
-                    onClick={submitResetPassword}
-                    disabled={resetSaving}
-                    className="btn-pill inline-flex flex-1 items-center justify-center gap-2 bg-[var(--cta)] px-3 py-2 text-sm font-semibold text-[var(--cta-foreground)] hover:opacity-90 disabled:opacity-50"
-                  >
-                    {resetSaving ? "Saving..." : "Reset & Email"}
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={submitResetPassword}
+                  disabled={resetSaving}
+                  className="btn-pill inline-flex w-full items-center justify-center gap-2 bg-[var(--cta)] px-3 py-2 text-sm font-semibold text-[var(--cta-foreground)] hover:opacity-90 disabled:opacity-50"
+                >
+                  {resetSaving ? "Sending..." : "Email Reset Link"}
+                </button>
               </div>
             </div>
           </div>
@@ -1080,7 +987,7 @@ export function RecipientsTab() {
               No additional recipients added yet.
             </p>
             <p className="mt-1 text-xs text-muted-foreground/70">
-              Select a branch above, then click &quot;Add Branch Manager&quot; to create a login account (welcome email + temporary password).
+              Select a branch above, then click &quot;Add Member&quot; to create a login account (welcome email + sign-in link).
             </p>
           </div>
         ) : (

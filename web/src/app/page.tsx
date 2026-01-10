@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
+import { useSearchParams } from "next/navigation";
 import { Mail, Lock, KeyRound, UserPlus, Loader2, CheckCircle, AlertCircle, Eye, EyeOff, X, Building2, ChevronDown, User, Phone } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
 import { signInWithPassword, signUpWithPassword, signInWithOtp, updateUserPassword, verifyOtp } from "@/lib/supabaseClient";
@@ -10,6 +11,7 @@ import { useThemeSettings } from "@/components/theme-settings-provider";
 import { sendPasswordResetCode, verifyPasswordResetCode } from "@/lib/password-reset-otp";
 
 type Tab = "signin" | "register";
+type SignInMode = "password" | "otp";
 
 type Branch = {
   id: string;
@@ -39,7 +41,9 @@ function formatPhoneInput(value: string): string {
 export default function Home() {
   const { user, loading: authLoading, devSignIn, isDevMode, setRecipientContext, signOut } = useAuth();
   const { setBranch } = useThemeSettings();
+  const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<Tab>("signin");
+  const [signInMode, setSignInMode] = useState<SignInMode>("password");
   
   // Form state
   const [email, setEmail] = useState("");
@@ -67,6 +71,14 @@ export default function Home() {
   const [createPasswordError, setCreatePasswordError] = useState<string | null>(null);
   const [createPasswordLoading, setCreatePasswordLoading] = useState(false);
   const [pendingEmail, setPendingEmail] = useState<string | null>(null);
+  const [pendingBranchId, setPendingBranchId] = useState<string | null>(null);
+  const [pendingHierarchy, setPendingHierarchy] = useState<{
+    allianceName: string;
+    associationName: string;
+    branchName: string;
+  } | null>(null);
+  const [showWelcomeAfterPasswordSetup, setShowWelcomeAfterPasswordSetup] = useState(false);
+  const [showFirstTimeWelcomeModal, setShowFirstTimeWelcomeModal] = useState(false);
   
   // Dev mode login success modal
   const [showDevLoginSuccess, setShowDevLoginSuccess] = useState(false);
@@ -94,6 +106,14 @@ export default function Home() {
   const [forgotShowConfirmPassword, setForgotShowConfirmPassword] = useState(false);
   const [resendSeconds, setResendSeconds] = useState(0);
 
+  // Sign-in with code (OTP) state
+  const [signInOtpSent, setSignInOtpSent] = useState(false);
+  const [signInOtpDigits, setSignInOtpDigits] = useState<string[]>(["", "", "", "", "", ""]);
+  const signInOtpRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const [signInOtpLoading, setSignInOtpLoading] = useState(false);
+  const [signInOtpError, setSignInOtpError] = useState<string | null>(null);
+  const [signInOtpInfo, setSignInOtpInfo] = useState<string | null>(null);
+
   // Refs for OTP inputs
   const otpInputRefs = useRef<(HTMLInputElement | null)[]>([]);
   
@@ -112,6 +132,49 @@ export default function Home() {
       loadBranches();
     }
   }, [activeTab]);
+
+  // Deep link support: /?email=<email>&mode=otp
+  const appliedDeepLinkRef = useRef(false);
+  useEffect(() => {
+    if (appliedDeepLinkRef.current) return;
+    // Some unit tests mock `useSearchParams()` as null; guard to avoid crashing.
+    if (!searchParams || typeof (searchParams as any).get !== "function") return;
+    const mode = (searchParams as any).get("mode");
+    if (mode !== "otp") return;
+
+    appliedDeepLinkRef.current = true;
+    const qpEmail = (searchParams as any).get("email");
+    setActiveTab("signin");
+    setSignInMode("otp");
+    if (qpEmail) setEmail(qpEmail);
+  }, [searchParams]);
+
+  // Best-effort prefetch of hierarchy names for the first-time welcome popup
+  useEffect(() => {
+    if (!showCreatePasswordModal) return;
+    if (!pendingBranchId) return;
+    if (pendingHierarchy) return;
+
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const res = await fetch(`/api/branches/${pendingBranchId}`, { signal: controller.signal });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || controller.signal.aborted) return;
+
+        const allianceName =
+          typeof data?.alliance_name === "string" && data.alliance_name.trim() ? data.alliance_name : "—";
+        const associationName =
+          typeof data?.association_name === "string" && data.association_name.trim() ? data.association_name : "—";
+        const branchName = typeof data?.name === "string" && data.name.trim() ? data.name : "—";
+        setPendingHierarchy({ allianceName, associationName, branchName });
+      } catch {
+        // ignore
+      }
+    })();
+
+    return () => controller.abort();
+  }, [showCreatePasswordModal, pendingBranchId, pendingHierarchy]);
 
   const loadBranches = async () => {
     try {
@@ -140,6 +203,67 @@ export default function Home() {
     lastName.trim() &&
     phone.trim() &&
     isValidPhone(phone.trim());
+
+  const loadRecipientContextAfterAuth = async (normalizedEmail: string): Promise<void> => {
+    setPendingEmail(normalizedEmail);
+
+    const ctxRes = await fetch("/api/auth/login-context", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: normalizedEmail }),
+    });
+
+    if (!ctxRes.ok) {
+      const data = await ctxRes.json().catch(() => ({}));
+      const msg = data?.error || "Failed to load account context";
+      if (ctxRes.status === 403 && String(msg).toLowerCase().includes("deactivated")) {
+        setError("Account deactivated");
+      } else {
+        setError(msg);
+      }
+      // Ensure a user who is not present in recipients is not left signed-in.
+      await signOut();
+      return;
+    }
+
+    const ctx = (await ctxRes.json()) as {
+      recipient: {
+        email: string;
+        recipient_type: "Administrator" | "Normal";
+        branch_id: string;
+        association_id?: string | null;
+        alliance_id?: string | null;
+        needs_password_setup: boolean;
+      };
+      branch: { id: string; name: string } | null;
+    };
+
+    setRecipientContext({
+      recipient_type: ctx.recipient.recipient_type,
+      branch_id: ctx.recipient.branch_id,
+      association_id: ctx.recipient.association_id ?? null,
+      alliance_id: ctx.recipient.alliance_id ?? null,
+    });
+
+    if (ctx.recipient.recipient_type === "Normal" && ctx.branch) {
+      setBranch({ id: ctx.branch.id, name: ctx.branch.name });
+    }
+
+    if (ctx.recipient.needs_password_setup) {
+      setPendingBranchId(ctx.recipient.branch_id);
+      setPendingHierarchy(null);
+      setShowWelcomeAfterPasswordSetup(ctx.recipient.recipient_type === "Normal");
+      setShowCreatePasswordModal(true);
+      setCreatePasswordError(null);
+      setNewPassword("");
+      setConfirmNewPassword("");
+      return;
+    }
+
+    setSuccess("Signed in successfully!");
+    setEmail("");
+    setPassword("");
+  };
 
   const handleSignIn = async () => {
     // Dev mode: bypass authentication and show success modal
@@ -172,67 +296,108 @@ export default function Home() {
       } else {
         // After auth, load recipient context and enforce first-time password change if needed.
         const normalizedEmail = email.trim().toLowerCase();
-        setPendingEmail(normalizedEmail);
-
-        const ctxRes = await fetch("/api/auth/login-context", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: normalizedEmail }),
-        });
-
-        if (!ctxRes.ok) {
-          const data = await ctxRes.json();
-          const msg = data?.error || "Failed to load account context";
-          if (ctxRes.status === 403 && String(msg).toLowerCase().includes("deactivated")) {
-            setError("Account deactivated");
-          } else {
-            setError(msg);
-          }
-          // Ensure a user who is not present in recipients is not left signed-in.
-          await signOut();
-          return;
-        }
-
-        const ctx = (await ctxRes.json()) as {
-          recipient: {
-            email: string;
-            recipient_type: "Administrator" | "Normal";
-            branch_id: string;
-            association_id?: string | null;
-            alliance_id?: string | null;
-            needs_password_setup: boolean;
-          };
-          branch: { id: string; name: string } | null;
-        };
-
-        setRecipientContext({
-          recipient_type: ctx.recipient.recipient_type,
-          branch_id: ctx.recipient.branch_id,
-          association_id: ctx.recipient.association_id ?? null,
-          alliance_id: ctx.recipient.alliance_id ?? null,
-        });
-
-        if (ctx.recipient.recipient_type === "Normal" && ctx.branch) {
-          setBranch({ id: ctx.branch.id, name: ctx.branch.name });
-        }
-
-        if (ctx.recipient.needs_password_setup) {
-          setShowCreatePasswordModal(true);
-          setCreatePasswordError(null);
-          setNewPassword("");
-          setConfirmNewPassword("");
-          return;
-        }
-
-        setSuccess("Signed in successfully!");
-        setEmail("");
-        setPassword("");
+        await loadRecipientContextAfterAuth(normalizedEmail);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to sign in");
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSendSignInOtp = async (): Promise<void> => {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail) {
+      setError("Please enter your email address");
+      return;
+    }
+    if (!EMAIL_REGEX.test(normalizedEmail)) {
+      setError("Please enter a valid email address");
+      return;
+    }
+
+    setSignInOtpLoading(true);
+    setSignInOtpError(null);
+    setSignInOtpInfo(null);
+    setError(null);
+
+    try {
+      const { error } = await signInWithOtp(normalizedEmail);
+      if (error) {
+        setSignInOtpError(error.message);
+        return;
+      }
+      setSignInOtpSent(true);
+      setSignInOtpDigits(["", "", "", "", "", ""]);
+      setSignInOtpInfo(`Code sent to ${normalizedEmail}`);
+      setTimeout(() => signInOtpRefs.current[0]?.focus(), 50);
+    } catch (e) {
+      setSignInOtpError(e instanceof Error ? e.message : "Failed to send code");
+    } finally {
+      setSignInOtpLoading(false);
+    }
+  };
+
+  const handleVerifySignInOtp = async (): Promise<void> => {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!EMAIL_REGEX.test(normalizedEmail)) {
+      setSignInOtpError("Valid email is required");
+      return;
+    }
+    const token = signInOtpDigits.join("");
+    if (token.length !== 6) {
+      setSignInOtpError("Enter the 6-digit code");
+      return;
+    }
+
+    setSignInOtpLoading(true);
+    setSignInOtpError(null);
+    setError(null);
+
+    try {
+      const { error } = await verifyOtp(normalizedEmail, token);
+      if (error) {
+        setSignInOtpError(error.message);
+        return;
+      }
+
+      await loadRecipientContextAfterAuth(normalizedEmail);
+    } catch (e) {
+      setSignInOtpError(e instanceof Error ? e.message : "Failed to verify code");
+    } finally {
+      setSignInOtpLoading(false);
+    }
+  };
+
+  const handleSignInOtpChange = (index: number, value: string) => {
+    const digit = value.replace(/\D/g, "").slice(-1);
+    const next = [...signInOtpDigits];
+    next[index] = digit;
+    setSignInOtpDigits(next);
+    setSignInOtpError(null);
+    if (digit && index < 5) {
+      signInOtpRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleSignInOtpKeyDown = (index: number, e: React.KeyboardEvent) => {
+    if (e.key === "Backspace" && !signInOtpDigits[index] && index > 0) {
+      signInOtpRefs.current[index - 1]?.focus();
+    }
+    if (e.key === "Enter" && signInOtpDigits.every((d) => d)) {
+      void handleVerifySignInOtp();
+    }
+  };
+
+  const handleSignInOtpPaste = (e: React.ClipboardEvent) => {
+    e.preventDefault();
+    const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
+    if (!pasted) return;
+    const next = ["", "", "", "", "", ""];
+    for (let i = 0; i < pasted.length; i++) next[i] = pasted[i]!;
+    setSignInOtpDigits(next);
+    const nextEmpty = next.findIndex((d) => !d);
+    signInOtpRefs.current[nextEmpty >= 0 ? nextEmpty : 5]?.focus();
   };
 
   // Handle dev login success confirmation
@@ -586,64 +751,194 @@ export default function Home() {
                   </div>
                 </div>
 
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-foreground/90">
-                    Password
-                  </label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
-                    <input
-                      type={showPassword ? "text" : "password"}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && handleSignIn()}
-                      placeholder="Enter your password"
-                      className="w-full rounded-xl border border-white/15 bg-black/20 py-3 pl-11 pr-11 text-foreground placeholder:text-foreground/50 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/50"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    >
-                      {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                    </button>
-                  </div>
+                {/* Sign-in mode selector */}
+                <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
-                      onClick={() => {
-                        setShowForgotPasswordModal(true);
-                        setForgotEmail(email.trim());
-                        setForgotEmailError(null);
-                        setForgotError(null);
-                        setForgotInfo(null);
-                        setForgotStep("email");
-                        setForgotOtpDigits(["", "", "", "", "", ""]);
-                        setForgotNewPassword("");
-                        setForgotConfirmPassword("");
-                        setResendSeconds(0);
-                      }}
-                    className="mt-2 text-xs font-semibold text-[var(--cta)] hover:opacity-90"
+                    onClick={() => {
+                      setSignInMode("password");
+                      setSignInOtpError(null);
+                      setSignInOtpInfo(null);
+                      setSignInOtpSent(false);
+                      setSignInOtpDigits(["", "", "", "", "", ""]);
+                    }}
+                    className={`btn-pill flex items-center justify-center gap-2 border px-3 py-2 text-sm font-semibold transition ${
+                      signInMode === "password"
+                        ? "border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.35)] text-foreground"
+                        : "border-white/10 bg-black/20 text-muted-foreground hover:bg-black/30"
+                    }`}
                   >
-                    Forgot Password?
+                    <Lock className="h-4 w-4" />
+                    Password
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSignInMode("otp");
+                      setShowPassword(false);
+                      setPassword("");
+                      setSignInOtpError(null);
+                      setSignInOtpInfo(null);
+                      setSignInOtpSent(false);
+                      setSignInOtpDigits(["", "", "", "", "", ""]);
+                    }}
+                    className={`btn-pill flex items-center justify-center gap-2 border px-3 py-2 text-sm font-semibold transition ${
+                      signInMode === "otp"
+                        ? "border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.35)] text-foreground"
+                        : "border-white/10 bg-black/20 text-muted-foreground hover:bg-black/30"
+                    }`}
+                  >
+                    <KeyRound className="h-4 w-4" />
+                    Sign in with code
                   </button>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={handleSignIn}
-                  disabled={loading}
-                  aria-label="Submit Sign In"
-                  className="btn-pill flex w-full items-center justify-center gap-2 bg-[var(--cta)] py-3 text-sm font-semibold text-[var(--cta-foreground)] shadow-sm transition hover:opacity-90 disabled:opacity-50"
-                >
-                  {loading ? (
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                  ) : (
-                    <>
-                      <KeyRound className="h-5 w-5" />
-                      Sign In
-                    </>
-                  )}
-                </button>
+                {signInMode === "password" ? (
+                  <>
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-foreground/90">Password</label>
+                      <div className="relative">
+                        <Lock className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+                        <input
+                          type={showPassword ? "text" : "password"}
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          onKeyDown={(e) => e.key === "Enter" && handleSignIn()}
+                          placeholder="Enter your password"
+                          className="w-full rounded-xl border border-white/15 bg-black/20 py-3 pl-11 pr-11 text-foreground placeholder:text-foreground/50 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/50"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        >
+                          {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowForgotPasswordModal(true);
+                          setForgotEmail(email.trim());
+                          setForgotEmailError(null);
+                          setForgotError(null);
+                          setForgotInfo(null);
+                          setForgotStep("email");
+                          setForgotOtpDigits(["", "", "", "", "", ""]);
+                          setForgotNewPassword("");
+                          setForgotConfirmPassword("");
+                          setResendSeconds(0);
+                        }}
+                        className="mt-2 text-xs font-semibold text-[var(--cta)] hover:opacity-90"
+                      >
+                        Forgot Password?
+                      </button>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleSignIn}
+                      disabled={loading}
+                      aria-label="Submit Sign In"
+                      className="btn-pill flex w-full items-center justify-center gap-2 bg-[var(--cta)] py-3 text-sm font-semibold text-[var(--cta-foreground)] shadow-sm transition hover:opacity-90 disabled:opacity-50"
+                    >
+                      {loading ? (
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                      ) : (
+                        <>
+                          <KeyRound className="h-5 w-5" />
+                          Sign In
+                        </>
+                      )}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div className="rounded-xl border border-white/10 bg-black/10 px-4 py-3 text-sm text-foreground/90">
+                      We’ll email you a 6-digit sign-in code. You’ll click “Send code” first.
+                    </div>
+
+                    {signInOtpInfo && (
+                      <div className="flex items-center gap-2 rounded-xl bg-[var(--brand)]/20 px-4 py-2 text-sm text-foreground">
+                        <CheckCircle className="h-4 w-4 text-[var(--cta)]" />
+                        {signInOtpInfo}
+                      </div>
+                    )}
+
+                    {signInOtpError && (
+                      <div className="flex items-center gap-2 rounded-xl bg-red-500/20 px-4 py-2 text-sm text-red-300">
+                        <AlertCircle className="h-4 w-4" />
+                        {signInOtpError}
+                      </div>
+                    )}
+
+                    {!signInOtpSent ? (
+                      <button
+                        type="button"
+                        onClick={handleSendSignInOtp}
+                        disabled={signInOtpLoading}
+                        className="btn-pill flex w-full items-center justify-center gap-2 bg-[var(--cta)] py-3 text-sm font-semibold text-[var(--cta-foreground)] shadow-sm transition hover:opacity-90 disabled:opacity-50"
+                      >
+                        {signInOtpLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Mail className="h-5 w-5" />}
+                        Send code
+                      </button>
+                    ) : (
+                      <>
+                        <div>
+                          <label className="mb-2 block text-sm font-medium text-foreground/90">6-digit code</label>
+                          <div className="flex justify-center gap-2" aria-label="Sign in code inputs">
+                            {signInOtpDigits.map((digit, index) => (
+                              <input
+                                key={index}
+                                ref={(el) => {
+                                  signInOtpRefs.current[index] = el;
+                                }}
+                                type="text"
+                                inputMode="numeric"
+                                maxLength={1}
+                                value={digit}
+                                onPaste={index === 0 ? handleSignInOtpPaste : undefined}
+                                onChange={(e) => handleSignInOtpChange(index, e.target.value)}
+                                onKeyDown={(e) => handleSignInOtpKeyDown(index, e)}
+                                className="h-14 w-12 rounded-xl border-2 border-white/20 bg-black/30 text-center text-2xl font-bold text-foreground focus:border-[var(--brand)] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/30"
+                              />
+                            ))}
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={handleVerifySignInOtp}
+                          disabled={signInOtpLoading || signInOtpDigits.some((d) => !d)}
+                          className="btn-pill flex w-full items-center justify-center gap-2 bg-[var(--cta)] py-3 text-sm font-semibold text-[var(--cta-foreground)] shadow-sm transition hover:opacity-90 disabled:opacity-50"
+                        >
+                          {signInOtpLoading ? (
+                            <Loader2 className="h-5 w-5 animate-spin" />
+                          ) : (
+                            <>
+                              <CheckCircle className="h-5 w-5" />
+                              Verify & Sign In
+                            </>
+                          )}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSignInOtpSent(false);
+                            setSignInOtpDigits(["", "", "", "", "", ""]);
+                            setSignInOtpError(null);
+                            setSignInOtpInfo(null);
+                          }}
+                          disabled={signInOtpLoading}
+                          className="btn-pill flex w-full items-center justify-center gap-2 border border-white/10 bg-black/20 py-3 text-sm font-semibold text-foreground shadow-sm transition hover:bg-black/30 disabled:opacity-50"
+                        >
+                          Send a new code
+                        </button>
+                      </>
+                    )}
+                  </>
+                )}
               </div>
             )}
 
@@ -1016,9 +1311,13 @@ export default function Home() {
                     }
 
                     setShowCreatePasswordModal(false);
-                    setSuccess("Password created successfully!");
                     setEmail("");
                     setPassword("");
+                    if (showWelcomeAfterPasswordSetup) {
+                      setShowFirstTimeWelcomeModal(true);
+                    } else {
+                      setSuccess("Password updated successfully!");
+                    }
                   } catch (e) {
                     setCreatePasswordError(e instanceof Error ? e.message : "Failed to set password");
                   } finally {
@@ -1036,6 +1335,51 @@ export default function Home() {
                     Set Password & Continue
                   </>
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* First-time Branch Manager Welcome Modal (after password setup) */}
+      {showFirstTimeWelcomeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="relative mx-4 w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl">
+            <div className="text-center">
+              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-500/20">
+                <CheckCircle className="h-10 w-10 text-green-400" />
+              </div>
+              <h2 className="mb-2 text-xl font-bold text-foreground">
+                Welcome to the YMCA EZAttendance
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                Your new password was accepted successfully.
+              </p>
+
+              <div className="mx-auto mt-4 w-fit text-left text-sm text-foreground">
+                <div>
+                  <span className="font-semibold">Alliance:</span>{" "}
+                  {pendingHierarchy?.allianceName ?? "—"}
+                </div>
+                <div>
+                  <span className="font-semibold">Association:</span>{" "}
+                  {pendingHierarchy?.associationName ?? "—"}
+                </div>
+                <div>
+                  <span className="font-semibold">Branch:</span>{" "}
+                  {pendingHierarchy?.branchName ?? "—"}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowFirstTimeWelcomeModal(false);
+                  setShowWelcomeAfterPasswordSetup(false);
+                }}
+                className="mt-6 btn-pill mx-auto flex w-40 items-center justify-center gap-2 bg-[var(--cta)] py-3 text-sm font-semibold text-[var(--cta-foreground)] shadow-sm transition hover:opacity-90"
+              >
+                OK
               </button>
             </div>
           </div>

@@ -11,13 +11,11 @@ type WelcomeEmailRequest =
       to: string;
       first_name?: string | null;
       assignment?: OrgAssignment;
-      temp_password: string;
     }
   | {
       type: "password_reset";
       to: string;
       first_name?: string | null;
-      temp_password: string;
     };
 
 export async function POST(req: NextRequest): Promise<Response> {
@@ -32,10 +30,6 @@ export async function POST(req: NextRequest): Promise<Response> {
     return NextResponse.json({ error: "Valid to email is required" }, { status: 400 });
   }
 
-  if (!body.temp_password?.trim()) {
-    return NextResponse.json({ error: "temp_password is required" }, { status: 400 });
-  }
-
   const origin = new URL(req.url).origin;
   const appUrl = origin;
 
@@ -48,13 +42,11 @@ export async function POST(req: NextRequest): Promise<Response> {
           firstName,
           toEmail: normalizedTo,
           assignment: body.assignment ?? { allianceName: null, associationName: null, branchName: null },
-          tempPassword: body.temp_password.trim(),
           appUrl,
         })
       : buildPasswordResetEmail({
           firstName,
           toEmail: normalizedTo,
-          tempPassword: body.temp_password.trim(),
           appUrl,
         });
 
