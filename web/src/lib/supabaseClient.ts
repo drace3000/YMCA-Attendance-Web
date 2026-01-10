@@ -3,8 +3,8 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
 // Dev bypass - skip Supabase entirely
-// Set NEXT_PUBLIC_DEV_AUTH_BYPASS=true in .env.local ONLY if you explicitly want to bypass auth
-const DEV_AUTH_BYPASS = process.env.NEXT_PUBLIC_DEV_AUTH_BYPASS === 'true';
+// TODO: Set to false for production
+const DEV_AUTH_BYPASS = true;
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
@@ -83,7 +83,6 @@ export async function getUser() {
   return { user: data.user, error };
 }
 
-// Update current authenticated user's password (used for first-time login + forgot password flows)
 export async function updateUserPassword(password: string) {
   if (DEV_AUTH_BYPASS) return { data: null, error: null };
   const { data, error } = await supabase.auth.updateUser({ password });
