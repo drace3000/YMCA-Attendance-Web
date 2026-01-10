@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
+import { requireRecipientAccess } from "@/lib/requireRecipientAccess";
 
 type TrendRow = {
   session_date: string;
@@ -104,7 +105,10 @@ function linearRegressionSlope(y: number[]) {
   return (n * sumXY - sumX * sumY) / denom;
 }
 
-export async function GET(req: Request): Promise<Response> {
+export async function GET(req: NextRequest): Promise<Response> {
+  const required = await requireRecipientAccess(req, { allowDevPassthrough: true });
+  if (!required.ok) return required.response;
+
   const { searchParams } = new URL(req.url);
   const year = Number(searchParams.get("year") ?? "2025");
   const quarterParam = searchParams.get("quarter");
@@ -173,11 +177,17 @@ export async function GET(req: Request): Promise<Response> {
 
   const supabase = createSupabaseServerClient();
   
-  const { count: totalCount } = await supabase
+  let countQuery = supabase
     .from("class_sessions")
     .select("*", { count: "exact", head: true })
     .gte("session_date", toIsoDate(start))
     .lt("session_date", toIsoDate(end));
+
+  if (required.access?.recipient_type === "Normal") {
+    countQuery = countQuery.eq("branch_id", required.access.branch_id);
+  }
+
+  const { count: totalCount } = await countQuery;
   
   // Fetch in pages to bypass 1000 row cap
   const batchSize = 1000;
@@ -189,7 +199,7 @@ export async function GET(req: Request): Promise<Response> {
     const from = page * batchSize;
     const to = Math.min(from + batchSize - 1, total === 0 ? batchSize - 1 : total - 1);
     
-    const { data: pageData, error: pageError } = await supabase
+    let pageQuery = supabase
       .from("class_sessions")
       .select(
         `
@@ -199,8 +209,13 @@ export async function GET(req: Request): Promise<Response> {
         `,
       )
       .gte("session_date", toIsoDate(start))
-      .lt("session_date", toIsoDate(end))
-      .range(from, to);
+      .lt("session_date", toIsoDate(end));
+
+    if (required.access?.recipient_type === "Normal") {
+      pageQuery = pageQuery.eq("branch_id", required.access.branch_id);
+    }
+
+    const { data: pageData, error: pageError } = await pageQuery.range(from, to);
     
     if (pageError) {
       return NextResponse.json({ error: pageError.message }, { status: 500 });

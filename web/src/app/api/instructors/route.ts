@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
+import { requireRecipientAccess } from "@/lib/requireRecipientAccess";
 
 type Instructor = {
   id: string;
@@ -14,16 +15,25 @@ type InstructorRow = {
   nickname: string | null;
 };
 
-export async function GET(): Promise<Response> {
+export async function GET(req: NextRequest): Promise<Response> {
+  const required = await requireRecipientAccess(req, { allowDevPassthrough: true });
+  if (!required.ok) return required.response;
+
   const supabase = createSupabaseServerClient();
 
   // Prefer a best-effort "display_name" composed in SQL via COALESCE-like behavior.
   // We can't use SQL functions directly in PostgREST select easily, so we select
   // relevant fields and compose in code.
-  const { data, error } = await supabase
+  let query = supabase
     .from("instructors")
     .select("id,raw_name,first_name,last_name,nickname")
     .order("raw_name", { ascending: true });
+
+  if (required.access?.recipient_type === "Normal") {
+    query = query.eq("branch_id", required.access.branch_id);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     return NextResponse.json(

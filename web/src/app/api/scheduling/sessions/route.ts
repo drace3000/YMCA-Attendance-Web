@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
+import { requireRecipientAccess } from "@/lib/requireRecipientAccess";
 
 type SessionRow = {
   id: string;
@@ -42,10 +43,18 @@ type UpdateSessionPayload = {
 };
 
 // GET - List sessions for a schedule and branch
-export async function GET(req: Request): Promise<Response> {
+export async function GET(req: NextRequest): Promise<Response> {
+  const required = await requireRecipientAccess(req, { allowDevPassthrough: true });
+  if (!required.ok) return required.response;
+
   const { searchParams } = new URL(req.url);
   const scheduleId = searchParams.get("schedule_id");
-  const branchId = searchParams.get("branch_id");
+  const requestedBranchId = searchParams.get("branch_id");
+
+  const branchId =
+    required.access?.recipient_type === "Normal"
+      ? required.access.branch_id
+      : requestedBranchId;
 
   if (!scheduleId || !branchId) {
     return NextResponse.json(
@@ -144,7 +153,10 @@ export async function GET(req: Request): Promise<Response> {
 }
 
 // POST - Create a new session
-export async function POST(req: Request): Promise<Response> {
+export async function POST(req: NextRequest): Promise<Response> {
+  const required = await requireRecipientAccess(req, { allowDevPassthrough: true });
+  if (!required.ok) return required.response;
+
   let body: CreateSessionPayload;
   try {
     body = await req.json();
@@ -152,7 +164,7 @@ export async function POST(req: Request): Promise<Response> {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
   const {
-    branch_id,
+    branch_id: requestedBranchId,
     schedule_id,
     class_id,
     location_id,
@@ -162,6 +174,11 @@ export async function POST(req: Request): Promise<Response> {
     session_date,
     instructor_ids,
   } = body;
+
+  const branch_id =
+    required.access?.recipient_type === "Normal"
+      ? required.access.branch_id
+      : requestedBranchId;
 
   if (!branch_id || !schedule_id || !class_id || !location_id || !day_of_week || !start_time || !end_time || !session_date) {
     return NextResponse.json(
@@ -217,7 +234,10 @@ export async function POST(req: Request): Promise<Response> {
 }
 
 // PUT - Update a session
-export async function PUT(req: Request): Promise<Response> {
+export async function PUT(req: NextRequest): Promise<Response> {
+  const required = await requireRecipientAccess(req, { allowDevPassthrough: true });
+  if (!required.ok) return required.response;
+
   let body: UpdateSessionPayload;
   try {
     body = await req.json();
@@ -239,10 +259,16 @@ export async function PUT(req: Request): Promise<Response> {
       updateData.day_of_week = updates.day_of_week.toUpperCase();
     }
 
-    const { error: updateError } = await supabase
+    let updateQuery = supabase
       .from("class_sessions")
       .update(updateData)
       .eq("id", id);
+
+    if (required.access?.recipient_type === "Normal") {
+      updateQuery = updateQuery.eq("branch_id", required.access.branch_id);
+    }
+
+    const { error: updateError } = await updateQuery;
 
     if (updateError) {
       return NextResponse.json({ error: updateError.message }, { status: 500 });
@@ -252,6 +278,7 @@ export async function PUT(req: Request): Promise<Response> {
   // Update instructor assignments if provided
   if (instructor_ids !== undefined) {
     // Delete existing assignments
+    // (Instructor links are scoped to the session_id; branch scoping is enforced above.)
     const { error: deleteError } = await supabase
       .from("session_instructors")
       .delete()
@@ -288,7 +315,10 @@ export async function PUT(req: Request): Promise<Response> {
 }
 
 // DELETE - Delete a session
-export async function DELETE(req: Request): Promise<Response> {
+export async function DELETE(req: NextRequest): Promise<Response> {
+  const required = await requireRecipientAccess(req, { allowDevPassthrough: true });
+  if (!required.ok) return required.response;
+
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
 
@@ -299,10 +329,16 @@ export async function DELETE(req: Request): Promise<Response> {
   const supabase = createSupabaseServerClient();
 
   // session_instructors will be deleted via CASCADE
-  const { error } = await supabase
+  let delQuery = supabase
     .from("class_sessions")
     .delete()
     .eq("id", id);
+
+  if (required.access?.recipient_type === "Normal") {
+    delQuery = delQuery.eq("branch_id", required.access.branch_id);
+  }
+
+  const { error } = await delQuery;
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

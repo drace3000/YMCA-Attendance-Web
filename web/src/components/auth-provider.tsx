@@ -21,21 +21,35 @@ const DEV_MOCK_USER: User = {
 type AuthContextType = {
   user: User | null;
   session: Session | null;
+  recipientContext: {
+    recipient_type: "Administrator" | "Normal" | null;
+    branch_id: string | null;
+    association_id: string | null;
+    alliance_id: string | null;
+  };
   loading: boolean;
   signOut: () => Promise<void>;
   refreshSession: () => Promise<void>;
   devSignIn: (email?: string) => void; // Dev bypass sign-in with optional email
   isDevMode: boolean; // Flag to indicate dev bypass mode
+  setRecipientContext: (ctx: {
+    recipient_type: "Administrator" | "Normal" | null;
+    branch_id: string | null;
+    association_id: string | null;
+    alliance_id: string | null;
+  }) => void;
 };
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
   session: null,
+  recipientContext: { recipient_type: null, branch_id: null, association_id: null, alliance_id: null },
   loading: true,
   signOut: async () => {},
   refreshSession: async () => {},
   devSignIn: () => {},
   isDevMode: false,
+  setRecipientContext: () => {},
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -43,6 +57,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(!DEV_AUTH_BYPASS); // Not loading if dev bypass
+  const [recipientContext, setRecipientContext] = useState<{
+    recipient_type: "Administrator" | "Normal" | null;
+    branch_id: string | null;
+    association_id: string | null;
+    alliance_id: string | null;
+  }>({ recipient_type: null, branch_id: null, association_id: null, alliance_id: null });
 
   const refreshSession = useCallback(async () => {
     if (DEV_AUTH_BYPASS) return; // Skip Supabase in dev mode
@@ -87,6 +107,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     setUser(null);
     setSession(null);
+    setRecipientContext({ recipient_type: null, branch_id: null, association_id: null, alliance_id: null });
   }, []);
 
   // Dev bypass sign-in - sets mock user without Supabase
@@ -107,11 +128,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       value={{
         user,
         session,
+        recipientContext,
         loading,
         signOut: handleSignOut,
         refreshSession,
         devSignIn,
         isDevMode: DEV_AUTH_BYPASS,
+        setRecipientContext,
       }}
     >
       {children}

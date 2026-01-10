@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { BranchOption, useThemeSettings } from "@/components/theme-settings-provider";
 import { ThemeColorOption, YMCA_THEME_COLORS, normalizeHex } from "@/lib/ymca-theme";
+import { useBranchAccess } from "@/hooks/useBranchAccess";
 
 type BranchResponse = (BranchOption & { 
   theme_color?: string | null;
@@ -79,6 +80,7 @@ export default function SettingsPage() {
     sidebarPosition,
     setSidebarPosition,
   } = useThemeSettings();
+  const { isNormal } = useBranchAccess();
   const [branches, setBranches] = useState<BranchOption[]>([branch]);
   const [branchThemeColors, setBranchThemeColors] = useState<Record<string, string>>({
     [branch.id]: brandColor,
@@ -326,11 +328,18 @@ export default function SettingsPage() {
       </section>
 
       <section className="grid gap-4 md:grid-cols-2">
-        <Card title="Branch selection" description="Pick your assigned branch.">
+        <Card
+          title={isNormal ? "Your Branch" : "Branch selection"}
+          description={isNormal ? "Your branch is locked to your account." : "Pick your assigned branch."}
+        >
           {loadingBranches ? (
             <div className="text-sm text-muted-foreground">Loading branches…</div>
           ) : error ? (
             <div className="text-sm text-red-600">{error}</div>
+          ) : isNormal ? (
+            <div className="btn-pill inline-flex items-center border border-white/10 bg-black/20 px-3 py-2 text-sm font-semibold text-foreground">
+              Your Branch: {branch.name}
+            </div>
           ) : (
             <select
               className="ymca-select w-full text-sm font-semibold"

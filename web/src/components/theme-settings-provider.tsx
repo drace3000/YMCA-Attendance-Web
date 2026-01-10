@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import { getDefaultBranchThemeColor } from "@/lib/ymca-theme";
+import { useBranchAccess } from "@/hooks/useBranchAccess";
 
 type Mode = "light" | "dark";
 type SidebarPosition = "left" | "right";
@@ -158,8 +159,11 @@ function buildPalette(base: string) {
 }
 
 export function ThemeSettingsProvider({ children }: { children: React.ReactNode }) {
+  const { isNormal, branchId: accessBranchId } = useBranchAccess();
+
   const [state, setState] = useState<ThemeState>(() => {
     if (typeof window === "undefined") return defaultState;
+    if (typeof window.localStorage?.getItem !== "function") return defaultState;
     try {
       const saved = window.localStorage.getItem("ymca-theme");
       if (!saved) return defaultState;
@@ -179,8 +183,38 @@ export function ThemeSettingsProvider({ children }: { children: React.ReactNode 
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (typeof window.localStorage?.setItem !== "function") return;
     window.localStorage.setItem("ymca-theme", JSON.stringify(state));
   }, [state]);
+
+  // Phase 8: For Normal users, force branch context to their assigned branch and
+  // prevent switching across branches (even if localStorage had a different one).
+  useEffect(() => {
+    if (!isNormal) return;
+    if (!accessBranchId) return;
+    if (state.branch.id === accessBranchId) return;
+
+    const controller = new AbortController();
+
+    const load = async () => {
+      try {
+        const res = await fetch(`/api/branches/${accessBranchId}`, { signal: controller.signal });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || controller.signal.aborted) return;
+        const name = typeof data?.name === "string" && data.name.trim() ? data.name : "Your Branch";
+        setState((s) => ({
+          ...s,
+          branch: { id: accessBranchId, name },
+          brandColor: getDefaultBranchThemeColor(accessBranchId),
+        }));
+      } catch {
+        // ignore; keep existing branch if fetch fails
+      }
+    };
+
+    void load();
+    return () => controller.abort();
+  }, [isNormal, accessBranchId, state.branch.id]);
 
   const applyCssVars = useCallback(
     (current: ThemeState) => {
@@ -302,14 +336,19 @@ export function ThemeSettingsProvider({ children }: { children: React.ReactNode 
       setSidebarPosition: (sidebarPosition) =>
         setState((s) => ({ ...s, sidebarPosition })),
       setBranch: (branch) =>
-        setState((s) => ({
-          ...s,
-          branch,
-          // Branch selection should auto-apply its assigned theme color.
-          brandColor: getDefaultBranchThemeColor(branch.id || branch.name),
-        })),
+        setState((s) => {
+          if (isNormal && accessBranchId && branch.id !== accessBranchId) {
+            return s;
+          }
+          return {
+            ...s,
+            branch,
+            // Branch selection should auto-apply its assigned theme color.
+            brandColor: getDefaultBranchThemeColor(branch.id || branch.name),
+          };
+        }),
     }),
-    [state],
+    [state, isNormal, accessBranchId],
   );
 
   return (

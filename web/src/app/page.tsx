@@ -4,8 +4,10 @@ import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import { Mail, Lock, KeyRound, UserPlus, Loader2, CheckCircle, AlertCircle, Eye, EyeOff, X, Building2, ChevronDown, User, Phone } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
-import { signInWithPassword, signUpWithPassword, signInWithOtp, verifyOtp } from "@/lib/supabaseClient";
+import { signInWithPassword, signUpWithPassword, signInWithOtp, updateUserPassword, verifyOtp } from "@/lib/supabaseClient";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { useThemeSettings } from "@/components/theme-settings-provider";
+import { sendPasswordResetCode, verifyPasswordResetCode } from "@/lib/password-reset-otp";
 
 type Tab = "signin" | "register";
 
@@ -35,7 +37,8 @@ function formatPhoneInput(value: string): string {
 }
 
 export default function Home() {
-  const { user, loading: authLoading, devSignIn, isDevMode } = useAuth();
+  const { user, loading: authLoading, devSignIn, isDevMode, setRecipientContext } = useAuth();
+  const { setBranch } = useThemeSettings();
   const [activeTab, setActiveTab] = useState<Tab>("signin");
   
   // Form state
@@ -56,6 +59,14 @@ export default function Home() {
   const [showOtpModal, setShowOtpModal] = useState(false);
   const [otpError, setOtpError] = useState<string | null>(null);
   const [branchDropdownOpen, setBranchDropdownOpen] = useState(false);
+  const [showCreatePasswordModal, setShowCreatePasswordModal] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmNewPassword, setShowConfirmNewPassword] = useState(false);
+  const [createPasswordError, setCreatePasswordError] = useState<string | null>(null);
+  const [createPasswordLoading, setCreatePasswordLoading] = useState(false);
+  const [pendingEmail, setPendingEmail] = useState<string | null>(null);
   
   // Dev mode login success modal
   const [showDevLoginSuccess, setShowDevLoginSuccess] = useState(false);
@@ -67,8 +78,33 @@ export default function Home() {
   const [emailError, setEmailError] = useState<string | null>(null);
   const [phoneError, setPhoneError] = useState<string | null>(null);
 
+  // Phase 5: Forgot password link (Phase 6 implements modal)
+  const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotEmailError, setForgotEmailError] = useState<string | null>(null);
+  const [forgotStep, setForgotStep] = useState<"email" | "otp" | "success">("email");
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotError, setForgotError] = useState<string | null>(null);
+  const [forgotInfo, setForgotInfo] = useState<string | null>(null);
+  const [forgotOtpDigits, setForgotOtpDigits] = useState<string[]>(["", "", "", "", "", ""]);
+  const forgotOtpRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const [forgotNewPassword, setForgotNewPassword] = useState("");
+  const [forgotConfirmPassword, setForgotConfirmPassword] = useState("");
+  const [forgotShowNewPassword, setForgotShowNewPassword] = useState(false);
+  const [forgotShowConfirmPassword, setForgotShowConfirmPassword] = useState(false);
+  const [resendSeconds, setResendSeconds] = useState(0);
+
   // Refs for OTP inputs
   const otpInputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  
+  // Resend countdown for forgot password
+  useEffect(() => {
+    if (resendSeconds <= 0) return;
+    const id = window.setInterval(() => {
+      setResendSeconds((s) => (s > 0 ? s - 1 : 0));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [resendSeconds]);
 
   // Load branches when register tab is active
   useEffect(() => {
@@ -134,8 +170,59 @@ export default function Home() {
       if (error) {
         setError(error.message);
       } else {
+        // After auth, load recipient context and enforce first-time password change if needed.
+        const normalizedEmail = email.trim().toLowerCase();
+        setPendingEmail(normalizedEmail);
+
+        const ctxRes = await fetch("/api/auth/login-context", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: normalizedEmail }),
+        });
+
+        if (!ctxRes.ok) {
+          const data = await ctxRes.json();
+          const msg = data?.error || "Failed to load account context";
+          if (ctxRes.status === 403 && String(msg).toLowerCase().includes("deactivated")) {
+            setError("Account deactivated");
+          } else {
+            setError(msg);
+          }
+          return;
+        }
+
+        const ctx = (await ctxRes.json()) as {
+          recipient: {
+            email: string;
+            recipient_type: "Administrator" | "Normal";
+            branch_id: string;
+            association_id?: string | null;
+            alliance_id?: string | null;
+            needs_password_setup: boolean;
+          };
+          branch: { id: string; name: string } | null;
+        };
+
+        setRecipientContext({
+          recipient_type: ctx.recipient.recipient_type,
+          branch_id: ctx.recipient.branch_id,
+          association_id: ctx.recipient.association_id ?? null,
+          alliance_id: ctx.recipient.alliance_id ?? null,
+        });
+
+        if (ctx.recipient.recipient_type === "Normal" && ctx.branch) {
+          setBranch({ id: ctx.branch.id, name: ctx.branch.name });
+        }
+
+        if (ctx.recipient.needs_password_setup) {
+          setShowCreatePasswordModal(true);
+          setCreatePasswordError(null);
+          setNewPassword("");
+          setConfirmNewPassword("");
+          return;
+        }
+
         setSuccess("Signed in successfully!");
-        // Clear form
         setEmail("");
         setPassword("");
       }
@@ -149,7 +236,43 @@ export default function Home() {
   // Handle dev login success confirmation
   const handleDevLoginConfirm = () => {
     setShowDevLoginSuccess(false);
-    devSignIn(email.trim() || undefined); // Pass entered email to mock user
+    const normalizedEmail = email.trim().toLowerCase();
+    devSignIn(normalizedEmail || undefined); // Pass entered email to mock user
+
+    // In dev-bypass mode, still populate recipient context + branch
+    // so branch-level isolation behavior can be exercised.
+    void (async () => {
+      if (!normalizedEmail) return;
+      try {
+        const ctxRes = await fetch("/api/auth/login-context", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: normalizedEmail }),
+        });
+        if (!ctxRes.ok) return;
+        const ctx = (await ctxRes.json()) as {
+          recipient: {
+            recipient_type: "Administrator" | "Normal";
+            branch_id: string;
+            association_id?: string | null;
+            alliance_id?: string | null;
+          };
+          branch: { id: string; name: string } | null;
+        };
+        setRecipientContext({
+          recipient_type: ctx.recipient.recipient_type,
+          branch_id: ctx.recipient.branch_id,
+          association_id: ctx.recipient.association_id ?? null,
+          alliance_id: ctx.recipient.alliance_id ?? null,
+        });
+        if (ctx.recipient.recipient_type === "Normal" && ctx.branch) {
+          setBranch({ id: ctx.branch.id, name: ctx.branch.name });
+        }
+      } catch {
+        // ignore
+      }
+    })();
+
     setEmail("");
     setPassword("");
   };
@@ -368,6 +491,7 @@ export default function Home() {
     setIsRegistering(false);
     setEmailError(null);
     setPhoneError(null);
+    setShowForgotPasswordModal(false);
   };
 
   if (authLoading) {
@@ -482,12 +606,31 @@ export default function Home() {
                       {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                     </button>
                   </div>
+                  <button
+                    type="button"
+                      onClick={() => {
+                        setShowForgotPasswordModal(true);
+                        setForgotEmail(email.trim());
+                        setForgotEmailError(null);
+                        setForgotError(null);
+                        setForgotInfo(null);
+                        setForgotStep("email");
+                        setForgotOtpDigits(["", "", "", "", "", ""]);
+                        setForgotNewPassword("");
+                        setForgotConfirmPassword("");
+                        setResendSeconds(0);
+                      }}
+                    className="mt-2 text-xs font-semibold text-[var(--cta)] hover:opacity-90"
+                  >
+                    Forgot Password?
+                  </button>
                 </div>
 
                 <button
                   type="button"
                   onClick={handleSignIn}
                   disabled={loading}
+                  aria-label="Submit Sign In"
                   className="btn-pill flex w-full items-center justify-center gap-2 bg-[var(--cta)] py-3 text-sm font-semibold text-[var(--cta-foreground)] shadow-sm transition hover:opacity-90 disabled:opacity-50"
                 >
                   {loading ? (
@@ -762,6 +905,141 @@ export default function Home() {
         </div>
       )}
 
+      {/* Create New Password Modal (forced for first-time login) */}
+      {showCreatePasswordModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="relative mx-4 w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl">
+            <div className="text-center">
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-[var(--brand)]/20">
+                <KeyRound className="h-7 w-7 text-[var(--brand)]" />
+              </div>
+              <h2 className="mb-2 text-xl font-bold text-foreground">
+                Welcome! Please create your password
+              </h2>
+              <p className="mb-6 text-sm text-muted-foreground">
+                You must set a new password before continuing.
+              </p>
+
+              {createPasswordError && (
+                <div className="mb-4 flex items-center justify-center gap-2 rounded-xl bg-red-500/20 px-4 py-2 text-sm text-red-300">
+                  <AlertCircle className="h-4 w-4" />
+                  {createPasswordError}
+                </div>
+              )}
+
+              <div className="space-y-3 text-left">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-foreground/90">New Password</label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+                    <input
+                      type={showNewPassword ? "text" : "password"}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="Minimum 8 chars, letters + numbers"
+                      className="w-full rounded-xl border border-white/15 bg-black/20 py-3 pl-11 pr-11 text-foreground placeholder:text-foreground/50 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/50"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPassword(!showNewPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showNewPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-foreground/90">Confirm Password</label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+                    <input
+                      type={showConfirmNewPassword ? "text" : "password"}
+                      value={confirmNewPassword}
+                      onChange={(e) => setConfirmNewPassword(e.target.value)}
+                      placeholder="Re-enter password"
+                      className="w-full rounded-xl border border-white/15 bg-black/20 py-3 pl-11 pr-11 text-foreground placeholder:text-foreground/50 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/50"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmNewPassword(!showConfirmNewPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showConfirmNewPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={async () => {
+                  const pw = newPassword.trim();
+                  const confirm = confirmNewPassword.trim();
+                  if (pw.length < 8) {
+                    setCreatePasswordError("Password must be at least 8 characters");
+                    return;
+                  }
+                  if (!/[a-z]/i.test(pw) || !/\d/.test(pw)) {
+                    setCreatePasswordError("Password must include at least one letter and one number");
+                    return;
+                  }
+                  if (pw !== confirm) {
+                    setCreatePasswordError("Passwords do not match");
+                    return;
+                  }
+                  if (!pendingEmail) {
+                    setCreatePasswordError("Missing account email. Please sign in again.");
+                    return;
+                  }
+
+                  setCreatePasswordLoading(true);
+                  setCreatePasswordError(null);
+                  try {
+                    const { error: updateError } = await updateUserPassword(pw);
+                    if (updateError) {
+                      setCreatePasswordError(updateError.message);
+                      return;
+                    }
+
+                    const res = await fetch("/api/auth/complete-password-setup", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ email: pendingEmail }),
+                    });
+                    if (!res.ok) {
+                      const data = await res.json();
+                      setCreatePasswordError(data?.error || "Failed to update account status");
+                      return;
+                    }
+
+                    setShowCreatePasswordModal(false);
+                    setSuccess("Password created successfully!");
+                    setEmail("");
+                    setPassword("");
+                  } catch (e) {
+                    setCreatePasswordError(e instanceof Error ? e.message : "Failed to set password");
+                  } finally {
+                    setCreatePasswordLoading(false);
+                  }
+                }}
+                disabled={createPasswordLoading}
+                className="mt-6 btn-pill flex w-full items-center justify-center gap-2 bg-[var(--cta)] py-3 text-sm font-semibold text-[var(--cta-foreground)] shadow-sm transition hover:opacity-90 disabled:opacity-50"
+              >
+                {createPasswordLoading ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
+                  <>
+                    <CheckCircle className="h-5 w-5" />
+                    Set Password & Continue
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Dev Login Success Modal */}
       {showDevLoginSuccess && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
@@ -785,6 +1063,328 @@ export default function Home() {
                 <CheckCircle className="h-5 w-5" />
                 OK
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Forgot Password Modal (Phase 6) */}
+      {showForgotPasswordModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setShowForgotPasswordModal(false);
+          }}
+        >
+          <div className="relative mx-4 w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl">
+            <button
+              type="button"
+              onClick={() => setShowForgotPasswordModal(false)}
+              className="absolute right-4 top-4 text-muted-foreground hover:text-foreground"
+              aria-label="Close forgot password"
+            >
+              <X className="h-5 w-5" />
+            </button>
+
+            <div className="text-center">
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-[var(--brand)]/20">
+                <Mail className="h-7 w-7 text-[var(--brand)]" />
+              </div>
+              <h2 className="mb-2 text-xl font-bold text-foreground">Reset Password</h2>
+              <p className="mb-6 text-sm text-muted-foreground">
+                {forgotStep === "email"
+                  ? "Enter your email to receive a 6-digit reset code."
+                  : forgotStep === "otp"
+                    ? "Enter the 6-digit code and create a new password."
+                    : "Your password has been reset. You can sign in now."}
+              </p>
+
+              {forgotInfo && (
+                <div className="mb-4 flex items-center justify-center gap-2 rounded-xl bg-[var(--brand)]/20 px-4 py-2 text-sm text-foreground">
+                  <CheckCircle className="h-4 w-4 text-[var(--cta)]" />
+                  {forgotInfo}
+                </div>
+              )}
+
+              {forgotError && (
+                <div className="mb-4 flex items-center justify-center gap-2 rounded-xl bg-red-500/20 px-4 py-2 text-sm text-red-300">
+                  <AlertCircle className="h-4 w-4" />
+                  {forgotError}
+                </div>
+              )}
+
+              {forgotStep === "email" && (
+                <div className="space-y-3 text-left">
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-foreground/90">
+                      Email Address
+                    </label>
+                    <input
+                      type="email"
+                      aria-label="Forgot password email"
+                      value={forgotEmail}
+                      onChange={(e) => {
+                        setForgotEmail(e.target.value);
+                        setForgotEmailError(null);
+                        setForgotError(null);
+                      }}
+                      placeholder="your.email@ymca.org"
+                      className={`w-full rounded-xl border px-4 py-3 text-foreground placeholder:text-foreground/50 focus:outline-none focus:ring-2 ${
+                        forgotEmailError
+                          ? "border-red-500/50 bg-red-950/20 focus:ring-red-500/50"
+                          : "border-white/15 bg-black/20 focus:ring-[var(--brand)]/50"
+                      }`}
+                      autoFocus
+                    />
+                    {forgotEmailError && (
+                      <p className="mt-1 text-xs text-red-400">{forgotEmailError}</p>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={forgotLoading || !EMAIL_REGEX.test(forgotEmail.trim())}
+                    onClick={async () => {
+                      const v = forgotEmail.trim();
+                      if (!EMAIL_REGEX.test(v)) {
+                        setForgotEmailError("Please enter a valid email address");
+                        return;
+                      }
+                      setForgotLoading(true);
+                      setForgotError(null);
+                      setForgotInfo(null);
+                      try {
+                        const { error } = await sendPasswordResetCode(v);
+                        if (error) {
+                          setForgotError(error.message);
+                          return;
+                        }
+                        setForgotStep("otp");
+                        setForgotInfo(`Reset code sent to ${v}`);
+                        setResendSeconds(60);
+                        setTimeout(() => forgotOtpRefs.current[0]?.focus(), 50);
+                      } catch (e) {
+                        setForgotError(e instanceof Error ? e.message : "Failed to send reset code");
+                      } finally {
+                        setForgotLoading(false);
+                      }
+                    }}
+                    className="btn-pill flex w-full items-center justify-center gap-2 bg-[var(--cta)] py-3 text-sm font-semibold text-[var(--cta-foreground)] shadow-sm transition hover:opacity-90 disabled:opacity-50"
+                  >
+                    {forgotLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Mail className="h-5 w-5" />}
+                    Send Reset Code
+                  </button>
+                </div>
+              )}
+
+              {forgotStep === "otp" && (
+                <div className="space-y-4 text-left">
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-foreground/90">Email</label>
+                    <input
+                      type="email"
+                      value={forgotEmail}
+                      onChange={(e) => setForgotEmail(e.target.value)}
+                      className="w-full rounded-xl border border-white/15 bg-black/10 px-4 py-3 text-foreground/90 focus:outline-none"
+                      disabled
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-foreground/90">Reset Code</label>
+                    <div className="flex justify-center gap-2" aria-label="Reset code inputs">
+                      {forgotOtpDigits.map((digit, index) => (
+                        <input
+                          key={index}
+                          ref={(el) => { forgotOtpRefs.current[index] = el; }}
+                          type="text"
+                          inputMode="numeric"
+                          maxLength={1}
+                          value={digit}
+                          onPaste={(e) => {
+                            if (index !== 0) return;
+                            e.preventDefault();
+                            const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
+                            if (!pasted) return;
+                            const next = ["", "", "", "", "", ""];
+                            for (let i = 0; i < pasted.length; i++) next[i] = pasted[i]!;
+                            setForgotOtpDigits(next);
+                            const nextEmpty = next.findIndex((d) => !d);
+                            forgotOtpRefs.current[nextEmpty >= 0 ? nextEmpty : 5]?.focus();
+                          }}
+                          onChange={(e) => {
+                            const d = e.target.value.replace(/\D/g, "").slice(-1);
+                            const next = [...forgotOtpDigits];
+                            next[index] = d;
+                            setForgotOtpDigits(next);
+                            setForgotError(null);
+                            if (d && index < 5) forgotOtpRefs.current[index + 1]?.focus();
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Backspace" && !forgotOtpDigits[index] && index > 0) {
+                              forgotOtpRefs.current[index - 1]?.focus();
+                            }
+                          }}
+                          className="h-14 w-12 rounded-xl border-2 border-white/20 bg-black/30 text-center text-2xl font-bold text-foreground focus:border-[var(--brand)] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/30"
+                        />
+                      ))}
+                    </div>
+                    <div className="mt-2 text-center text-xs text-muted-foreground">
+                      {resendSeconds > 0 ? (
+                        <span>Resend available in {resendSeconds}s</span>
+                      ) : (
+                        <button
+                          type="button"
+                          className="font-semibold text-[var(--cta)] hover:opacity-90"
+                          onClick={async () => {
+                            const v = forgotEmail.trim();
+                            setForgotLoading(true);
+                            setForgotError(null);
+                            setForgotInfo(null);
+                            try {
+                              const { error } = await sendPasswordResetCode(v);
+                              if (error) {
+                                setForgotError(error.message);
+                                return;
+                              }
+                              setForgotInfo(`Reset code resent to ${v}`);
+                              setResendSeconds(60);
+                            } catch (e) {
+                              setForgotError(e instanceof Error ? e.message : "Failed to resend code");
+                            } finally {
+                              setForgotLoading(false);
+                            }
+                          }}
+                        >
+                          Resend Code
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-foreground/90">New Password</label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+                      <input
+                        type={forgotShowNewPassword ? "text" : "password"}
+                        value={forgotNewPassword}
+                        onChange={(e) => setForgotNewPassword(e.target.value)}
+                        placeholder="Minimum 8 chars, letters + numbers"
+                        className="w-full rounded-xl border border-white/15 bg-black/20 py-3 pl-11 pr-11 text-foreground placeholder:text-foreground/50 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/50"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setForgotShowNewPassword((v) => !v)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        aria-label="Toggle new password visibility"
+                      >
+                        {forgotShowNewPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-foreground/90">Confirm Password</label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+                      <input
+                        type={forgotShowConfirmPassword ? "text" : "password"}
+                        value={forgotConfirmPassword}
+                        onChange={(e) => setForgotConfirmPassword(e.target.value)}
+                        placeholder="Re-enter password"
+                        className="w-full rounded-xl border border-white/15 bg-black/20 py-3 pl-11 pr-11 text-foreground placeholder:text-foreground/50 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/50"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setForgotShowConfirmPassword((v) => !v)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        aria-label="Toggle confirm password visibility"
+                      >
+                        {forgotShowConfirmPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={forgotLoading}
+                    onClick={async () => {
+                      const code = forgotOtpDigits.join("");
+                      const pw = forgotNewPassword.trim();
+                      const confirm = forgotConfirmPassword.trim();
+
+                      if (code.length !== 6) {
+                        setForgotError("Please enter all 6 digits");
+                        return;
+                      }
+                      if (pw.length < 8) {
+                        setForgotError("Password must be at least 8 characters");
+                        return;
+                      }
+                      if (!/[a-z]/i.test(pw) || !/\d/.test(pw)) {
+                        setForgotError("Password must include at least one letter and one number");
+                        return;
+                      }
+                      if (pw !== confirm) {
+                        setForgotError("Passwords do not match");
+                        return;
+                      }
+
+                      setForgotLoading(true);
+                      setForgotError(null);
+                      setForgotInfo(null);
+                      try {
+                        const { error: verifyErr } = await verifyPasswordResetCode(forgotEmail.trim(), code);
+                        if (verifyErr) {
+                          const msg = verifyErr.message;
+                          if (msg.toLowerCase().includes("expired")) {
+                            setForgotError("Code expired, request new code");
+                          } else {
+                            setForgotError(msg);
+                          }
+                          return;
+                        }
+
+                        const { error: pwErr } = await updateUserPassword(pw);
+                        if (pwErr) {
+                          setForgotError(pwErr.message);
+                          return;
+                        }
+
+                        // Clear needs_password_setup if this user is flagged (safe no-op for others)
+                        await fetch("/api/auth/complete-password-setup", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ email: forgotEmail.trim().toLowerCase() }),
+                        });
+
+                        setForgotStep("success");
+                        setForgotInfo("Password reset successfully!");
+                      } catch (e) {
+                        setForgotError(e instanceof Error ? e.message : "Failed to reset password");
+                      } finally {
+                        setForgotLoading(false);
+                      }
+                    }}
+                    className="btn-pill flex w-full items-center justify-center gap-2 bg-[var(--cta)] py-3 text-sm font-semibold text-[var(--cta-foreground)] shadow-sm transition hover:opacity-90 disabled:opacity-50"
+                  >
+                    {forgotLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <CheckCircle className="h-5 w-5" />}
+                    Reset Password
+                  </button>
+                </div>
+              )}
+
+              {forgotStep === "success" && (
+                <button
+                  type="button"
+                  onClick={() => setShowForgotPasswordModal(false)}
+                  className="btn-pill flex w-full items-center justify-center gap-2 bg-[var(--cta)] py-3 text-sm font-semibold text-[var(--cta-foreground)] shadow-sm transition hover:opacity-90"
+                >
+                  <CheckCircle className="h-5 w-5" />
+                  Back to Sign In
+                </button>
+              )}
             </div>
           </div>
         </div>

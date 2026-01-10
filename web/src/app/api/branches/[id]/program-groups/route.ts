@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
+import { requireRecipientAccess } from "@/lib/requireRecipientAccess";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -28,13 +29,23 @@ const UUID_REGEX =
 
 // GET - list all active groups with enabled flag for this branch
 export async function GET(
-  _req: Request,
+  req: NextRequest,
   context: Params
 ): Promise<Response> {
   const { id: branchId } = await context.params;
   if (!UUID_REGEX.test(branchId)) {
     return NextResponse.json({ error: "Invalid branch id" }, { status: 400 });
   }
+
+  const required = await requireRecipientAccess(req, { allowDevPassthrough: true });
+  if (!required.ok) return required.response;
+  if (
+    required.access?.recipient_type === "Normal" &&
+    required.access.branch_id !== branchId
+  ) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const supabase = createSupabaseServerClient();
 
   const { data: groups, error: groupsError } = await supabase
@@ -72,13 +83,23 @@ export async function GET(
 
 // PUT - update enabled groups for this branch (upsert true/false for all active groups)
 export async function PUT(
-  req: Request,
+  req: NextRequest,
   context: Params
 ): Promise<Response> {
   const { id: branchId } = await context.params;
   if (!UUID_REGEX.test(branchId)) {
     return NextResponse.json({ error: "Invalid branch id" }, { status: 400 });
   }
+
+  const required = await requireRecipientAccess(req, { allowDevPassthrough: true });
+  if (!required.ok) return required.response;
+  if (
+    required.access?.recipient_type === "Normal" &&
+    required.access.branch_id !== branchId
+  ) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const supabase = createSupabaseServerClient();
 
   let body: UpdateBranchGroupsPayload;

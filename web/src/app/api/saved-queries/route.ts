@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
+import { requireRecipientAccess } from "@/lib/requireRecipientAccess";
 
 interface SavedQuery {
   id: string;
@@ -10,9 +11,16 @@ interface SavedQuery {
 }
 
 // GET - Fetch all saved queries for a branch
-export async function GET(request: Request): Promise<Response> {
+export async function GET(request: NextRequest): Promise<Response> {
+  const required = await requireRecipientAccess(request, { allowDevPassthrough: true });
+  if (!required.ok) return required.response;
+
   const { searchParams } = new URL(request.url);
-  const branchId = searchParams.get("branch_id");
+  const requestedBranchId = searchParams.get("branch_id");
+  const branchId =
+    required.access?.recipient_type === "Normal"
+      ? required.access.branch_id
+      : requestedBranchId;
 
   if (!branchId) {
     return NextResponse.json(
@@ -26,7 +34,7 @@ export async function GET(request: Request): Promise<Response> {
     
     const { data, error } = await supabase
       .from("saved_queries")
-      .select("*")
+      .select("id, branch_id, name, query_text, created_at")
       .eq("branch_id", branchId)
       .order("name", { ascending: true });
 
@@ -49,7 +57,10 @@ export async function GET(request: Request): Promise<Response> {
 }
 
 // POST - Save a new query
-export async function POST(request: Request): Promise<Response> {
+export async function POST(request: NextRequest): Promise<Response> {
+  const required = await requireRecipientAccess(request, { allowDevPassthrough: true });
+  if (!required.ok) return required.response;
+
   try {
     const body = await request.json();
     const { branchId, name, queryText } = body;
@@ -77,11 +88,13 @@ export async function POST(request: Request): Promise<Response> {
     }
 
     const supabase = createSupabaseServerClient();
+    const resolvedBranchId =
+      required.access?.recipient_type === "Normal" ? required.access.branch_id : branchId;
 
     const { data, error } = await supabase
       .from("saved_queries")
       .insert({
-        branch_id: branchId,
+        branch_id: resolvedBranchId,
         name: trimmedName,
         query_text: queryText.trim(),
       })
@@ -114,7 +127,10 @@ export async function POST(request: Request): Promise<Response> {
 }
 
 // PUT - Update an existing query
-export async function PUT(request: Request): Promise<Response> {
+export async function PUT(request: NextRequest): Promise<Response> {
+  const required = await requireRecipientAccess(request, { allowDevPassthrough: true });
+  if (!required.ok) return required.response;
+
   try {
     const body = await request.json();
     const { id, queryText } = body;
@@ -128,12 +144,18 @@ export async function PUT(request: Request): Promise<Response> {
 
     const supabase = createSupabaseServerClient();
 
-    const { data, error } = await supabase
+    let query = supabase
       .from("saved_queries")
       .update({ query_text: queryText.trim() })
       .eq("id", id)
       .select()
       .single();
+
+    if (required.access?.recipient_type === "Normal") {
+      query = query.eq("branch_id", required.access.branch_id);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       console.error("Error updating query:", error);
@@ -154,7 +176,10 @@ export async function PUT(request: Request): Promise<Response> {
 }
 
 // DELETE - Delete a saved query
-export async function DELETE(request: Request): Promise<Response> {
+export async function DELETE(request: NextRequest): Promise<Response> {
+  const required = await requireRecipientAccess(request, { allowDevPassthrough: true });
+  if (!required.ok) return required.response;
+
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");
 
@@ -168,10 +193,16 @@ export async function DELETE(request: Request): Promise<Response> {
   try {
     const supabase = createSupabaseServerClient();
 
-    const { error } = await supabase
+    let query = supabase
       .from("saved_queries")
       .delete()
       .eq("id", id);
+
+    if (required.access?.recipient_type === "Normal") {
+      query = query.eq("branch_id", required.access.branch_id);
+    }
+
+    const { error } = await query;
 
     if (error) {
       console.error("Error deleting query:", error);

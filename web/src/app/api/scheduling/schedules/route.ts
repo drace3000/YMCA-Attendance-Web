@@ -1,12 +1,21 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
+import { requireRecipientAccess } from "@/lib/requireRecipientAccess";
 
 // GET - List all schedules
-export async function GET(req: Request): Promise<Response> {
+export async function GET(req: NextRequest): Promise<Response> {
+  const required = await requireRecipientAccess(req, { allowDevPassthrough: true });
+  if (!required.ok) return required.response;
+
   const { searchParams } = new URL(req.url);
-  const branchId = searchParams.get("branch_id");
+  const requestedBranchId = searchParams.get("branch_id");
   const programGroupId = searchParams.get("program_group_id");
   const supabase = createSupabaseServerClient();
+
+  const branchId =
+    required.access?.recipient_type === "Normal"
+      ? required.access.branch_id
+      : requestedBranchId;
 
   let query = supabase
     .from("schedules")

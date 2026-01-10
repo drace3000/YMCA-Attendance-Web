@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
+import { requireRecipientAccess } from "@/lib/requireRecipientAccess";
 
 type ClassRow = {
   id: string;
@@ -31,13 +32,21 @@ type UpdateClassPayload = {
 };
 
 // GET - List all classes or check name availability
-export async function GET(req: Request): Promise<Response> {
+export async function GET(req: NextRequest): Promise<Response> {
+  const required = await requireRecipientAccess(req, { allowDevPassthrough: true });
+  if (!required.ok) return required.response;
+
   const { searchParams } = new URL(req.url);
   const checkName = searchParams.get("check_name");
   const excludeId = searchParams.get("exclude_id");
   const includeInactive = searchParams.get("include_inactive") === "true";
-  const branchId = searchParams.get("branch_id");
+  const requestedBranchId = searchParams.get("branch_id");
   const programGroupId = searchParams.get("program_group_id");
+
+  const branchId =
+    required.access?.recipient_type === "Normal"
+      ? required.access.branch_id
+      : requestedBranchId;
 
   const supabase = createSupabaseServerClient();
 
@@ -88,7 +97,10 @@ export async function GET(req: Request): Promise<Response> {
 }
 
 // POST - Create a new class
-export async function POST(req: Request): Promise<Response> {
+export async function POST(req: NextRequest): Promise<Response> {
+  const required = await requireRecipientAccess(req, { allowDevPassthrough: true });
+  if (!required.ok) return required.response;
+
   const supabase = createSupabaseServerClient();
 
   let body: CreateClassPayload;
@@ -98,7 +110,12 @@ export async function POST(req: Request): Promise<Response> {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { name, description, category, branch_id, program_group_id } = body;
+  const requestedBranchId = body.branch_id;
+  const branch_id =
+    required.access?.recipient_type === "Normal"
+      ? required.access.branch_id
+      : requestedBranchId;
+  const { name, description, category, program_group_id } = body;
 
   if (!name?.trim()) {
     return NextResponse.json({ error: "name is required" }, { status: 400 });
@@ -146,7 +163,10 @@ export async function POST(req: Request): Promise<Response> {
 }
 
 // PUT - Update a class
-export async function PUT(req: Request): Promise<Response> {
+export async function PUT(req: NextRequest): Promise<Response> {
+  const required = await requireRecipientAccess(req, { allowDevPassthrough: true });
+  if (!required.ok) return required.response;
+
   const supabase = createSupabaseServerClient();
 
   let body: UpdateClassPayload;
@@ -175,7 +195,10 @@ export async function PUT(req: Request): Promise<Response> {
 
   // Check name uniqueness if changing
   if (name !== undefined && name.trim().toLowerCase() !== current.name.toLowerCase()) {
-    const nextBranchId = branch_id ?? current.branch_id;
+    const nextBranchId =
+      required.access?.recipient_type === "Normal"
+        ? required.access.branch_id
+        : branch_id ?? current.branch_id;
     const nextProgramGroupId = program_group_id ?? current.program_group_id;
 
     const { data: existing } = await supabase
@@ -199,15 +222,25 @@ export async function PUT(req: Request): Promise<Response> {
   if (description !== undefined) updates.description = description?.trim() || null;
   if (category !== undefined) updates.category = category?.trim() || null;
   if (is_active !== undefined) updates.is_active = is_active;
-  if (branch_id !== undefined) updates.branch_id = branch_id;
+  if (required.access?.recipient_type === "Normal") {
+    updates.branch_id = required.access.branch_id;
+  } else if (branch_id !== undefined) {
+    updates.branch_id = branch_id;
+  }
   if (program_group_id !== undefined) updates.program_group_id = program_group_id;
 
-  const { data, error } = await supabase
+  let query = supabase
     .from("classes")
     .update(updates)
     .eq("id", id)
     .select()
     .single();
+
+  if (required.access?.recipient_type === "Normal") {
+    query = query.eq("branch_id", required.access.branch_id);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -217,7 +250,10 @@ export async function PUT(req: Request): Promise<Response> {
 }
 
 // PATCH - Toggle is_active status (soft delete/restore)
-export async function PATCH(req: Request): Promise<Response> {
+export async function PATCH(req: NextRequest): Promise<Response> {
+  const required = await requireRecipientAccess(req, { allowDevPassthrough: true });
+  if (!required.ok) return required.response;
+
   const supabase = createSupabaseServerClient();
 
   let body: { id: string; is_active: boolean };
@@ -236,12 +272,18 @@ export async function PATCH(req: Request): Promise<Response> {
     );
   }
 
-  const { data, error } = await supabase
+  let query = supabase
     .from("classes")
     .update({ is_active })
     .eq("id", id)
     .select()
     .single();
+
+  if (required.access?.recipient_type === "Normal") {
+    query = query.eq("branch_id", required.access.branch_id);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

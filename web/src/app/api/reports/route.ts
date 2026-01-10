@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
+import { requireRecipientAccess } from "@/lib/requireRecipientAccess";
 
 type ReportRow = {
   id: string;
@@ -115,7 +116,10 @@ function toIsoDate(d: Date) {
   return d.toISOString().slice(0, 10);
 }
 
-export async function GET(req: Request): Promise<Response> {
+export async function GET(req: NextRequest): Promise<Response> {
+  const required = await requireRecipientAccess(req, { allowDevPassthrough: true });
+  if (!required.ok) return required.response;
+
   const { searchParams } = new URL(req.url);
   const year = Number(searchParams.get("year") ?? "2025");
   const month = searchParams.get("month") ?? "all";
@@ -162,7 +166,7 @@ export async function GET(req: Request): Promise<Response> {
   // This handles cases where session_date may be NULL for older data
   const useSessionDateFilter = week !== "all";
   
-  const baseQuery = supabase
+  let baseQuery = supabase
     .from("class_sessions")
     .select(
       `
@@ -189,7 +193,7 @@ export async function GET(req: Request): Promise<Response> {
   }
   baseQuery.order("session_date", { ascending: true, nullsFirst: false });
 
-  const instructorQuery = supabase
+  let instructorQuery = supabase
     .from("class_sessions")
     .select(
       `
@@ -217,6 +221,12 @@ export async function GET(req: Request): Promise<Response> {
   instructorQuery
     .eq("session_instructors.instructor_id", instructor)
     .order("session_date", { ascending: true, nullsFirst: false });
+
+  // Phase 9: Branch-level access control for Normal users.
+  if (required.access?.recipient_type === "Normal") {
+    baseQuery = baseQuery.eq("branch_id", required.access.branch_id);
+    instructorQuery = instructorQuery.eq("branch_id", required.access.branch_id);
+  }
 
   try {
     const rows =

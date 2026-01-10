@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useState } from "react";
-import { Mail, Plus, Trash2, AlertCircle, ChevronDown, ChevronUp, Pencil, PauseCircle, PlayCircle, Shield, User } from "lucide-react";
+import { Mail, Plus, Trash2, AlertCircle, ChevronDown, ChevronUp, Pencil, PauseCircle, PlayCircle, Shield, User, KeyRound, RefreshCcw } from "lucide-react";
 import { useThemeSettings } from "@/components/theme-settings-provider";
 import {
   Popover,
@@ -23,6 +23,10 @@ type Recipient = {
   on_hold: boolean;
   recipient_type: "Administrator" | "Normal";
   created_at: string;
+  auth_user_id?: string | null;
+  is_active?: boolean;
+  needs_password_setup?: boolean;
+  last_login_at?: string | null;
 };
 
 type FormData = {
@@ -49,10 +53,15 @@ const emptyForm: FormData = {
   recipient_type: "Normal",
 };
 
+type Alliance = { id: string; code: string; name: string };
+type Association = { id: string; code: string; name: string; alliance_id: string | null };
+type OrgBranch = { id: string; code: string; short_code: string | null; name: string; association_id: string };
+
 // Validation patterns
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_REGEX = /^\(\d{4}\)\s\d{3}-\d{4}(?:\s?ext\s?\d{1,5})?$/;
 const ZIP_REGEX = /^\d{5}(-\d{4})?$/;
+const TEMP_PASSWORD_REGEX = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/;
 
 // Phone mask formatting
 function formatPhoneInput(value: string): string {
@@ -79,11 +88,137 @@ const US_STATES = [
   "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY",
 ];
 
+function generateTempPassword(): string {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+  const digits = "23456789";
+  const all = alphabet + digits;
+
+  // Ensure at least one letter + one digit
+  const pick = (s: string) => s[Math.floor(Math.random() * s.length)];
+  const chars = [pick(alphabet), pick(digits)];
+
+  while (chars.length < 10) chars.push(pick(all));
+
+  // Shuffle
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+
+  return chars.join("");
+}
+
+function formatLastLogin(value: string | null | undefined): string {
+  if (!value) return "Never";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "Never";
+  return d.toLocaleString();
+}
+
+function getStatusBadge(recipient: Recipient): { label: string; className: string } {
+  if (recipient.is_active === false) {
+    return { label: "Inactive", className: "bg-red-500/20 text-red-300" };
+  }
+  if (recipient.needs_password_setup) {
+    return { label: "Pending Password Change", className: "bg-amber-500/20 text-amber-200" };
+  }
+  return { label: "Active", className: "bg-green-500/20 text-green-300" };
+}
+
+type DropdownOption = { id: string; code: string; name: string };
+
+function Dropdown({
+  label,
+  valueId,
+  options,
+  placeholder,
+  onChange,
+  disabled,
+}: {
+  label: string;
+  valueId: string | null;
+  options: DropdownOption[];
+  placeholder: string;
+  onChange: (nextId: string) => void;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = options.find((o) => o.id === valueId) ?? null;
+
+  return (
+    <div className="flex flex-col gap-1">
+      <label className="text-xs font-semibold text-foreground/80">{label}</label>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            disabled={!!disabled}
+            aria-expanded={open}
+            onClick={() => {
+              if (!disabled) setOpen(true);
+            }}
+            className={`btn-pill flex min-w-[260px] items-center justify-between gap-2 border border-white/10 bg-card/60 px-4 py-2 text-sm shadow-sm ring-1 ring-white/5 transition hover:bg-card hover:ring-white/10 disabled:cursor-not-allowed disabled:opacity-60`}
+          >
+            <span className="truncate">
+              {selected ? `${selected.code} - ${selected.name}` : placeholder}
+            </span>
+            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          </button>
+        </PopoverTrigger>
+
+        <PopoverContent
+          align="start"
+          sideOffset={4}
+          className="w-[340px] rounded-xl border border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] p-1 shadow-xl backdrop-blur-md"
+        >
+          <div className="max-h-[300px] overflow-y-auto">
+            {options.length === 0 ? (
+              <div className="px-3 py-2 text-sm text-white/80">No options</div>
+            ) : (
+              options.map((opt) => {
+                const isSelected = opt.id === valueId;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => {
+                      onChange(opt.id);
+                      setOpen(false);
+                    }}
+                    className={`flex w-full items-center rounded-lg px-3 py-2 text-left text-sm transition ${
+                      isSelected
+                        ? "bg-[var(--cta)] text-[var(--cta-foreground)]"
+                        : "text-foreground hover:bg-[var(--brand-strong)]/50"
+                    }`}
+                  >
+                    {opt.code} - {opt.name}
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
+}
+
 export function RecipientsTab() {
   const { branch } = useThemeSettings();
   const [recipients, setRecipients] = useState<Recipient[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Organization hierarchy for cascade selection
+  const [orgLoading, setOrgLoading] = useState(true);
+  const [orgError, setOrgError] = useState<string | null>(null);
+  const [alliances, setAlliances] = useState<Alliance[]>([]);
+  const [associations, setAssociations] = useState<Association[]>([]);
+  const [branches, setBranches] = useState<OrgBranch[]>([]);
+  const [selectedAllianceId, setSelectedAllianceId] = useState<string | null>(null);
+  const [selectedAssociationId, setSelectedAssociationId] = useState<string | null>(null);
+  const [selectedBranchId, setSelectedBranchId] = useState<string | null>(branch.id || null);
+  const [selectionInitialized, setSelectionInitialized] = useState(false);
 
   // Form state
   const [formData, setFormData] = useState<FormData>(emptyForm);
@@ -92,6 +227,8 @@ export function RecipientsTab() {
   const [saving, setSaving] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [tempPassword, setTempPassword] = useState<string>("");
+  const [tempPasswordError, setTempPasswordError] = useState<string | null>(null);
 
   // Validation errors
   const [validationErrors, setValidationErrors] = useState<Partial<Record<keyof FormData, string>>>({});
@@ -106,13 +243,79 @@ export function RecipientsTab() {
   // Recipient type dropdown
   const [typeDropdownOpen, setTypeDropdownOpen] = useState(false);
 
+  // Reset password modal
+  const [resettingRecipient, setResettingRecipient] = useState<Recipient | null>(null);
+  const [resetPassword, setResetPassword] = useState<string>("");
+  const [resetPasswordError, setResetPasswordError] = useState<string | null>(null);
+  const [resetSaving, setResetSaving] = useState(false);
+
+  const loadOrg = useCallback(async () => {
+    setOrgLoading(true);
+    setOrgError(null);
+    try {
+      const res = await fetch("/api/maintenance/organization");
+      if (!res.ok) throw new Error("Failed to load organization hierarchy");
+      const json = await res.json();
+      setAlliances(json.alliances ?? []);
+      setAssociations(json.associations ?? []);
+      setBranches(json.branches ?? []);
+    } catch (e) {
+      setOrgError(e instanceof Error ? e.message : "Failed to load organization hierarchy");
+    } finally {
+      setOrgLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadOrg();
+  }, [loadOrg]);
+
+  // Default cascade selection ONCE (based on currently selected branch from theme settings)
+  useEffect(() => {
+    if (orgLoading) return;
+    if (selectionInitialized) return;
+
+    const initialBranchId = branch.id || selectedBranchId;
+    if (!initialBranchId) {
+      setSelectionInitialized(true);
+      return;
+    }
+
+    const b = branches.find((x) => x.id === initialBranchId);
+    if (!b) {
+      setSelectionInitialized(true);
+      return;
+    }
+
+    const assoc = associations.find((a) => a.id === b.association_id) ?? null;
+    const allianceId = assoc?.alliance_id ?? null;
+
+    setSelectedBranchId(b.id);
+    setSelectedAssociationId(assoc?.id ?? null);
+    setSelectedAllianceId(allianceId);
+    setSelectionInitialized(true);
+  }, [orgLoading, selectionInitialized, branches, associations, branch.id, selectedBranchId]);
+
+  const allianceOptions: DropdownOption[] = alliances.map((a) => ({ id: a.id, code: a.code, name: a.name }));
+  const associationOptions: DropdownOption[] = associations
+    .filter((a) => (selectedAllianceId ? a.alliance_id === selectedAllianceId : true))
+    .map((a) => ({ id: a.id, code: a.code, name: a.name }));
+  const branchOptions: DropdownOption[] = branches
+    .filter((b) => (selectedAssociationId ? b.association_id === selectedAssociationId : true))
+    .map((b) => ({ id: b.id, code: b.short_code || b.code, name: b.name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
   const loadRecipients = useCallback(async () => {
-    if (!branch.id) return;
+    if (!selectedBranchId) {
+      setRecipients([]);
+      setLoading(false);
+      return;
+    }
     
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/maintenance/recipients?branch_id=${branch.id}`);
+      const res = await fetch(`/api/maintenance/recipients?branch_id=${selectedBranchId}`);
       if (!res.ok) throw new Error("Failed to load recipients");
       const data = await res.json();
       setRecipients(data);
@@ -121,7 +324,7 @@ export function RecipientsTab() {
     } finally {
       setLoading(false);
     }
-  }, [branch.id]);
+  }, [selectedBranchId]);
 
   useEffect(() => {
     void loadRecipients();
@@ -129,12 +332,22 @@ export function RecipientsTab() {
 
   const validateForm = (): boolean => {
     const errors: Partial<Record<keyof FormData, string>> = {};
+    let pwErr: string | null = null;
 
     // Email is required
     if (!formData.email.trim()) {
       errors.email = "Email is required";
     } else if (!EMAIL_REGEX.test(formData.email.trim())) {
       errors.email = "Invalid email format";
+    }
+
+    // For creating a login account (new recipient), require temp password
+    if (!editingId) {
+      if (!tempPassword.trim()) {
+        pwErr = "Temporary password is required";
+      } else if (!TEMP_PASSWORD_REGEX.test(tempPassword.trim())) {
+        pwErr = "Temporary password must be 8+ chars and include letters + numbers";
+      }
     }
 
     // Phone validation (optional but must match format if provided)
@@ -148,6 +361,7 @@ export function RecipientsTab() {
     }
 
     setValidationErrors(errors);
+    setTempPasswordError(pwErr);
     return Object.keys(errors).length === 0;
   };
 
@@ -157,13 +371,18 @@ export function RecipientsTab() {
       return;
     }
 
+    if (!selectedBranchId) {
+      setFormError("Please select Alliance, Association, and Branch first");
+      return;
+    }
+
     setSaving(true);
     setFormError(null);
 
     try {
       const method = editingId ? "PUT" : "POST";
       const payload: Record<string, unknown> = {
-        branch_id: branch.id,
+        branch_id: selectedBranchId,
         email: formData.email.trim(),
         first_name: formData.first_name.trim() || undefined,
         last_name: formData.last_name.trim() || undefined,
@@ -178,6 +397,8 @@ export function RecipientsTab() {
       if (editingId) {
         payload.id = editingId;
         payload.on_hold = formOnHold;
+      } else {
+        payload.temp_password = tempPassword.trim();
       }
 
       const res = await fetch("/api/maintenance/recipients", {
@@ -194,6 +415,8 @@ export function RecipientsTab() {
       setFormData(emptyForm);
       setFormOnHold(false);
       setEditingId(null);
+      setTempPassword("");
+      setTempPasswordError(null);
       setValidationErrors({});
       setShowForm(false);
       await loadRecipients();
@@ -229,6 +452,8 @@ export function RecipientsTab() {
   const startEdit = (recipient: Recipient) => {
     setEditingId(recipient.id);
     setShowForm(true);
+    setTempPassword("");
+    setTempPasswordError(null);
     setFormData({
       email: recipient.email || "",
       first_name: recipient.first_name || "",
@@ -257,6 +482,75 @@ export function RecipientsTab() {
       await loadRecipients();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to delete");
+    }
+  };
+
+  const handleDeactivate = async (recipient: Recipient) => {
+    if (!recipient.auth_user_id) return;
+    const ok = window.confirm(`Deactivate ${recipient.email}? They will not be able to sign in.`);
+    if (!ok) return;
+    try {
+      const res = await fetch(`/api/maintenance/recipients/${recipient.id}/deactivate`, { method: "PATCH" });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to deactivate");
+      }
+      await loadRecipients();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to deactivate");
+    }
+  };
+
+  const handleActivate = async (recipient: Recipient) => {
+    if (!recipient.auth_user_id) return;
+    const ok = window.confirm(`Reactivate ${recipient.email}?`);
+    if (!ok) return;
+    try {
+      const res = await fetch(`/api/maintenance/recipients/${recipient.id}/activate`, { method: "PATCH" });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to reactivate");
+      }
+      await loadRecipients();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to reactivate");
+    }
+  };
+
+  const openResetPassword = (recipient: Recipient) => {
+    if (!recipient.auth_user_id) return;
+    setResettingRecipient(recipient);
+    setResetPassword(generateTempPassword());
+    setResetPasswordError(null);
+  };
+
+  const submitResetPassword = async () => {
+    if (!resettingRecipient) return;
+    if (!resetPassword.trim() || !TEMP_PASSWORD_REGEX.test(resetPassword.trim())) {
+      setResetPasswordError("Temporary password must be 8+ chars and include letters + numbers");
+      return;
+    }
+    const ok = window.confirm(`Reset password for ${resettingRecipient.email}? This will email them a new temporary password.`);
+    if (!ok) return;
+
+    setResetSaving(true);
+    setResetPasswordError(null);
+    try {
+      const res = await fetch(`/api/maintenance/recipients/${resettingRecipient.id}/reset-password`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ temp_password: resetPassword.trim() }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to reset password");
+      }
+      setResettingRecipient(null);
+      await loadRecipients();
+    } catch (e) {
+      setResetPasswordError(e instanceof Error ? e.message : "Failed to reset password");
+    } finally {
+      setResetSaving(false);
     }
   };
 
@@ -290,40 +584,106 @@ export function RecipientsTab() {
         <div className="flex items-center gap-3">
           <Mail className="h-5 w-5 text-[var(--brand)]" />
           <div>
-            <h2 className="text-base font-semibold">Schedule Email Recipients</h2>
+            <h2 className="text-base font-semibold">Recipients & Branch Manager Accounts</h2>
             <p className="text-xs text-muted-foreground">
-              Additional CC recipients when emailing schedules for {branch.name}
+              Select a branch (Alliance → Association → Branch) then manage recipients and branch manager login accounts.
             </p>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={() => {
-            if (showForm) {
-              setShowForm(false);
-              setEditingId(null);
-              setFormData(emptyForm);
-              setFormOnHold(false);
-              setValidationErrors({});
-              setFormError(null);
-            } else {
-              setShowForm(true);
-            }
-          }}
-          className="btn-pill inline-flex items-center gap-2 bg-[var(--cta)] px-4 py-2 text-sm font-semibold text-[var(--cta-foreground)] shadow-sm hover:opacity-90"
-        >
-          {showForm ? (
-            <>
-              <ChevronUp className="h-4 w-4" />
-              Hide Form
-            </>
-          ) : (
-            <>
-              <Plus className="h-4 w-4" />
-              Add Recipient
-            </>
-          )}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void loadOrg()}
+            className="btn-pill inline-flex h-9 items-center gap-2 border border-white/10 bg-black/20 px-3 text-sm font-semibold text-foreground hover:bg-black/30"
+            title="Reload organization hierarchy"
+          >
+            <RefreshCcw className="h-4 w-4" />
+            Reload Org
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (showForm) {
+                setShowForm(false);
+                setEditingId(null);
+                setFormData(emptyForm);
+                setFormOnHold(false);
+                setValidationErrors({});
+                setFormError(null);
+                setTempPassword("");
+                setTempPasswordError(null);
+              } else {
+                setShowForm(true);
+                if (!editingId && !tempPassword) setTempPassword(generateTempPassword());
+              }
+            }}
+            disabled={!selectedBranchId && !showForm}
+            className="btn-pill inline-flex items-center gap-2 bg-[var(--cta)] px-4 py-2 text-sm font-semibold text-[var(--cta-foreground)] shadow-sm hover:opacity-90"
+          >
+            {showForm ? (
+              <>
+                <ChevronUp className="h-4 w-4" />
+                Hide Form
+              </>
+            ) : (
+              <>
+                <Plus className="h-4 w-4" />
+                Add Branch Manager
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Branch selection */}
+      <div className="border-b border-border bg-card/50 px-5 py-4">
+        {orgLoading ? (
+          <div className="text-sm text-muted-foreground">Loading organization hierarchy...</div>
+        ) : orgError ? (
+          <div className="text-sm text-red-400">{orgError}</div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap gap-3">
+              <Dropdown
+                label="Alliance"
+                valueId={selectedAllianceId}
+                options={allianceOptions}
+                placeholder="Select Alliance..."
+                onChange={(id) => {
+                  setSelectedAllianceId(id);
+                  setSelectedAssociationId(null);
+                  setSelectedBranchId(null);
+                }}
+              />
+              <Dropdown
+                label="Association"
+                valueId={selectedAssociationId}
+                options={associationOptions}
+                placeholder="Select Association..."
+                disabled={!selectedAllianceId}
+                onChange={(id) => {
+                  setSelectedAssociationId(id);
+                  setSelectedBranchId(null);
+                }}
+              />
+              <Dropdown
+                label="Branch"
+                valueId={selectedBranchId}
+                options={branchOptions}
+                placeholder="Select Branch..."
+                disabled={!selectedAssociationId}
+                onChange={(id) => {
+                  setSelectedBranchId(id);
+                }}
+              />
+            </div>
+            {selectedBranchId && (
+              <p className="text-xs text-muted-foreground">
+                Showing recipients for selected branch.
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Add Form */}
@@ -439,6 +799,47 @@ export function RecipientsTab() {
               </div>
             </div>
 
+            {/* Temp password (create only) */}
+            {!editingId && (
+              <div className="grid gap-4 sm:grid-cols-3">
+                <div className="sm:col-span-2">
+                  <label className="mb-1 block text-sm font-medium text-foreground/90">
+                    Temporary Password <span className="text-red-400">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={tempPassword}
+                    onChange={(e) => {
+                      setTempPassword(e.target.value);
+                      setTempPasswordError(null);
+                    }}
+                    placeholder="Minimum 8 chars, letters + numbers"
+                    className={`w-full rounded-xl border px-3 py-2 text-sm text-foreground placeholder:text-foreground/50 focus:outline-none focus:ring-2 ${
+                      tempPasswordError
+                        ? "border-red-500/50 bg-red-950/20 focus:ring-red-500/50"
+                        : "border-white/15 bg-black/20 focus:ring-[var(--brand)]/50"
+                    }`}
+                  />
+                  {tempPasswordError && (
+                    <p className="mt-1 text-xs text-red-400">{tempPasswordError}</p>
+                  )}
+                </div>
+                <div className="flex items-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTempPassword(generateTempPassword());
+                      setTempPasswordError(null);
+                    }}
+                    className="btn-pill inline-flex w-full items-center justify-center gap-2 border border-white/10 bg-black/20 px-3 py-2 text-sm font-semibold text-foreground hover:bg-black/30"
+                  >
+                    <KeyRound className="h-4 w-4" />
+                    Generate
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Row 2: First Name and Last Name */}
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
@@ -552,6 +953,8 @@ export function RecipientsTab() {
                   setFormOnHold(false);
                   setValidationErrors({});
                   setFormError(null);
+                  setTempPassword("");
+                  setTempPasswordError(null);
                 }}
                 className="btn-pill border border-white/15 bg-black/20 px-4 py-2 text-sm font-semibold text-foreground hover:bg-black/30"
               >
@@ -564,7 +967,7 @@ export function RecipientsTab() {
                 className="btn-pill inline-flex items-center gap-2 bg-[var(--cta)] px-4 py-2 text-sm font-semibold text-[var(--cta-foreground)] shadow-sm hover:opacity-90 disabled:opacity-50"
               >
                 <Plus className="h-4 w-4" />
-                {saving ? "Saving..." : editingId ? "Save Changes" : "Add Recipient"}
+                {saving ? "Saving..." : editingId ? "Save Changes" : "Create & Email Welcome"}
               </button>
             </div>
             {editingId && (
@@ -587,7 +990,77 @@ export function RecipientsTab() {
 
       {/* Content */}
       <div className="p-5">
-        {loading ? (
+        {/* Reset password modal */}
+        {resettingRecipient && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+            <div className="w-full max-w-md rounded-2xl border border-border bg-card p-5 shadow-2xl">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-lg font-bold">Reset Password</h3>
+                  <p className="text-xs text-muted-foreground">
+                    This will email a new temporary password to {resettingRecipient.email}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => !resetSaving && setResettingRecipient(null)}
+                  className="btn-pill border border-white/10 bg-black/20 px-3 py-1.5 text-sm font-semibold text-foreground hover:bg-black/30 disabled:opacity-50"
+                  disabled={resetSaving}
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="mt-4 space-y-3">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-foreground/90">New Temporary Password</label>
+                  <input
+                    type="text"
+                    value={resetPassword}
+                    onChange={(e) => {
+                      setResetPassword(e.target.value);
+                      setResetPasswordError(null);
+                    }}
+                    className={`w-full rounded-xl border px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 ${
+                      resetPasswordError
+                        ? "border-red-500/50 bg-red-950/20 focus:ring-red-500/50"
+                        : "border-white/15 bg-black/20 focus:ring-[var(--brand)]/50"
+                    }`}
+                  />
+                  {resetPasswordError && (
+                    <p className="mt-1 text-xs text-red-400">{resetPasswordError}</p>
+                  )}
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setResetPassword(generateTempPassword())}
+                    disabled={resetSaving}
+                    className="btn-pill inline-flex flex-1 items-center justify-center gap-2 border border-white/10 bg-black/20 px-3 py-2 text-sm font-semibold text-foreground hover:bg-black/30 disabled:opacity-50"
+                  >
+                    <KeyRound className="h-4 w-4" />
+                    Generate
+                  </button>
+                  <button
+                    type="button"
+                    onClick={submitResetPassword}
+                    disabled={resetSaving}
+                    className="btn-pill inline-flex flex-1 items-center justify-center gap-2 bg-[var(--cta)] px-3 py-2 text-sm font-semibold text-[var(--cta-foreground)] hover:opacity-90 disabled:opacity-50"
+                  >
+                    {resetSaving ? "Saving..." : "Reset & Email"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {!selectedBranchId ? (
+          <div className="rounded-xl border border-dashed border-white/20 bg-black/10 p-6 text-center">
+            <p className="text-sm text-muted-foreground">Select an Alliance, Association, and Branch above to load recipients.</p>
+          </div>
+        ) : loading ? (
           <div className="text-sm text-muted-foreground">Loading recipients...</div>
         ) : error ? (
           <div className="text-sm text-red-400">{error}</div>
@@ -598,7 +1071,7 @@ export function RecipientsTab() {
               No additional recipients added yet.
             </p>
             <p className="mt-1 text-xs text-muted-foreground/70">
-              Click &quot;Add Recipient&quot; above to CC them on schedule distributions.
+              Select a branch above, then click &quot;Add Branch Manager&quot; to create a login account (welcome email + temporary password).
             </p>
           </div>
         ) : (
@@ -608,7 +1081,9 @@ export function RecipientsTab() {
                 <tr>
                   <th className="px-4 py-2 text-left font-semibold">Email</th>
                   <th className="px-4 py-2 text-left font-semibold">Name</th>
+                  <th className="px-4 py-2 text-left font-semibold">Status</th>
                   <th className="px-4 py-2 text-left font-semibold">Type</th>
+                  <th className="hidden px-4 py-2 text-left font-semibold md:table-cell">Last Login</th>
                   <th className="hidden px-4 py-2 text-left font-semibold md:table-cell">Phone</th>
                   <th className="hidden px-4 py-2 text-left font-semibold lg:table-cell">Location</th>
                   <th className="px-4 py-2 text-right font-semibold">Action</th>
@@ -619,6 +1094,8 @@ export function RecipientsTab() {
                   const displayName = getDisplayName(recipient);
                   const displayAddress = getDisplayAddress(recipient);
                   const isExpanded = expandedId === recipient.id;
+                  const status = getStatusBadge(recipient);
+                  const hasLogin = !!recipient.auth_user_id;
 
                   return (
                     <Fragment key={recipient.id}>
@@ -651,6 +1128,11 @@ export function RecipientsTab() {
                           {displayName || <span className="text-muted-foreground">—</span>}
                         </td>
                         <td className="px-4 py-2">
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${status.className}`}>
+                            {status.label}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2">
                           {recipient.recipient_type === "Administrator" ? (
                             <span className="rounded-full bg-purple-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-purple-300">
                               Admin
@@ -658,6 +1140,9 @@ export function RecipientsTab() {
                           ) : (
                             <span className="text-muted-foreground text-xs">Normal</span>
                           )}
+                        </td>
+                        <td className="hidden px-4 py-2 text-foreground md:table-cell">
+                          <span className="text-xs text-foreground/90">{formatLastLogin(recipient.last_login_at)}</span>
                         </td>
                         <td className="hidden px-4 py-2 text-foreground md:table-cell">
                           {recipient.phone || <span className="text-muted-foreground">—</span>}
@@ -675,6 +1160,36 @@ export function RecipientsTab() {
                             >
                               <Pencil className="h-4 w-4" />
                             </button>
+                            <button
+                              type="button"
+                              onClick={() => openResetPassword(recipient)}
+                              disabled={!hasLogin}
+                              className="rounded-lg p-1.5 text-sky-300 hover:bg-sky-500/20 disabled:opacity-40"
+                              title={hasLogin ? "Reset password" : "No login account linked"}
+                            >
+                              <KeyRound className="h-4 w-4" />
+                            </button>
+                            {hasLogin ? (
+                              recipient.is_active === false ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleActivate(recipient)}
+                                  className="rounded-lg p-1.5 text-green-300 hover:bg-green-500/20"
+                                  title="Reactivate account"
+                                >
+                                  <PlayCircle className="h-4 w-4" />
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeactivate(recipient)}
+                                  className="rounded-lg p-1.5 text-red-300 hover:bg-red-500/20"
+                                  title="Deactivate account"
+                                >
+                                  <PauseCircle className="h-4 w-4" />
+                                </button>
+                              )
+                            ) : null}
                             <button
                               type="button"
                               onClick={() => handleToggleHold(recipient)}
@@ -718,8 +1233,18 @@ export function RecipientsTab() {
                       {/* Mobile expanded details */}
                       {isExpanded && (
                         <tr key={`${recipient.id}-details`} className="md:hidden bg-muted/30">
-                          <td colSpan={6} className="px-4 py-2">
+                          <td colSpan={8} className="px-4 py-2">
                             <div className="space-y-1 text-sm">
+                              <div>
+                                <span className="text-muted-foreground">Status:</span>{" "}
+                                <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${status.className}`}>
+                                  {status.label}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">Last login:</span>{" "}
+                                {formatLastLogin(recipient.last_login_at)}
+                              </div>
                               {recipient.phone && (
                                 <div>
                                   <span className="text-muted-foreground">Phone:</span>{" "}
@@ -749,7 +1274,7 @@ export function RecipientsTab() {
 
         {recipients.length > 0 && (
           <p className="mt-3 text-xs text-muted-foreground">
-            {recipients.length} recipient{recipients.length !== 1 ? "s" : ""} will be CC&apos;d on schedule emails for {branch.name}.
+            {recipients.length} recipient{recipients.length !== 1 ? "s" : ""} loaded for the selected branch.
           </p>
         )}
       </div>
