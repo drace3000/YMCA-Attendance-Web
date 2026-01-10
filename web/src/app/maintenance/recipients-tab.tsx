@@ -59,20 +59,20 @@ type OrgBranch = { id: string; code: string; short_code: string | null; name: st
 
 // Validation patterns
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const PHONE_REGEX = /^\(\d{4}\)\s\d{3}-\d{4}(?:\s?ext\s?\d{1,5})?$/;
+const PHONE_REGEX = /^\(\d{3}\)\s\d{3}-\d{4}(?:\s?ext\s?\d{1,5})?$/;
 const ZIP_REGEX = /^\d{5}(-\d{4})?$/;
 const TEMP_PASSWORD_REGEX = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/;
 
 // Phone mask formatting
 function formatPhoneInput(value: string): string {
-  const digits = value.replace(/\D/g, "").slice(0, 16); // area4 + first3 + last4 + ext5
-  const area = digits.slice(0, 4);
-  const first = digits.slice(4, 7);
-  const second = digits.slice(7, 11);
-  const ext = digits.slice(11);
+  const digits = value.replace(/\D/g, "").slice(0, 15); // area3 + first3 + last4 + ext5
+  const area = digits.slice(0, 3);
+  const first = digits.slice(3, 6);
+  const second = digits.slice(6, 10);
+  const ext = digits.slice(10);
   let out = "";
   if (area) out += `(${area}`;
-  if (area.length === 4) out += `)`;
+  if (area.length === 3) out += `)`;
   if (first) out += ` ${first}`;
   if (second) out += `-${second}`;
   if (ext) out += ` ext ${ext}`;
