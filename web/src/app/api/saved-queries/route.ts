@@ -147,15 +147,13 @@ export async function PUT(request: NextRequest): Promise<Response> {
     let query = supabase
       .from("saved_queries")
       .update({ query_text: queryText.trim() })
-      .eq("id", id)
-      .select()
-      .single();
+      .eq("id", id);
 
     if (required.access?.recipient_type === "Normal") {
       query = query.eq("branch_id", required.access.branch_id);
     }
 
-    const { data, error } = await query;
+    const { data, error } = await query.select().single();
 
     if (error) {
       console.error("Error updating query:", error);

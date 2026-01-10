@@ -229,18 +229,13 @@ export async function PUT(req: NextRequest): Promise<Response> {
   }
   if (program_group_id !== undefined) updates.program_group_id = program_group_id;
 
-  let query = supabase
-    .from("classes")
-    .update(updates)
-    .eq("id", id)
-    .select()
-    .single();
+  let query = supabase.from("classes").update(updates).eq("id", id);
 
   if (required.access?.recipient_type === "Normal") {
     query = query.eq("branch_id", required.access.branch_id);
   }
 
-  const { data, error } = await query;
+  const { data, error } = await query.select().single();
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -272,18 +267,13 @@ export async function PATCH(req: NextRequest): Promise<Response> {
     );
   }
 
-  let query = supabase
-    .from("classes")
-    .update({ is_active })
-    .eq("id", id)
-    .select()
-    .single();
+  let query = supabase.from("classes").update({ is_active }).eq("id", id);
 
   if (required.access?.recipient_type === "Normal") {
     query = query.eq("branch_id", required.access.branch_id);
   }
 
-  const { data, error } = await query;
+  const { data, error } = await query.select().single();
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

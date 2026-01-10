@@ -83,3 +83,9 @@ export async function getUser() {
   return { user: data.user, error };
 }
 
+// Update current authenticated user's password (used for first-time login + forgot password flows)
+export async function updateUserPassword(password: string) {
+  if (DEV_AUTH_BYPASS) return { data: null, error: null };
+  const { data, error } = await supabase.auth.updateUser({ password });
+  return { data, error };
+}
