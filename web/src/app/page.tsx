@@ -37,7 +37,7 @@ function formatPhoneInput(value: string): string {
 }
 
 export default function Home() {
-  const { user, loading: authLoading, devSignIn, isDevMode, setRecipientContext } = useAuth();
+  const { user, loading: authLoading, devSignIn, isDevMode, setRecipientContext, signOut } = useAuth();
   const { setBranch } = useThemeSettings();
   const [activeTab, setActiveTab] = useState<Tab>("signin");
   
@@ -188,6 +188,8 @@ export default function Home() {
           } else {
             setError(msg);
           }
+          // Ensure a user who is not present in recipients is not left signed-in.
+          await signOut();
           return;
         }
 

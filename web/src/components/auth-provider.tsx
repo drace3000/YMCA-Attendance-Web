@@ -5,8 +5,8 @@ import type { User, Session } from "@supabase/supabase-js";
 import { supabase, signOut as supabaseSignOut } from "@/lib/supabaseClient";
 
 // Dev bypass - skip Supabase entirely
-// TODO: Set to false for production
-const DEV_AUTH_BYPASS = true;
+// Set NEXT_PUBLIC_DEV_AUTH_BYPASS=true in .env.local ONLY if you explicitly want to bypass auth
+const DEV_AUTH_BYPASS = process.env.NEXT_PUBLIC_DEV_AUTH_BYPASS === 'true';
 
 // Mock user for dev bypass
 const DEV_MOCK_USER: User = {

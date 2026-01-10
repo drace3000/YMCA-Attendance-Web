@@ -14,6 +14,7 @@ vi.mock("@/components/auth-provider", () => ({
     devSignIn: mockDevSignIn,
     isDevMode: false,
     setRecipientContext: mockSetRecipientContext,
+    signOut: vi.fn(),
     recipientContext: { recipient_type: null, branch_id: null, association_id: null, alliance_id: null },
   }),
 }))

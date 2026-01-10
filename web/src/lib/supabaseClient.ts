@@ -3,8 +3,8 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
 // Dev bypass - skip Supabase entirely
-// TODO: Set to false for production
-const DEV_AUTH_BYPASS = true;
+// Set NEXT_PUBLIC_DEV_AUTH_BYPASS=true in .env.local ONLY if you explicitly want to bypass auth
+const DEV_AUTH_BYPASS = process.env.NEXT_PUBLIC_DEV_AUTH_BYPASS === 'true';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
