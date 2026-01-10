@@ -352,7 +352,7 @@ export function RecipientsTab() {
 
     // Phone validation (optional but must match format if provided)
     if (formData.phone && !PHONE_REGEX.test(formData.phone.trim())) {
-      errors.phone = "Use format (1234) 567-8901 ext 12345";
+      errors.phone = "Use format (123) 456-7890 ext 12345";
     }
 
     // Zip validation (optional but must match format if provided)
@@ -724,7 +724,7 @@ export function RecipientsTab() {
                   type="tel"
                   value={formData.phone}
                   onChange={(e) => updateField("phone", formatPhoneInput(e.target.value))}
-                  placeholder="(1234) 567-8901 ext 12345"
+                  placeholder="(123) 456-7890 ext 12345"
                   className={`w-full rounded-xl border px-3 py-2 text-sm text-foreground placeholder:text-foreground/50 focus:outline-none focus:ring-2 ${
                     validationErrors.phone
                       ? "border-red-500/50 bg-red-950/20 focus:ring-red-500/50"

@@ -60,7 +60,7 @@ type UpdateRecipientPayload = {
 
 // Validation patterns
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const PHONE_REGEX = /^\(\d{4}\)\s\d{3}-\d{4}(?:\s?ext\s?\d{1,5})?$/;
+const PHONE_REGEX = /^\(\d{3}\)\s\d{3}-\d{4}(?:\s?ext\s?\d{1,5})?$/;
 const ZIP_REGEX = /^\d{5}(-\d{4})?$/;
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -426,7 +426,8 @@ export async function PUT(req: NextRequest): Promise<Response> {
 
   if (phone !== undefined) {
     if (phone && !validatePhone(phone)) {
-      return NextResponse.json({ error: "Invalid phone format. Use (1234) 567-8901 or (1234) 567-8901 ext 12345" }, { status: 400 });
+      return NextResponse.json({ error: "Invalid phone format. Use (123) 456-7890 or (123) 456-7890 ext 12345" }, { status: 400 });
+      return NextResponse.json({ error: "Invalid phone format. Use (123) 456-7890 or (123) 456-7890 ext 12345" }, { status: 400 });
     }
     updates.phone = phone?.trim() || null;
   }

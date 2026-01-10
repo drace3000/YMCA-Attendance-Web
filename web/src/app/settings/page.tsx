@@ -31,8 +31,8 @@ type ProgramGroupOption = {
 
 // Validation patterns
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-// Phone format: (1234) 567-8901 ext 12345 (extension optional)
-const PHONE_REGEX = /^\(\d{4}\)\s\d{3}-\d{4}(?:\s?(?:ext\.?|x)\s?\d{1,5})?$/;
+// Phone format: (123) 456-7890 ext 12345 (extension optional)
+const PHONE_REGEX = /^\(\d{3}\)\s\d{3}-\d{4}(?:\s?(?:ext\.?|x)\s?\d{1,5})?$/;
 
 function isValidEmail(email: string): boolean {
   return email === "" || EMAIL_REGEX.test(email);
@@ -42,17 +42,17 @@ function isValidPhone(phone: string): boolean {
   return phone === "" || PHONE_REGEX.test(phone.trim());
 }
 
-// Mask phone input as (1234) 567-8901 ext 12345
+// Mask phone input as (123) 456-7890 ext 12345
 function formatPhoneInput(value: string): string {
-  const digits = value.replace(/\D/g, "").slice(0, 16); // max digits: 4+3+4+5
-  const area = digits.slice(0, 4);
-  const first = digits.slice(4, 7);
-  const second = digits.slice(7, 11);
-  const ext = digits.slice(11);
+  const digits = value.replace(/\D/g, "").slice(0, 15); // max digits: 3+3+4+5
+  const area = digits.slice(0, 3);
+  const first = digits.slice(3, 6);
+  const second = digits.slice(6, 10);
+  const ext = digits.slice(10);
 
   let out = "";
   if (area) out += `(${area}`;
-  if (area.length === 4) out += `)`;
+  if (area.length === 3) out += `)`;
   if (first) out += ` ${first}`;
   if (second) out += `-${second}`;
   if (ext) out += ` ext ${ext}`;
@@ -236,13 +236,13 @@ export default function SettingsPage() {
     }
     
     if (managerForm.phone && !isValidPhone(managerForm.phone)) {
-      errors.phone = "Use format (1234) 567-8901 ext 12345 (ext optional).";
+      errors.phone = "Use format (123) 456-7890 ext 12345 (ext optional).";
     }
     
     setValidationErrors(errors);
     if (Object.keys(errors).length > 0) {
       setDialogError(
-        "Please fix the highlighted fields:\n• Email must be a valid address\n• Phone must match (1234) 567-8901 ext 12345"
+        "Please fix the highlighted fields:\n• Email must be a valid address\n• Phone must match (123) 456-7890 ext 12345"
       );
       return false;
     }
@@ -485,7 +485,7 @@ export default function SettingsPage() {
                   setManagerForm((f) => ({ ...f, phone: next }));
                   if (validationErrors.phone) setValidationErrors((v) => ({ ...v, phone: undefined }));
                 }}
-                placeholder="(1234) 567-8901 ext 12345"
+                placeholder="(123) 456-7890 ext 12345"
                 className={`w-full rounded-xl border px-3 py-2 text-sm text-foreground placeholder:text-foreground/50 focus:outline-none focus:ring-2 ${
                   validationErrors.phone 
                     ? "border-red-500/50 bg-red-950/20 focus:ring-red-500/50" 
