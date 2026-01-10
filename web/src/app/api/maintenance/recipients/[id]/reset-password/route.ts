@@ -1,21 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
 import { serverErrorResponse } from "@/lib/server-api-error";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { sendEmail } from "@/lib/email-sender";
 import { buildPasswordResetEmail } from "@/lib/email-templates";
 import { requireRecipientAccess } from "@/lib/requireRecipientAccess";
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-function validateTempPassword(password: string): string | null {
-  const trimmed = password.trim();
-  if (trimmed.length < 8) return "Temporary password must be at least 8 characters";
-  if (!/[a-z]/i.test(trimmed) || !/\d/.test(trimmed)) {
-    return "Temporary password must include at least one letter and one number";
-  }
-  return null;
-}
 
 type RouteParams = {
   params: Promise<{ id: string }>;
@@ -25,7 +15,6 @@ async function sendPasswordResetEmail(params: {
   req: Request;
   to: string;
   firstName: string | null;
-  tempPassword: string;
 }): Promise<boolean> {
   const origin = new URL(params.req.url).origin;
   const appUrl = origin;
@@ -33,7 +22,6 @@ async function sendPasswordResetEmail(params: {
   const email = buildPasswordResetEmail({
     firstName: params.firstName,
     toEmail: params.to,
-    tempPassword: params.tempPassword,
     appUrl,
   });
 
@@ -59,23 +47,6 @@ export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<
     return NextResponse.json({ error: "Invalid recipient id format" }, { status: 400 });
   }
 
-  let body: { temp_password?: string };
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
-  }
-
-  const tempPassword = body.temp_password;
-  if (!tempPassword) {
-    return NextResponse.json({ error: "temp_password is required" }, { status: 400 });
-  }
-
-  const pwError = validateTempPassword(tempPassword);
-  if (pwError) {
-    return NextResponse.json({ error: pwError }, { status: 400 });
-  }
-
   const supabase = createSupabaseServerClient();
 
   const { data: recipient, error: loadError } = await supabase
@@ -90,22 +61,6 @@ export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<
 
   if (!recipient.auth_user_id) {
     return NextResponse.json({ error: "Recipient does not have an auth user linked" }, { status: 400 });
-  }
-
-  // Update Auth password (service role)
-  const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(recipient.auth_user_id, {
-    password: tempPassword.trim(),
-  });
-
-  if (authError) {
-    return await serverErrorResponse({
-      req,
-      errorType: "AUTH_ERROR",
-      publicMessage: authError.message,
-      logMessage: authError.message,
-      context: { module: "api.maintenance.recipients.reset_password", action: "update_auth_password" },
-      err: authError,
-    });
   }
 
   // Mark password setup required
@@ -131,7 +86,6 @@ export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<
       req,
       to: recipient.email,
       firstName: recipient.first_name,
-      tempPassword: tempPassword.trim(),
     });
   } catch {
     emailSent = false;

@@ -5,6 +5,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { sendEmail } from "@/lib/email-sender";
 import { buildWelcomeEmail, type OrgAssignment } from "@/lib/email-templates";
 import { requireRecipientAccess } from "@/lib/requireRecipientAccess";
+import { randomBytes } from "crypto";
 
 type RecipientRow = {
   id: string;
@@ -38,10 +39,10 @@ type CreateRecipientPayload = {
   zip_code?: string;
   recipient_type?: "Administrator" | "Normal";
   /**
-   * Optional: if provided, this recipient becomes a user account.
-   * Phase 3 supports creating branch manager users with a temporary password.
+   * If true, create a linked Supabase Auth user and send onboarding email instructions.
+   * This uses email OTP for first-time login (no temporary passwords).
    */
-  temp_password?: string;
+  create_auth_user?: boolean;
 };
 
 type UpdateRecipientPayload = {
@@ -80,13 +81,33 @@ function validateZip(zip: string): boolean {
   return zip === "" || ZIP_REGEX.test(zip.trim());
 }
 
-function validateTempPassword(password: string): string | null {
-  const trimmed = password.trim();
-  if (trimmed.length < 8) return "Temporary password must be at least 8 characters";
-  if (!/[a-z]/i.test(trimmed) || !/\d/.test(trimmed)) {
-    return "Temporary password must include at least one letter and one number";
+function generateRandomPassword(): string {
+  // This password is never revealed to the user; it only satisfies Supabase Auth requirements.
+  return randomBytes(24).toString("base64url");
+}
+
+async function findAuthUserIdByEmail(email: string): Promise<string | null> {
+  // Supabase admin API doesn't provide a direct "get by email", so we page through users.
+  // This endpoint is used in admin-only flows, so a bounded scan is acceptable.
+  const target = email.trim().toLowerCase();
+  if (!target) return null;
+
+  const perPage = 200;
+  for (let page = 1; page <= 10; page++) {
+    const { data, error } = await supabaseAdmin.auth.admin.listUsers({ page, perPage });
+    if (error) throw error;
+    const users = data?.users ?? [];
+    const match = users.find((u) => (u.email ?? "").trim().toLowerCase() === target);
+    if (match?.id) return match.id;
+    if (users.length < perPage) break; // last page
   }
   return null;
+}
+
+function isAuthUserAlreadyRegisteredError(err: unknown): boolean {
+  const message = typeof (err as any)?.message === "string" ? String((err as any).message) : "";
+  // Common Supabase message: "A user with this email address has already been registered"
+  return message.toLowerCase().includes("already been registered") || message.toLowerCase().includes("already registered");
 }
 
 type OrgBranchInfo = {
@@ -134,7 +155,6 @@ async function sendWelcomeEmail(params: {
   to: string;
   firstName: string | null;
   org: OrgBranchInfo | null;
-  tempPassword: string;
 }): Promise<boolean> {
   const origin = new URL(params.req.url).origin;
   const appUrl = origin;
@@ -149,7 +169,6 @@ async function sendWelcomeEmail(params: {
     firstName: params.firstName,
     toEmail: params.to,
     assignment,
-    tempPassword: params.tempPassword,
     appUrl,
   });
 
@@ -233,7 +252,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { branch_id, email, first_name, last_name, phone, address, city, state, zip_code, recipient_type, temp_password } = body;
+  const { branch_id, email, first_name, last_name, phone, address, city, state, zip_code, recipient_type, create_auth_user } = body;
 
   if (!branch_id) {
     return NextResponse.json({ error: "branch_id is required" }, { status: 400 });
@@ -254,13 +273,7 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const normalizedEmail = normalizeEmail(email);
 
-  // If temp_password is provided, validate it (this is the branch-manager user creation flow).
-  if (temp_password !== undefined) {
-    const pwError = validateTempPassword(temp_password);
-    if (pwError) {
-      return NextResponse.json({ error: pwError }, { status: 400 });
-    }
-  }
+  const shouldCreateAuthUser = create_auth_user === true;
 
   // Validate phone format if provided
   if (phone && !validatePhone(phone)) {
@@ -286,25 +299,54 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   let authUserId: string | null = null;
-  if (temp_password !== undefined) {
+  if (shouldCreateAuthUser) {
     const { data: created, error: createError } = await supabaseAdmin.auth.admin.createUser({
       email: normalizedEmail,
-      password: temp_password.trim(),
+      password: generateRandomPassword(),
       email_confirm: true,
     });
 
     if (createError || !created?.user) {
-      return await serverErrorResponse({
-        req,
-        errorType: "AUTH_ERROR",
-        publicMessage: createError?.message || "Failed to create user account",
-        logMessage: createError?.message || "Failed to create user account",
-        context: { module: "api.maintenance.recipients", action: "create_auth_user" },
-        err: createError ?? null,
-      });
+      // If the auth user already exists (e.g., recipient was deleted but auth user remained),
+      // re-link to the existing auth user so onboarding via OTP can still proceed.
+      if (createError && isAuthUserAlreadyRegisteredError(createError)) {
+        try {
+          const existingAuthUserId = await findAuthUserIdByEmail(normalizedEmail);
+          if (existingAuthUserId) {
+            authUserId = existingAuthUserId;
+          } else {
+            return await serverErrorResponse({
+              req,
+              errorType: "AUTH_ERROR",
+              publicMessage: "User already exists in authentication but could not be located for relinking",
+              logMessage: createError.message,
+              context: { module: "api.maintenance.recipients", action: "relink_existing_auth_user" },
+              err: createError,
+            });
+          }
+        } catch (listErr) {
+          return await serverErrorResponse({
+            req,
+            errorType: "AUTH_ERROR",
+            publicMessage: "User already exists in authentication but could not be listed for relinking",
+            logMessage: createError.message,
+            context: { module: "api.maintenance.recipients", action: "relink_existing_auth_user_list_failed" },
+            err: listErr,
+          });
+        }
+      } else {
+        return await serverErrorResponse({
+          req,
+          errorType: "AUTH_ERROR",
+          publicMessage: createError?.message || "Failed to create user account",
+          logMessage: createError?.message || "Failed to create user account",
+          context: { module: "api.maintenance.recipients", action: "create_auth_user" },
+          err: createError ?? null,
+        });
+      }
+    } else {
+      authUserId = created.user.id;
     }
-
-    authUserId = created.user.id;
   }
 
   const { data, error } = await supabase
@@ -339,7 +381,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   let welcomeEmailSent = false;
-  if (temp_password !== undefined) {
+  if (shouldCreateAuthUser) {
     const org = await loadOrgInfoForBranch(supabase, branch_id);
     try {
       welcomeEmailSent = await sendWelcomeEmail({
@@ -347,7 +389,6 @@ export async function POST(req: NextRequest): Promise<Response> {
         to: normalizedEmail,
         firstName: first_name?.trim() || null,
         org,
-        tempPassword: temp_password.trim(),
       });
     } catch {
       // Never block user creation on email failures.
@@ -533,6 +574,58 @@ export async function DELETE(req: NextRequest): Promise<Response> {
 
   const supabase = createSupabaseServerClient();
 
+  // Load recipient first so we can also delete the linked Auth user (if any).
+  const { data: recipient, error: loadError } = await supabase
+    .from("branch_schedule_recipients")
+    .select("id, email, auth_user_id")
+    .eq("id", id)
+    .single();
+
+  if (loadError || !recipient) {
+    return NextResponse.json({ error: loadError?.message || "Recipient not found" }, { status: 404 });
+  }
+
+  // If this recipient is linked to an auth user, delete the auth user too.
+  // This matches admin expectations: deleting the recipient removes their ability to sign in.
+  let authUserDeleted = false;
+  const authUserId = (recipient as any).auth_user_id as string | null | undefined;
+  if (authUserId) {
+    // Safety: do not delete if some other recipient still references this auth user.
+    const { data: others, error: otherErr } = await supabase
+      .from("branch_schedule_recipients")
+      .select("id")
+      .eq("auth_user_id", authUserId)
+      .neq("id", id);
+
+    if (otherErr) {
+      return await serverErrorResponse({
+        req,
+        errorType: "DB_ERROR",
+        publicMessage: otherErr.message,
+        logMessage: otherErr.message,
+        context: { module: "api.maintenance.recipients", action: "delete_check_other_references" },
+        err: otherErr,
+      });
+    }
+
+    if (!others || others.length === 0) {
+      const { error: authErr } = await supabaseAdmin.auth.admin.deleteUser(authUserId);
+      if (authErr) {
+        // If Auth deletion fails, still allow the admin to remove the recipient record,
+        // but return a server error so they know the email will remain taken in Auth.
+        return await serverErrorResponse({
+          req,
+          errorType: "AUTH_ERROR",
+          publicMessage: authErr.message,
+          logMessage: authErr.message,
+          context: { module: "api.maintenance.recipients", action: "delete_auth_user" },
+          err: authErr,
+        });
+      }
+      authUserDeleted = true;
+    }
+  }
+
   const { error } = await supabase
     .from("branch_schedule_recipients")
     .delete()
@@ -549,5 +642,5 @@ export async function DELETE(req: NextRequest): Promise<Response> {
     });
   }
 
-  return NextResponse.json({ success: true });
+  return NextResponse.json({ success: true, auth_user_deleted: authUserDeleted });
 }

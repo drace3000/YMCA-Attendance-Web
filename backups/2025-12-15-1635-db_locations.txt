@@ -1,8 +1,0 @@
-C
-EP
-FG
-FP
-LP
-MB
-S
-SPC

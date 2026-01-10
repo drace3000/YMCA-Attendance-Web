@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   Calendar,
   ChartPie,
@@ -39,6 +39,7 @@ const navItems: NavItem[] = [
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const {
     sidebarPosition,
     toggleMode,
@@ -49,6 +50,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const { user, signOut } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mounted, setMounted] = useState(false);
+
+  const handleLogout = async (): Promise<void> => {
+    await signOut();
+    router.push("/");
+  };
 
   // Avoid hydration mismatch between server (default light) and client (stored theme)
   useEffect(() => {
@@ -175,7 +181,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
                     </span>
                   </div>
                   <button
-                    onClick={signOut}
+                    onClick={handleLogout}
                     className="btn-pill flex items-center gap-1.5 border border-red-500/30 bg-red-500/20 px-3 py-1 text-xs font-semibold text-red-300 shadow-sm hover:bg-red-500/30"
                   >
                     <LogOut className="h-3.5 w-3.5" />

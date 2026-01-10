@@ -137,7 +137,8 @@ describe("Phase 4 - RecipientsTab (Admin)", () => {
         const body = JSON.parse(String(init.body))
         expect(body.branch_id).toBe("br-1")
         expect(body.email).toBe("newmanager@ymca.org")
-        expect(body.temp_password).toBe("TempPass1")
+        expect(body.create_auth_user).toBe(true)
+        expect(body.temp_password).toBeUndefined()
         return mockJson(true, { id: "r-new", welcome_email_sent: true }, 201)
       }
       return mockJson(false, { error: "not found" }, 404)
@@ -146,17 +147,12 @@ describe("Phase 4 - RecipientsTab (Admin)", () => {
     vi.stubGlobal("fetch", fetchMock as any)
 
     render(<RecipientsTab />)
-    await screen.findByText(/recipients & branch manager accounts/i)
+    await screen.findByText(/member accounts/i)
 
-    fireEvent.click(screen.getByRole("button", { name: /add branch manager/i }))
+    fireEvent.click(screen.getByRole("button", { name: /add member/i }))
 
     fireEvent.change(screen.getByPlaceholderText("recipient@example.com"), {
       target: { value: "newmanager@ymca.org" },
-    })
-
-    // Overwrite generated password to deterministic value
-    fireEvent.change(screen.getByPlaceholderText(/minimum 8 chars/i), {
-      target: { value: "TempPass1" },
     })
 
     fireEvent.click(screen.getByRole("button", { name: /create & email welcome/i }))
