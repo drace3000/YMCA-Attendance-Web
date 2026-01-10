@@ -57,6 +57,11 @@ type Alliance = { id: string; code: string; name: string };
 type Association = { id: string; code: string; name: string; alliance_id: string | null };
 type OrgBranch = { id: string; code: string; short_code: string | null; name: string; association_id: string };
 
+function formatNameWithYMCA(name: string): string {
+  // Preserve stored casing except for YMCA/YMCAs which must be canonical.
+  return name.replace(/\bymca(s?)\b/gi, (_, s: string) => (s ? "YMCAs" : "YMCA"));
+}
+
 // Validation patterns
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_REGEX = /^\(\d{3}\)\s\d{3}-\d{4}(?:\s?ext\s?\d{1,5})?$/;
@@ -296,13 +301,17 @@ export function RecipientsTab() {
     setSelectionInitialized(true);
   }, [orgLoading, selectionInitialized, branches, associations, branch.id, selectedBranchId]);
 
-  const allianceOptions: DropdownOption[] = alliances.map((a) => ({ id: a.id, code: a.code, name: a.name }));
+  const allianceOptions: DropdownOption[] = alliances.map((a) => ({
+    id: a.id,
+    code: a.code,
+    name: formatNameWithYMCA(a.name),
+  }));
   const associationOptions: DropdownOption[] = associations
     .filter((a) => (selectedAllianceId ? a.alliance_id === selectedAllianceId : true))
-    .map((a) => ({ id: a.id, code: a.code, name: a.name }));
+    .map((a) => ({ id: a.id, code: a.code, name: formatNameWithYMCA(a.name) }));
   const branchOptions: DropdownOption[] = branches
     .filter((b) => (selectedAssociationId ? b.association_id === selectedAssociationId : true))
-    .map((b) => ({ id: b.id, code: b.short_code || b.code, name: b.name }))
+    .map((b) => ({ id: b.id, code: b.short_code || b.code, name: formatNameWithYMCA(b.name) }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
   const loadRecipients = useCallback(async () => {
