@@ -12,16 +12,20 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  */
 export function createSupabaseAuthRouteClient(req: NextRequest): SupabaseClient {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const publicKey =
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
   if (!url) {
     throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL environment variable.");
   }
-  if (!anonKey) {
-    throw new Error("Missing NEXT_PUBLIC_SUPABASE_ANON_KEY environment variable.");
+  if (!publicKey) {
+    throw new Error(
+      "Missing NEXT_PUBLIC_SUPABASE_ANON_KEY (or NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY) environment variable."
+    );
   }
 
-  return createServerClient(url, anonKey, {
+  return createServerClient(url, publicKey, {
     cookies: {
       getAll() {
         return req.cookies.getAll();

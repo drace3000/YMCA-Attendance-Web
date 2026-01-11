@@ -66,7 +66,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const refreshSession = useCallback(async () => {
     if (DEV_AUTH_BYPASS) return; // Skip Supabase in dev mode
-    const { data } = await supabase.auth.getSession();
+
+    const auth = (supabase as any)?.auth;
+    if (!auth) {
+      // Avoid hard crash if env vars are missing / Supabase client is not configured.
+      // This can happen if NEXT_PUBLIC_SUPABASE_* vars are missing at runtime.
+      console.error(
+        "[AuthProvider] Supabase client not configured. Check NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY (or NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY)."
+      );
+      setSession(null);
+      setUser(null);
+      setLoading(false);
+      return;
+    }
+
+    const { data } = await auth.getSession();
     setSession(data.session);
     setUser(data.session?.user ?? null);
   }, []);
@@ -77,9 +91,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    const auth = (supabase as any)?.auth;
+    if (!auth) {
+      console.error(
+        "[AuthProvider] Supabase client not configured. Check NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY (or NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY)."
+      );
+      setLoading(false);
+      return;
+    }
+
     // Get initial session
     const initSession = async () => {
-      const { data } = await supabase.auth.getSession();
+      const { data } = await auth.getSession();
       setSession(data.session);
       setUser(data.session?.user ?? null);
       setLoading(false);
@@ -88,7 +111,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     initSession();
 
     // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+    const { data: { subscription } } = auth.onAuthStateChange(
       (_event, session) => {
         setSession(session);
         setUser(session?.user ?? null);
