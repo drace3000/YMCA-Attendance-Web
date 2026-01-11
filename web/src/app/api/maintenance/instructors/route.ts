@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
+import { requireRecipientAccess } from "@/lib/requireRecipientAccess";
 
 type InstructorRow = {
   id: string;
@@ -111,49 +112,108 @@ async function getNextReadableId(
 }
 
 // GET - List all instructors or check nickname availability
-export async function GET(req: Request): Promise<Response> {
+export async function GET(req: NextRequest): Promise<Response> {
+  const required = await requireRecipientAccess(req, { allowDevPassthrough: true });
+  if (!required.ok) return required.response;
+
   const { searchParams } = new URL(req.url);
   const checkNickname = searchParams.get("check_nickname");
-  const branchId = searchParams.get("branch_id");
+  const requestedBranchId = searchParams.get("branch_id");
   const firstName = searchParams.get("first_name") || "";
   const lastName = searchParams.get("last_name") || "";
   const includeInactive = searchParams.get("include_inactive") === "true";
 
   const supabase = createSupabaseServerClient();
 
+  const isBranchUser = required.access?.recipient_type === "Branch";
+  const branchId = isBranchUser ? required.access.branch_id : requestedBranchId;
+  if (!branchId) {
+    return NextResponse.json({ error: "branch_id is required" }, { status: 400 });
+  }
+
+  // Linked instructors for this branch (shared instructors)
+  const { data: linkedRows, error: linkedError } = await supabase
+    .from("instructor_branches")
+    .select("instructor_id")
+    .eq("branch_id", branchId);
+
+  if (linkedError) {
+    return NextResponse.json({ error: linkedError.message }, { status: 500 });
+  }
+
+  const linkedIds = (linkedRows ?? [])
+    .map((r: { instructor_id: string }) => r.instructor_id)
+    .filter(Boolean);
+
   // If checking nickname availability, return validation result with suggestions
   if (checkNickname) {
-    let query = supabase
+    const nickname = checkNickname.trim();
+
+    const ownedQuery = supabase
       .from("instructors")
       .select("id, nickname")
-      .ilike("nickname", checkNickname);
-    
-    if (branchId) {
-      query = query.eq("branch_id", branchId);
-    }
+      .ilike("nickname", nickname)
+      .eq("branch_id", branchId);
 
-    const { data, error } = await query;
+    const linkedQuery =
+      linkedIds.length > 0
+        ? supabase
+            .from("instructors")
+            .select("id, nickname")
+            .ilike("nickname", nickname)
+            .in("id", linkedIds)
+        : null;
+
+    const [{ data: ownedData, error: ownedError }, linkedRes] = await Promise.all([
+      ownedQuery,
+      linkedQuery ? linkedQuery : Promise.resolve({ data: [], error: null }),
+    ]);
+
+    const linkedData = (linkedRes as any)?.data ?? [];
+    const error = ownedError ?? (linkedRes as any)?.error ?? null;
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    const exists = (data?.length ?? 0) > 0;
+    const merged = [...(ownedData ?? []), ...(linkedData ?? [])];
+    const exists = (merged.length ?? 0) > 0;
     
     if (exists) {
       // Generate suggestions and filter out existing ones
       const allSuggestions = generateNicknameSuggestions(firstName, lastName);
       
       // Check which suggestions are available
-      let existingQuery = supabase
+      const ownedNickQuery = supabase
         .from("instructors")
-        .select("nickname");
-      if (branchId) {
-        existingQuery = existingQuery.eq("branch_id", branchId);
-      } else {
-        existingQuery = existingQuery.is("branch_id", null);
+        .select("nickname")
+        .eq("branch_id", branchId);
+
+      const linkedNickQuery =
+        linkedIds.length > 0
+          ? supabase
+              .from("instructors")
+              .select("nickname")
+              .in("id", linkedIds)
+          : null;
+
+      const [{ data: ownedNicknames, error: nickErr }, linkedNickRes] =
+        await Promise.all([
+          ownedNickQuery,
+          linkedNickQuery ? linkedNickQuery : Promise.resolve({ data: [], error: null }),
+        ]);
+
+      if (nickErr || (linkedNickRes as any)?.error) {
+        return NextResponse.json(
+          { error: (nickErr ?? (linkedNickRes as any)?.error)?.message ?? "Failed to validate nickname" },
+          { status: 500 },
+        );
       }
-      const { data: existingNicknames } = await existingQuery;
+
+      const existingNicknames = [
+        ...(ownedNicknames ?? []),
+        ...(((linkedNickRes as any)?.data ?? []) as any[]),
+      ];
 
       const takenNicknames = new Set(
         (existingNicknames ?? []).map((r) => (r.nickname ?? "").toUpperCase())
@@ -173,26 +233,54 @@ export async function GET(req: Request): Promise<Response> {
   }
 
   // Regular list query
-  let query = supabase
+  const ownedListQuery = supabase
     .from("instructors")
     .select("id, branch_id, raw_name, first_name, last_name, nickname, readable_id, is_active, created_at")
-    .order("nickname", { ascending: true, nullsFirst: false });
+    .eq("branch_id", branchId);
+
+  const linkedListQuery =
+    linkedIds.length > 0
+      ? supabase
+          .from("instructors")
+          .select("id, branch_id, raw_name, first_name, last_name, nickname, readable_id, is_active, created_at")
+          .in("id", linkedIds)
+      : null;
 
   if (!includeInactive) {
-    query = query.eq("is_active", true);
+    // Apply active filter to both queries
+    (ownedListQuery as any).eq("is_active", true);
+    if (linkedListQuery) (linkedListQuery as any).eq("is_active", true);
   }
 
-  const { data, error } = await query;
+  const [{ data: owned, error: ownedErr }, linkedListRes] = await Promise.all([
+    ownedListQuery,
+    linkedListQuery ? linkedListQuery : Promise.resolve({ data: [], error: null }),
+  ]);
+
+  const linked = (linkedListRes as any)?.data ?? [];
+  const error = ownedErr ?? (linkedListRes as any)?.error ?? null;
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json(data ?? []);
+  const byId = new Map<string, InstructorRow>();
+  for (const row of [...(owned ?? []), ...(linked ?? [])]) {
+    if (row?.id) byId.set(row.id, row);
+  }
+
+  const merged = Array.from(byId.values()).sort((a, b) =>
+    (a.nickname ?? "").localeCompare(b.nickname ?? "", undefined, { sensitivity: "base" })
+  );
+
+  return NextResponse.json(merged);
 }
 
 // POST - Create a new instructor
-export async function POST(req: Request): Promise<Response> {
+export async function POST(req: NextRequest): Promise<Response> {
+  const required = await requireRecipientAccess(req, { allowDevPassthrough: true });
+  if (!required.ok) return required.response;
+
   const supabase = createSupabaseServerClient();
 
   let body: CreateInstructorPayload;
@@ -202,7 +290,10 @@ export async function POST(req: Request): Promise<Response> {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { first_name, last_name, nickname, branch_id } = body;
+  const requestedBranchId = body.branch_id;
+  const branch_id =
+    required.access?.recipient_type === "Branch" ? required.access.branch_id : requestedBranchId;
+  const { first_name, last_name, nickname } = body;
 
   if (!first_name?.trim() || !last_name?.trim()) {
     return NextResponse.json(
@@ -301,7 +392,10 @@ export async function POST(req: Request): Promise<Response> {
 }
 
 // PUT - Update an instructor
-export async function PUT(req: Request): Promise<Response> {
+export async function PUT(req: NextRequest): Promise<Response> {
+  const required = await requireRecipientAccess(req, { allowDevPassthrough: true });
+  if (!required.ok) return required.response;
+
   const supabase = createSupabaseServerClient();
 
   let body: UpdateInstructorPayload;
@@ -326,6 +420,23 @@ export async function PUT(req: Request): Promise<Response> {
 
   if (!current) {
     return NextResponse.json({ error: "Instructor not found" }, { status: 404 });
+  }
+
+  // Branch users may only update instructors that are in-scope (owned OR linked).
+  if (required.access?.recipient_type === "Branch") {
+    const branchId = required.access.branch_id;
+    const isOwned = current.branch_id === branchId;
+    if (!isOwned) {
+      const { data: link } = await supabase
+        .from("instructor_branches")
+        .select("instructor_id")
+        .eq("branch_id", branchId)
+        .eq("instructor_id", id)
+        .maybeSingle();
+      if (!link) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+    }
   }
 
   // Check nickname uniqueness if changing
@@ -378,7 +489,10 @@ export async function PUT(req: Request): Promise<Response> {
 }
 
 // PATCH - Toggle is_active status (soft delete/restore)
-export async function PATCH(req: Request): Promise<Response> {
+export async function PATCH(req: NextRequest): Promise<Response> {
+  const required = await requireRecipientAccess(req, { allowDevPassthrough: true });
+  if (!required.ok) return required.response;
+
   const supabase = createSupabaseServerClient();
 
   let body: { id: string; is_active: boolean };
@@ -395,6 +509,32 @@ export async function PATCH(req: Request): Promise<Response> {
       { error: "id and is_active are required" },
       { status: 400 }
     );
+  }
+
+  if (required.access?.recipient_type === "Branch") {
+    const branchId = required.access.branch_id;
+    const { data: current } = await supabase
+      .from("instructors")
+      .select("id, branch_id")
+      .eq("id", id)
+      .single();
+
+    if (!current) {
+      return NextResponse.json({ error: "Instructor not found" }, { status: 404 });
+    }
+
+    const isOwned = current.branch_id === branchId;
+    if (!isOwned) {
+      const { data: link } = await supabase
+        .from("instructor_branches")
+        .select("instructor_id")
+        .eq("branch_id", branchId)
+        .eq("instructor_id", id)
+        .maybeSingle();
+      if (!link) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+    }
   }
 
   const { data, error } = await supabase

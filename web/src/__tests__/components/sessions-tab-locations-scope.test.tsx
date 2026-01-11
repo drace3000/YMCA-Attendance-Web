@@ -27,7 +27,7 @@ describe("SessionsTab reference data", () => {
     vi.unstubAllGlobals()
   })
 
-  it("fetches locations scoped to branch_id", async () => {
+  it("fetches locations + instructors scoped to branch_id", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url.includes("/api/maintenance/classes")) return mockJson(true, [])
@@ -58,6 +58,13 @@ describe("SessionsTab reference data", () => {
     expect(locationsCall).toBeTruthy()
     expect(String(locationsCall?.[0])).toContain("include_inactive=true")
     expect(String(locationsCall?.[0])).toContain("branch_id=br-1")
+
+    const instructorsCall = fetchMock.mock.calls.find(([arg]) =>
+      String(arg).includes("/api/maintenance/instructors")
+    )
+    expect(instructorsCall).toBeTruthy()
+    expect(String(instructorsCall?.[0])).toContain("include_inactive=true")
+    expect(String(instructorsCall?.[0])).toContain("branch_id=br-1")
   })
 })
 

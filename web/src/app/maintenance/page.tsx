@@ -8,6 +8,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { AdminHierarchySelectorBar } from "./admin-hierarchy-selector-bar";
 import { InstructorsTab } from "./instructors-tab";
 import { ClassesTab } from "./classes-tab";
 import { LocationsTab } from "./locations-tab";
@@ -113,6 +114,9 @@ export default function MaintenancePage() {
 
       {/* Tab Navigation */}
       <div className="rounded-2xl border border-border bg-card shadow-sm">
+        <div className="border-b border-border p-4">
+          <AdminHierarchySelectorBar />
+        </div>
         <div className="flex flex-wrap gap-1 rounded-t-2xl bg-[var(--brand-gradient-strong)] p-2">
           {tabs.map((tab) => (
             <button

@@ -42,6 +42,54 @@ type UpdateSessionPayload = {
   headcount?: number | null;
 };
 
+async function validateInstructorsForBranch(
+  supabase: ReturnType<typeof createSupabaseServerClient>,
+  branchId: string,
+  instructorIds: string[],
+): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+  const ids = instructorIds.filter(Boolean);
+  if (ids.length === 0) return { ok: true };
+
+  const [
+    { data: instructorRows, error: instError },
+    { data: linkRows, error: linkError },
+  ] = await Promise.all([
+    supabase.from("instructors").select("id, branch_id").in("id", ids),
+    supabase
+      .from("instructor_branches")
+      .select("instructor_id")
+      .eq("branch_id", branchId)
+      .in("instructor_id", ids),
+  ]);
+
+  if (instError) return { ok: false, status: 500, error: instError.message };
+  if (linkError) return { ok: false, status: 500, error: linkError.message };
+
+  const owned = new Set(
+    (instructorRows ?? [])
+      .filter((r: { id: string; branch_id: string | null }) => r.branch_id === branchId)
+      .map((r: { id: string }) => r.id),
+  );
+  const linked = new Set(
+    (linkRows ?? [])
+      .map((r: { instructor_id: string }) => r.instructor_id)
+      .filter(Boolean),
+  );
+
+  const allowed = new Set<string>([...owned, ...linked]);
+  const invalid = ids.filter((id) => !allowed.has(id));
+
+  if (invalid.length > 0) {
+    return {
+      ok: false,
+      status: 409,
+      error: "Selected instructor is not available for this branch",
+    };
+  }
+
+  return { ok: true };
+}
+
 // GET - List sessions for a schedule and branch
 export async function GET(req: NextRequest): Promise<Response> {
   const required = await requireRecipientAccess(req, { allowDevPassthrough: true });
@@ -210,6 +258,14 @@ export async function POST(req: NextRequest): Promise<Response> {
     }
   }
 
+  // Ensure selected instructors (if any) are available for this branch.
+  if (instructor_ids && instructor_ids.length > 0) {
+    const validation = await validateInstructorsForBranch(supabase, branch_id, instructor_ids);
+    if (!validation.ok) {
+      return NextResponse.json({ error: validation.error }, { status: validation.status });
+    }
+  }
+
   // Insert the session
   const { data: session, error: sessionError } = await supabase
     .from("class_sessions")
@@ -273,29 +329,32 @@ export async function PUT(req: NextRequest): Promise<Response> {
 
   const supabase = createSupabaseServerClient();
 
+  const getEffectiveBranchIdForSession = async (): Promise<
+    { ok: true; branchId: string } | { ok: false; status: number; error: string }
+  > => {
+    if (required.access?.recipient_type === "Branch") {
+      return { ok: true, branchId: required.access.branch_id };
+    }
+
+    const { data: sessionRow, error: sessionError } = await supabase
+      .from("class_sessions")
+      .select("branch_id")
+      .eq("id", id)
+      .single();
+
+    if (sessionError) return { ok: false, status: 500, error: sessionError.message };
+    if (!sessionRow?.branch_id) return { ok: false, status: 404, error: "Session not found" };
+
+    return { ok: true, branchId: sessionRow.branch_id };
+  };
+
   // Friendly validation: if updating location_id, ensure it belongs to the session's branch.
   if (updates.location_id !== undefined) {
-    let effectiveBranchId: string | null = null;
-
-    if (required.access?.recipient_type === "Branch") {
-      effectiveBranchId = required.access.branch_id;
-    } else {
-      const { data: sessionRow, error: sessionError } = await supabase
-        .from("class_sessions")
-        .select("branch_id")
-        .eq("id", id)
-        .single();
-
-      if (sessionError) {
-        return NextResponse.json({ error: sessionError.message }, { status: 500 });
-      }
-
-      effectiveBranchId = sessionRow?.branch_id ?? null;
+    const branchRes = await getEffectiveBranchIdForSession();
+    if (!branchRes.ok) {
+      return NextResponse.json({ error: branchRes.error }, { status: branchRes.status });
     }
-
-    if (!effectiveBranchId) {
-      return NextResponse.json({ error: "Session not found" }, { status: 404 });
-    }
+    const effectiveBranchId = branchRes.branchId;
 
     const { data: locationRow, error: locationError } = await supabase
       .from("locations")
@@ -341,6 +400,22 @@ export async function PUT(req: NextRequest): Promise<Response> {
 
   // Update instructor assignments if provided
   if (instructor_ids !== undefined) {
+    const branchRes = await getEffectiveBranchIdForSession();
+    if (!branchRes.ok) {
+      return NextResponse.json({ error: branchRes.error }, { status: branchRes.status });
+    }
+
+    if (instructor_ids.length > 0) {
+      const validation = await validateInstructorsForBranch(
+        supabase,
+        branchRes.branchId,
+        instructor_ids,
+      );
+      if (!validation.ok) {
+        return NextResponse.json({ error: validation.error }, { status: validation.status });
+      }
+    }
+
     // Delete existing assignments
     // (Instructor links are scoped to the session_id; branch scoping is enforced above.)
     const { error: deleteError } = await supabase

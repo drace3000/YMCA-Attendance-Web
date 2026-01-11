@@ -69,6 +69,7 @@ export function InstructorsTab() {
     try {
       const params = new URLSearchParams();
       if (showInactive) params.set("include_inactive", "true");
+      params.set("branch_id", branch.id);
       const res = await fetch(`/api/maintenance/instructors?${params}`);
       if (!res.ok) throw new Error("Failed to load instructors");
       const data = await res.json();
@@ -78,7 +79,7 @@ export function InstructorsTab() {
     } finally {
       setLoading(false);
     }
-  }, [showInactive]);
+  }, [showInactive, branch.id]);
 
   useEffect(() => {
     void loadInstructors();
