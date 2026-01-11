@@ -1,17 +1,20 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
+import { requireRecipientAccess } from "@/lib/requireRecipientAccess";
 
 type LocationRow = {
   id: string;
   code: string;
   name: string;
   is_active: boolean;
+  branch_id: string;
   created_at: string;
 };
 
 type CreateLocationPayload = {
   code: string;
   name: string;
+  branch_id?: string;
 };
 
 type UpdateLocationPayload = {
@@ -19,15 +22,26 @@ type UpdateLocationPayload = {
   code?: string;
   name?: string;
   is_active?: boolean;
+  branch_id?: string;
 };
 
 // GET - List all locations or check code/name availability
-export async function GET(req: Request): Promise<Response> {
+export async function GET(req: NextRequest): Promise<Response> {
+  const required = await requireRecipientAccess(req, { allowDevPassthrough: true });
+  if (!required.ok) return required.response;
+
   const { searchParams } = new URL(req.url);
   const checkCode = searchParams.get("check_code");
   const checkName = searchParams.get("check_name");
   const excludeId = searchParams.get("exclude_id");
   const includeInactive = searchParams.get("include_inactive") === "true";
+  const requestedBranchId = searchParams.get("branch_id");
+
+  const isBranchUser = required.access?.recipient_type === "Branch";
+  const branchId = isBranchUser ? required.access.branch_id : requestedBranchId;
+  if (!branchId) {
+    return NextResponse.json({ error: "branch_id is required" }, { status: 400 });
+  }
 
   const supabase = createSupabaseServerClient();
 
@@ -37,6 +51,8 @@ export async function GET(req: Request): Promise<Response> {
       .from("locations")
       .select("id, code")
       .ilike("code", checkCode.trim());
+
+    query = query.eq("branch_id", branchId);
 
     if (excludeId) {
       query = query.neq("id", excludeId);
@@ -59,6 +75,8 @@ export async function GET(req: Request): Promise<Response> {
       .select("id, name")
       .ilike("name", checkName.trim());
 
+    query = query.eq("branch_id", branchId);
+
     if (excludeId) {
       query = query.neq("id", excludeId);
     }
@@ -76,8 +94,10 @@ export async function GET(req: Request): Promise<Response> {
   // Regular list query
   let query = supabase
     .from("locations")
-    .select("id, code, name, is_active, created_at")
+    .select("id, code, name, is_active, branch_id, created_at")
     .order("name", { ascending: true });
+
+  query = query.eq("branch_id", branchId);
 
   if (!includeInactive) {
     query = query.eq("is_active", true);
@@ -93,7 +113,10 @@ export async function GET(req: Request): Promise<Response> {
 }
 
 // POST - Create a new location
-export async function POST(req: Request): Promise<Response> {
+export async function POST(req: NextRequest): Promise<Response> {
+  const required = await requireRecipientAccess(req, { allowDevPassthrough: true });
+  if (!required.ok) return required.response;
+
   const supabase = createSupabaseServerClient();
 
   let body: CreateLocationPayload;
@@ -104,6 +127,9 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   const { code, name } = body;
+  const requestedBranchId = body.branch_id;
+  const isBranchUser = required.access?.recipient_type === "Branch";
+  const branch_id = isBranchUser ? required.access.branch_id : requestedBranchId;
 
   if (!code?.trim() || !name?.trim()) {
     return NextResponse.json(
@@ -111,12 +137,16 @@ export async function POST(req: Request): Promise<Response> {
       { status: 400 }
     );
   }
+  if (!branch_id) {
+    return NextResponse.json({ error: "branch_id is required" }, { status: 400 });
+  }
 
   // Check code uniqueness
   const { data: existingCode } = await supabase
     .from("locations")
     .select("id")
-    .ilike("code", code.trim());
+    .ilike("code", code.trim())
+    .eq("branch_id", branch_id);
 
   if (existingCode && existingCode.length > 0) {
     return NextResponse.json(
@@ -129,7 +159,8 @@ export async function POST(req: Request): Promise<Response> {
   const { data: existingName } = await supabase
     .from("locations")
     .select("id")
-    .ilike("name", name.trim());
+    .ilike("name", name.trim())
+    .eq("branch_id", branch_id);
 
   if (existingName && existingName.length > 0) {
     return NextResponse.json(
@@ -143,6 +174,7 @@ export async function POST(req: Request): Promise<Response> {
     .insert({
       code: code.trim(),
       name: name.trim(),
+      branch_id,
       is_active: true,
     })
     .select()
@@ -156,7 +188,10 @@ export async function POST(req: Request): Promise<Response> {
 }
 
 // PUT - Update a location
-export async function PUT(req: Request): Promise<Response> {
+export async function PUT(req: NextRequest): Promise<Response> {
+  const required = await requireRecipientAccess(req, { allowDevPassthrough: true });
+  if (!required.ok) return required.response;
+
   const supabase = createSupabaseServerClient();
 
   let body: UpdateLocationPayload;
@@ -175,7 +210,7 @@ export async function PUT(req: Request): Promise<Response> {
   // Check if location exists
   const { data: current } = await supabase
     .from("locations")
-    .select("id, code, name")
+    .select("id, code, name, branch_id")
     .eq("id", id)
     .single();
 
@@ -183,13 +218,21 @@ export async function PUT(req: Request): Promise<Response> {
     return NextResponse.json({ error: "Location not found" }, { status: 404 });
   }
 
+  const isBranchUser = required.access?.recipient_type === "Branch";
+  if (isBranchUser && current.branch_id !== required.access.branch_id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const effectiveBranchId = current.branch_id;
+
   // Check code uniqueness if changing
   if (code !== undefined && code.trim().toLowerCase() !== current.code.toLowerCase()) {
     const { data: existing } = await supabase
       .from("locations")
       .select("id")
       .ilike("code", code.trim())
-      .neq("id", id);
+      .neq("id", id)
+      .eq("branch_id", effectiveBranchId);
 
     if (existing && existing.length > 0) {
       return NextResponse.json(
@@ -205,7 +248,8 @@ export async function PUT(req: Request): Promise<Response> {
       .from("locations")
       .select("id")
       .ilike("name", name.trim())
-      .neq("id", id);
+      .neq("id", id)
+      .eq("branch_id", effectiveBranchId);
 
     if (existing && existing.length > 0) {
       return NextResponse.json(
@@ -235,7 +279,10 @@ export async function PUT(req: Request): Promise<Response> {
 }
 
 // PATCH - Toggle is_active status (soft delete/restore)
-export async function PATCH(req: Request): Promise<Response> {
+export async function PATCH(req: NextRequest): Promise<Response> {
+  const required = await requireRecipientAccess(req, { allowDevPassthrough: true });
+  if (!required.ok) return required.response;
+
   const supabase = createSupabaseServerClient();
 
   let body: { id: string; is_active: boolean };
@@ -252,6 +299,21 @@ export async function PATCH(req: Request): Promise<Response> {
       { error: "id and is_active are required" },
       { status: 400 }
     );
+  }
+
+  const { data: current } = await supabase
+    .from("locations")
+    .select("id, branch_id")
+    .eq("id", id)
+    .single();
+
+  if (!current) {
+    return NextResponse.json({ error: "Location not found" }, { status: 404 });
+  }
+
+  const isBranchUser = required.access?.recipient_type === "Branch";
+  if (isBranchUser && current.branch_id !== required.access.branch_id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const { data, error } = await supabase

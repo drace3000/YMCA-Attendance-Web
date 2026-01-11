@@ -8,7 +8,7 @@ const OTHER_BRANCH_ID = "22222222-2222-2222-2222-222222222222";
 
 vi.mock("@/hooks/useBranchAccess", () => ({
   useBranchAccess: () => ({
-    isNormal: true,
+    isBranch: true,
     branchId: ASSIGNED_BRANCH_ID,
   }),
 }));
@@ -28,7 +28,7 @@ function Probe() {
   );
 }
 
-describe("Phase 8 - ThemeSettingsProvider (Normal user branch lock)", () => {
+describe("Phase 8 - ThemeSettingsProvider (Branch user branch lock)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // Provide a predictable localStorage implementation for this test file.
@@ -59,7 +59,7 @@ describe("Phase 8 - ThemeSettingsProvider (Normal user branch lock)", () => {
     }
   });
 
-  it("forces stored branch to the assigned branch for Normal users", async () => {
+  it("forces stored branch to the assigned branch for Branch users", async () => {
     window.localStorage.setItem(
       "ymca-theme",
       JSON.stringify({

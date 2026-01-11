@@ -6,7 +6,7 @@ import { useAuth } from "@/components/auth-provider";
 
 type RecipientAccessResponse = {
   recipient: {
-    recipient_type: "Administrator" | "Normal";
+    recipient_type: "Administrator" | "Branch";
     is_active: boolean;
     needs_password_setup: boolean;
     branch_id: string;
@@ -17,7 +17,7 @@ type RecipientAccessResponse = {
 
 export interface UserAccess {
   isAdmin: boolean;
-  isNormal: boolean;
+  isBranch: boolean;
   allianceId: string | null;
   associationId: string | null;
   branchId: string | null;
@@ -71,7 +71,7 @@ export function useBranchAccess(): UserAccess {
   }, [data, recipientContext, setRecipientContext]);
 
   const isAdmin = recipientContext.recipient_type === "Administrator";
-  const isNormal = recipientContext.recipient_type === "Normal";
+  const isBranch = recipientContext.recipient_type === "Branch";
 
   const allianceId = recipientContext.alliance_id ?? null;
   const associationId = recipientContext.association_id ?? null;
@@ -80,7 +80,7 @@ export function useBranchAccess(): UserAccess {
   return useMemo(
     () => ({
       isAdmin,
-      isNormal,
+      isBranch,
       allianceId,
       associationId,
       branchId,
@@ -97,7 +97,7 @@ export function useBranchAccess(): UserAccess {
         return !!branchId && branchId === targetBranchId;
       },
     }),
-    [isAdmin, isNormal, allianceId, associationId, branchId],
+    [isAdmin, isBranch, allianceId, associationId, branchId],
   );
 }
 

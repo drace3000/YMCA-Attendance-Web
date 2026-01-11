@@ -80,7 +80,7 @@ export default function SettingsPage() {
     sidebarPosition,
     setSidebarPosition,
   } = useThemeSettings();
-  const { isNormal } = useBranchAccess();
+  const { isBranch } = useBranchAccess();
   const [branches, setBranches] = useState<BranchOption[]>([branch]);
   const [branchThemeColors, setBranchThemeColors] = useState<Record<string, string>>({
     [branch.id]: brandColor,
@@ -329,14 +329,14 @@ export default function SettingsPage() {
 
       <section className="grid gap-4 md:grid-cols-2">
         <Card
-          title={isNormal ? "Your Branch" : "Branch selection"}
-          description={isNormal ? "Your branch is locked to your account." : "Pick your assigned branch."}
+          title={isBranch ? "Your Branch" : "Branch selection"}
+          description={isBranch ? "Your branch is locked to your account." : "Pick your assigned branch."}
         >
           {loadingBranches ? (
             <div className="text-sm text-muted-foreground">Loading branches…</div>
           ) : error ? (
             <div className="text-sm text-red-600">{error}</div>
-          ) : isNormal ? (
+          ) : isBranch ? (
             <div className="btn-pill inline-flex items-center border border-white/10 bg-black/20 px-3 py-2 text-sm font-semibold text-foreground">
               Your Branch: {branch.name}
             </div>

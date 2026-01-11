@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Check, Edit2, Plus, Search, X } from "lucide-react";
+import { useThemeSettings } from "@/components/theme-settings-provider";
 import {
   Popover,
   PopoverArrow,
@@ -14,6 +15,7 @@ type Location = {
   code: string;
   name: string;
   is_active: boolean;
+  branch_id: string;
   created_at: string;
 };
 
@@ -28,6 +30,7 @@ type ValidationState = {
 };
 
 export function LocationsTab() {
+  const { branch } = useThemeSettings();
   const [locations, setLocations] = useState<Location[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -63,6 +66,7 @@ export function LocationsTab() {
     try {
       const params = new URLSearchParams();
       if (showInactive) params.set("include_inactive", "true");
+      params.set("branch_id", branch.id);
       const res = await fetch(`/api/maintenance/locations?${params}`);
       if (!res.ok) throw new Error("Failed to load locations");
       const data = await res.json();
@@ -72,7 +76,7 @@ export function LocationsTab() {
     } finally {
       setLoading(false);
     }
-  }, [showInactive]);
+  }, [showInactive, branch.id]);
 
   useEffect(() => {
     void loadLocations();
@@ -91,6 +95,7 @@ export function LocationsTab() {
         const params = new URLSearchParams({
           check_code: formData.code.trim(),
         });
+        params.set("branch_id", branch.id);
         if (editingId) {
           params.set("exclude_id", editingId);
         }
@@ -122,6 +127,7 @@ export function LocationsTab() {
         const params = new URLSearchParams({
           check_name: formData.name.trim(),
         });
+        params.set("branch_id", branch.id);
         if (editingId) {
           params.set("exclude_id", editingId);
         }
@@ -183,8 +189,8 @@ export function LocationsTab() {
     try {
       const method = editingId ? "PUT" : "POST";
       const body = editingId
-        ? { id: editingId, ...formData }
-        : formData;
+        ? { id: editingId, ...formData, branch_id: branch.id }
+        : { ...formData, branch_id: branch.id };
 
       const res = await fetch("/api/maintenance/locations", {
         method,

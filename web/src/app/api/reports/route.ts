@@ -222,8 +222,8 @@ export async function GET(req: NextRequest): Promise<Response> {
     .eq("session_instructors.instructor_id", instructor)
     .order("session_date", { ascending: true, nullsFirst: false });
 
-  // Phase 9: Branch-level access control for Normal users.
-  if (required.access?.recipient_type === "Normal") {
+  // Phase 9: Branch-level access control for Branch users.
+  if (required.access?.recipient_type === "Branch") {
     baseQuery = baseQuery.eq("branch_id", required.access.branch_id);
     instructorQuery = instructorQuery.eq("branch_id", required.access.branch_id);
   }

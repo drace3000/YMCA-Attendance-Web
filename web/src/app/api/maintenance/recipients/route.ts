@@ -19,7 +19,8 @@ type RecipientRow = {
   state: string | null;
   zip_code: string | null;
   on_hold: boolean;
-  recipient_type: "Administrator" | "Normal";
+  recipient_type: "Administrator" | "Branch" | "Member" | "Normal";
+  receives_reports?: boolean;
   created_at: string;
   auth_user_id?: string | null;
   is_active?: boolean;
@@ -37,7 +38,8 @@ type CreateRecipientPayload = {
   city?: string;
   state?: string;
   zip_code?: string;
-  recipient_type?: "Administrator" | "Normal";
+  recipient_type?: "Administrator" | "Branch" | "Member" | "Normal";
+  receives_reports?: boolean;
   /**
    * If true, create a linked Supabase Auth user and send onboarding email instructions.
    * This uses email OTP for first-time login (no temporary passwords).
@@ -56,7 +58,8 @@ type UpdateRecipientPayload = {
   state?: string;
   zip_code?: string;
   on_hold?: boolean;
-  recipient_type?: "Administrator" | "Normal";
+  recipient_type?: "Administrator" | "Branch" | "Member" | "Normal";
+  receives_reports?: boolean;
 };
 
 // Validation patterns
@@ -192,7 +195,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const branchId = searchParams.get("branch_id");
 
   const effectiveBranchId =
-    required.access?.recipient_type === "Normal" ? required.access.branch_id : branchId;
+    required.access?.recipient_type === "Branch" ? required.access.branch_id : branchId;
 
   if (!effectiveBranchId && !("devPassthrough" in required)) {
     return NextResponse.json({ error: "branch_id is required" }, { status: 400 });
@@ -204,18 +207,20 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   const supabase = createSupabaseServerClient();
 
+  const isBranchUser = required.access?.recipient_type === "Branch";
+  const selectColumns = isBranchUser
+    ? "id, branch_id, email, first_name, last_name, on_hold, recipient_type, receives_reports, created_at"
+    : "id, branch_id, email, first_name, last_name, phone, address, city, state, zip_code, on_hold, recipient_type, receives_reports, created_at, auth_user_id, is_active, needs_password_setup, last_login_at";
+
   let query = supabase
     .from("branch_schedule_recipients")
-    .select(
-      "id, branch_id, email, first_name, last_name, phone, address, city, state, zip_code, on_hold, recipient_type, created_at, auth_user_id, is_active, needs_password_setup, last_login_at",
-    )
+    .select(selectColumns)
     .order("on_hold", { ascending: true })
     .order("email", { ascending: true });
 
-  // Normal users can only read their own record.
-  if (required.access?.recipient_type === "Normal") {
-    query = query.eq("email", required.access.email);
-  } else if (effectiveBranchId) {
+  // Branch users can list recipients for their own branch (used by report Email To/CC/BCC pickers).
+  // Admins can list recipients for any selected branch.
+  if (effectiveBranchId) {
     query = query.eq("branch_id", effectiveBranchId);
   }
 
@@ -239,7 +244,7 @@ export async function GET(req: NextRequest): Promise<Response> {
 export async function POST(req: NextRequest): Promise<Response> {
   const required = await requireRecipientAccess(req, { allowDevPassthrough: true });
   if (!required.ok) return required.response;
-  if (required.access?.recipient_type === "Normal") {
+  if (required.access?.recipient_type === "Branch") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -252,7 +257,20 @@ export async function POST(req: NextRequest): Promise<Response> {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { branch_id, email, first_name, last_name, phone, address, city, state, zip_code, recipient_type, create_auth_user } = body;
+  const {
+    branch_id,
+    email,
+    first_name,
+    last_name,
+    phone,
+    address,
+    city,
+    state,
+    zip_code,
+    recipient_type,
+    receives_reports,
+    create_auth_user,
+  } = body;
 
   if (!branch_id) {
     return NextResponse.json({ error: "branch_id is required" }, { status: 400 });
@@ -273,7 +291,20 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const normalizedEmail = normalizeEmail(email);
 
-  const shouldCreateAuthUser = create_auth_user === true;
+  const normalizedType =
+    recipient_type === "Normal"
+      ? "Branch"
+      : recipient_type ?? "Branch";
+  if (
+    normalizedType !== "Administrator" &&
+    normalizedType !== "Branch" &&
+    normalizedType !== "Member"
+  ) {
+    return NextResponse.json({ error: "Invalid recipient_type" }, { status: 400 });
+  }
+
+  const shouldCreateAuthUser =
+    normalizedType === "Member" ? false : create_auth_user === true;
 
   // Validate phone format if provided
   if (phone && !validatePhone(phone)) {
@@ -361,10 +392,12 @@ export async function POST(req: NextRequest): Promise<Response> {
       city: city?.trim() || null,
       state: state?.trim().toUpperCase() || null,
       zip_code: zip_code?.trim() || null,
-      recipient_type: recipient_type || "Normal",
+      recipient_type: normalizedType,
+      receives_reports:
+        normalizedType === "Member" ? !!receives_reports : false,
       auth_user_id: authUserId,
       is_active: true,
-      needs_password_setup: true,
+      needs_password_setup: shouldCreateAuthUser ? true : false,
     })
     .select()
     .single();
@@ -409,7 +442,7 @@ export async function POST(req: NextRequest): Promise<Response> {
 export async function PUT(req: NextRequest): Promise<Response> {
   const required = await requireRecipientAccess(req, { allowDevPassthrough: true });
   if (!required.ok) return required.response;
-  if (required.access?.recipient_type === "Normal") {
+  if (required.access?.recipient_type === "Branch") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -422,7 +455,20 @@ export async function PUT(req: NextRequest): Promise<Response> {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { id, email, first_name, last_name, phone, address, city, state, zip_code, on_hold, recipient_type } = body;
+  const {
+    id,
+    email,
+    first_name,
+    last_name,
+    phone,
+    address,
+    city,
+    state,
+    zip_code,
+    on_hold,
+    recipient_type,
+    receives_reports,
+  } = body;
 
   if (!id) {
     return NextResponse.json({ error: "id is required" }, { status: 400 });
@@ -486,7 +532,23 @@ export async function PUT(req: NextRequest): Promise<Response> {
   if (city !== undefined) updates.city = city?.trim() || null;
   if (state !== undefined) updates.state = state?.trim().toUpperCase() || null;
   if (on_hold !== undefined) updates.on_hold = !!on_hold;
-  if (recipient_type !== undefined) updates.recipient_type = recipient_type;
+  const nextType =
+    recipient_type === "Normal" ? "Branch" : recipient_type;
+  if (nextType !== undefined) {
+    if (nextType !== "Administrator" && nextType !== "Branch" && nextType !== "Member") {
+      return NextResponse.json({ error: "Invalid recipient_type" }, { status: 400 });
+    }
+    updates.recipient_type = nextType;
+    // Members are email-only; keep their report opt-in. Non-members are always false.
+    updates.receives_reports = nextType === "Member" ? !!receives_reports : false;
+    // If switching to Member, ensure it never appears as pending password setup.
+    if (nextType === "Member") {
+      updates.needs_password_setup = false;
+    }
+  } else if (receives_reports !== undefined) {
+    // Allow toggling report opt-in without changing type (Member recipients only).
+    updates.receives_reports = !!receives_reports;
+  }
 
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "No fields to update" }, { status: 400 });
@@ -515,7 +577,7 @@ export async function PUT(req: NextRequest): Promise<Response> {
 export async function PATCH(req: NextRequest): Promise<Response> {
   const required = await requireRecipientAccess(req, { allowDevPassthrough: true });
   if (!required.ok) return required.response;
-  if (required.access?.recipient_type === "Normal") {
+  if (required.access?.recipient_type === "Branch") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -561,7 +623,7 @@ export async function PATCH(req: NextRequest): Promise<Response> {
 export async function DELETE(req: NextRequest): Promise<Response> {
   const required = await requireRecipientAccess(req, { allowDevPassthrough: true });
   if (!required.ok) return required.response;
-  if (required.access?.recipient_type === "Normal") {
+  if (required.access?.recipient_type === "Branch") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

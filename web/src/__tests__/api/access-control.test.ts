@@ -48,12 +48,12 @@ describe("Phase 9 - API access control", () => {
     expect(res.status).toBe(401);
   });
 
-  it("forces Normal users to their branch_id (schedules)", async () => {
+  it("forces Branch users to their branch_id (schedules)", async () => {
     mockRequireRecipientAccess.mockResolvedValueOnce({
       ok: true,
       access: {
         email: "manager@ymca.org",
-        recipient_type: "Normal",
+        recipient_type: "Branch",
         is_active: true,
         needs_password_setup: false,
         last_login_at: null,
@@ -75,12 +75,12 @@ describe("Phase 9 - API access control", () => {
     expect(eqCalls).toContainEqual({ column: "branch_id", value: "br-allowed" });
   });
 
-  it("scopes report queries to branch_id for Normal users (reports)", async () => {
+  it("scopes report queries to branch_id for Branch users (reports)", async () => {
     mockRequireRecipientAccess.mockResolvedValueOnce({
       ok: true,
       access: {
         email: "manager@ymca.org",
-        recipient_type: "Normal",
+        recipient_type: "Branch",
         is_active: true,
         needs_password_setup: false,
         last_login_at: null,

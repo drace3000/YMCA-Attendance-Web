@@ -13,7 +13,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const supabase = createSupabaseServerClient();
 
   const branchId =
-    required.access?.recipient_type === "Normal"
+    required.access?.recipient_type === "Branch"
       ? required.access.branch_id
       : requestedBranchId;
 

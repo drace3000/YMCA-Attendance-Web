@@ -7,7 +7,7 @@ type MockAuthState = {
   loading: boolean;
   isDevMode: boolean;
   recipientContext: {
-    recipient_type: "Administrator" | "Normal" | null;
+    recipient_type: "Administrator" | "Branch" | null;
     branch_id: string | null;
     association_id: string | null;
     alliance_id: string | null;
@@ -56,7 +56,7 @@ describe("Phase 7 - useBranchAccess", () => {
   it("returns safe defaults when unauthenticated", () => {
     const { result } = renderHook(() => useBranchAccess(), { wrapper: createWrapper() });
     expect(result.current.isAdmin).toBe(false);
-    expect(result.current.isNormal).toBe(false);
+    expect(result.current.isBranch).toBe(false);
     expect(result.current.branchId).toBeNull();
     expect(result.current.associationId).toBeNull();
     expect(result.current.allianceId).toBeNull();
@@ -81,12 +81,12 @@ describe("Phase 7 - useBranchAccess", () => {
     expect(result.current.canAccessBranch("z")).toBe(true);
   });
 
-  it("restricts Normal access to its chain ids", () => {
+  it("restricts Branch access to its chain ids", () => {
     mockAuth = {
       ...mockAuth,
       isDevMode: true,
       recipientContext: {
-        recipient_type: "Normal",
+        recipient_type: "Branch",
         branch_id: "br-1",
         association_id: "assoc-1",
         alliance_id: "all-1",
@@ -94,7 +94,7 @@ describe("Phase 7 - useBranchAccess", () => {
     };
 
     const { result } = renderHook(() => useBranchAccess(), { wrapper: createWrapper() });
-    expect(result.current.isNormal).toBe(true);
+    expect(result.current.isBranch).toBe(true);
     expect(result.current.canAccessBranch("br-1")).toBe(true);
     expect(result.current.canAccessBranch("br-2")).toBe(false);
     expect(result.current.canAccessAssociation("assoc-1")).toBe(true);
@@ -116,7 +116,7 @@ describe("Phase 7 - useBranchAccess", () => {
         ok: true,
         json: async () => ({
           recipient: {
-            recipient_type: "Normal",
+            recipient_type: "Branch",
             is_active: true,
             needs_password_setup: false,
             branch_id: "br-1",
@@ -131,7 +131,7 @@ describe("Phase 7 - useBranchAccess", () => {
 
     await waitFor(() => {
       expect(mockAuth.setRecipientContext).toHaveBeenCalledWith({
-        recipient_type: "Normal",
+        recipient_type: "Branch",
         branch_id: "br-1",
         association_id: "assoc-1",
         alliance_id: "all-1",

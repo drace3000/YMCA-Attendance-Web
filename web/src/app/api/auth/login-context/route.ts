@@ -12,7 +12,7 @@ export type LoginContextResponse = {
   recipient: {
     id: string;
     email: string;
-    recipient_type: "Administrator" | "Normal";
+    recipient_type: "Administrator" | "Branch";
     branch_id: string;
     association_id: string | null;
     alliance_id: string | null;
@@ -63,6 +63,12 @@ export async function POST(req: NextRequest): Promise<Response> {
 
     if (recipient.is_active === false) {
       return NextResponse.json({ error: "Account deactivated" }, { status: 403 });
+    }
+
+    const recipientType =
+      recipient.recipient_type === "Normal" ? "Branch" : recipient.recipient_type;
+    if (recipientType === "Member") {
+      return NextResponse.json({ error: "Account not permitted" }, { status: 403 });
     }
 
     // Load branch + hierarchy (best-effort)
@@ -126,7 +132,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       recipient: {
         id: recipient.id,
         email: recipient.email,
-        recipient_type: recipient.recipient_type,
+        recipient_type: recipientType,
         branch_id: recipient.branch_id,
         association_id: branch?.association_id ?? null,
         alliance_id: assocRel?.alliance_id ?? null,

@@ -7,7 +7,7 @@ import { serverErrorResponse } from "@/lib/server-api-error";
 
 export type RecipientAccess = {
   email: string;
-  recipient_type: "Administrator" | "Normal";
+  recipient_type: "Administrator" | "Branch";
   is_active: boolean;
   needs_password_setup: boolean;
   last_login_at: string | null;
@@ -20,7 +20,7 @@ export type RecipientAccess = {
 type RecipientRow = {
   id: string;
   email: string;
-  recipient_type: "Administrator" | "Normal";
+  recipient_type: "Administrator" | "Branch" | "Member" | "Normal";
   is_active: boolean;
   needs_password_setup: boolean;
   last_login_at: string | null;
@@ -130,6 +130,11 @@ export async function requireRecipientAccess(
   }
 
   const recipient = rawRecipient as unknown as RecipientRow;
+  const recipientType =
+    recipient.recipient_type === "Normal" ? "Branch" : recipient.recipient_type;
+  if (recipientType === "Member") {
+    return { ok: false, response: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
+  }
   if (recipient.is_active === false) {
     return { ok: false, response: NextResponse.json({ error: "Account deactivated" }, { status: 403 }) };
   }
@@ -141,7 +146,7 @@ export async function requireRecipientAccess(
     ok: true,
     access: {
       email,
-      recipient_type: recipient.recipient_type,
+      recipient_type: recipientType,
       is_active: !!recipient.is_active,
       needs_password_setup: !!recipient.needs_password_setup,
       last_login_at: recipient.last_login_at ?? null,

@@ -18,7 +18,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   const { searchParams } = new URL(request.url);
   const requestedBranchId = searchParams.get("branch_id");
   const branchId =
-    required.access?.recipient_type === "Normal"
+    required.access?.recipient_type === "Branch"
       ? required.access.branch_id
       : requestedBranchId;
 
@@ -89,7 +89,7 @@ export async function POST(request: NextRequest): Promise<Response> {
 
     const supabase = createSupabaseServerClient();
     const resolvedBranchId =
-      required.access?.recipient_type === "Normal" ? required.access.branch_id : branchId;
+      required.access?.recipient_type === "Branch" ? required.access.branch_id : branchId;
 
     const { data, error } = await supabase
       .from("saved_queries")
@@ -149,7 +149,7 @@ export async function PUT(request: NextRequest): Promise<Response> {
       .update({ query_text: queryText.trim() })
       .eq("id", id);
 
-    if (required.access?.recipient_type === "Normal") {
+    if (required.access?.recipient_type === "Branch") {
       query = query.eq("branch_id", required.access.branch_id);
     }
 
@@ -196,7 +196,7 @@ export async function DELETE(request: NextRequest): Promise<Response> {
       .delete()
       .eq("id", id);
 
-    if (required.access?.recipient_type === "Normal") {
+    if (required.access?.recipient_type === "Branch") {
       query = query.eq("branch_id", required.access.branch_id);
     }
 

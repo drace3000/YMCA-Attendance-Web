@@ -29,7 +29,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     .select("id,raw_name,first_name,last_name,nickname")
     .order("raw_name", { ascending: true });
 
-  if (required.access?.recipient_type === "Normal") {
+  if (required.access?.recipient_type === "Branch") {
     query = query.eq("branch_id", required.access.branch_id);
   }
 

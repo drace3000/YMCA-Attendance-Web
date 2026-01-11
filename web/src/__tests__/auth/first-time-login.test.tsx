@@ -69,7 +69,7 @@ describe("Phase 5 - First-time login password setup", () => {
         return mockJson(true, {
           recipient: {
             email: "manager@ymca.org",
-            recipient_type: "Normal",
+            recipient_type: "Branch",
             branch_id: "br-1",
             needs_password_setup: true,
           },

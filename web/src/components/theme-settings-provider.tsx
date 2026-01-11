@@ -159,7 +159,7 @@ function buildPalette(base: string) {
 }
 
 export function ThemeSettingsProvider({ children }: { children: React.ReactNode }) {
-  const { isNormal, branchId: accessBranchId } = useBranchAccess();
+  const { isBranch, branchId: accessBranchId } = useBranchAccess();
 
   const [state, setState] = useState<ThemeState>(() => {
     if (typeof window === "undefined") return defaultState;
@@ -187,10 +187,10 @@ export function ThemeSettingsProvider({ children }: { children: React.ReactNode 
     window.localStorage.setItem("ymca-theme", JSON.stringify(state));
   }, [state]);
 
-  // Phase 8: For Normal users, force branch context to their assigned branch and
+  // Phase 8: For Branch users, force branch context to their assigned branch and
   // prevent switching across branches (even if localStorage had a different one).
   useEffect(() => {
-    if (!isNormal) return;
+    if (!isBranch) return;
     if (!accessBranchId) return;
     if (state.branch.id === accessBranchId) return;
 
@@ -214,7 +214,7 @@ export function ThemeSettingsProvider({ children }: { children: React.ReactNode 
 
     void load();
     return () => controller.abort();
-  }, [isNormal, accessBranchId, state.branch.id]);
+  }, [isBranch, accessBranchId, state.branch.id]);
 
   const applyCssVars = useCallback(
     (current: ThemeState) => {
@@ -337,7 +337,7 @@ export function ThemeSettingsProvider({ children }: { children: React.ReactNode 
         setState((s) => ({ ...s, sidebarPosition })),
       setBranch: (branch) =>
         setState((s) => {
-          if (isNormal && accessBranchId && branch.id !== accessBranchId) {
+          if (isBranch && accessBranchId && branch.id !== accessBranchId) {
             return s;
           }
           return {
@@ -348,7 +348,7 @@ export function ThemeSettingsProvider({ children }: { children: React.ReactNode 
           };
         }),
     }),
-    [state, isNormal, accessBranchId],
+    [state, isBranch, accessBranchId],
   );
 
   return (

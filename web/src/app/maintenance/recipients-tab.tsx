@@ -1,10 +1,11 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { Mail, Plus, Trash2, AlertCircle, ChevronDown, ChevronUp, Pencil, PauseCircle, PlayCircle, Shield, User, KeyRound, RefreshCcw } from "lucide-react";
 import { useThemeSettings } from "@/components/theme-settings-provider";
 import {
   Popover,
+  PopoverArrow,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
@@ -21,7 +22,8 @@ type Recipient = {
   state: string | null;
   zip_code: string | null;
   on_hold: boolean;
-  recipient_type: "Administrator" | "Normal";
+  recipient_type: "Administrator" | "Branch" | "Member" | "Normal";
+  receives_reports?: boolean;
   created_at: string;
   auth_user_id?: string | null;
   is_active?: boolean;
@@ -38,7 +40,8 @@ type FormData = {
   city: string;
   state: string;
   zip_code: string;
-  recipient_type: "Administrator" | "Normal";
+  recipient_type: "Administrator" | "Branch" | "Member";
+  receives_reports: boolean;
 };
 
 const emptyForm: FormData = {
@@ -50,7 +53,8 @@ const emptyForm: FormData = {
   city: "",
   state: "",
   zip_code: "",
-  recipient_type: "Normal",
+  recipient_type: "Branch",
+  receives_reports: false,
 };
 
 type Alliance = { id: string; code: string; name: string };
@@ -123,6 +127,101 @@ function formatLastLogin(value: string | null | undefined): string {
   return d.toLocaleString();
 }
 
+function ActionIconButton({
+  tooltip,
+  ariaLabel,
+  onClick,
+  disabled,
+  allowTooltipWhenDisabled,
+  className,
+  children,
+}: {
+  tooltip: string;
+  ariaLabel: string;
+  onClick: () => void;
+  disabled?: boolean;
+  allowTooltipWhenDisabled?: boolean;
+  className: string;
+  children: React.ReactNode;
+}) {
+  const [tooltipOpen, setTooltipOpen] = useState(false);
+  const canShowTooltip = !disabled || allowTooltipWhenDisabled;
+  const cursorClass = disabled ? "cursor-not-allowed" : "cursor-pointer";
+
+  return (
+    <Popover open={canShowTooltip && tooltipOpen} onOpenChange={() => {}}>
+      <PopoverTrigger asChild>
+        <span
+          className="inline-flex"
+          onMouseEnter={() => canShowTooltip && setTooltipOpen(true)}
+          onMouseLeave={() => setTooltipOpen(false)}
+          onFocus={() => canShowTooltip && setTooltipOpen(true)}
+          onBlur={() => setTooltipOpen(false)}
+        >
+          <button
+            type="button"
+            aria-label={ariaLabel}
+            disabled={!!disabled}
+            onClick={onClick}
+            className={`${className} ${cursorClass}`}
+          >
+            {children}
+          </button>
+        </span>
+      </PopoverTrigger>
+
+      <PopoverContent
+        side="top"
+        align="center"
+        sideOffset={8}
+        className="pointer-events-none w-auto rounded-2xl border-[var(--brand-strong)] bg-[rgb(var(--brand-soft-rgb)/0.35)] px-3 py-2 text-xs text-foreground shadow-lg backdrop-blur-md"
+      >
+        <PopoverArrow
+          width={12}
+          height={8}
+          className="fill-[rgb(var(--brand-soft-rgb)/0.35)] stroke-[var(--brand-strong)] stroke-1"
+        />
+        {tooltip}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function MemberReportPill({ receivesReports }: { receivesReports: boolean }) {
+  const [tooltipOpen, setTooltipOpen] = useState(false);
+  const label = receivesReports ? "Yes Report" : "No Report";
+
+  return (
+    <Popover open={tooltipOpen} onOpenChange={() => {}}>
+      <PopoverTrigger asChild>
+        <span
+          tabIndex={0}
+          onMouseEnter={() => setTooltipOpen(true)}
+          onMouseLeave={() => setTooltipOpen(false)}
+          onFocus={() => setTooltipOpen(true)}
+          onBlur={() => setTooltipOpen(false)}
+          className="rounded-full bg-emerald-500/20 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-emerald-100"
+        >
+          {label}
+        </span>
+      </PopoverTrigger>
+      <PopoverContent
+        side="top"
+        align="center"
+        sideOffset={8}
+        className="pointer-events-none w-auto rounded-2xl border-[var(--brand-strong)] bg-[rgb(var(--brand-soft-rgb)/0.35)] px-3 py-2 text-xs text-foreground shadow-lg backdrop-blur-md"
+      >
+        <PopoverArrow
+          width={12}
+          height={8}
+          className="fill-[rgb(var(--brand-soft-rgb)/0.35)] stroke-[var(--brand-strong)] stroke-1"
+        />
+        To change select edit
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function getStatusBadge(recipient: Recipient): { label: string; className: string } {
   if (recipient.is_active === false) {
     return { label: "Inactive", className: "bg-red-500/20 text-red-300" };
@@ -152,6 +251,12 @@ function Dropdown({
 }) {
   const [open, setOpen] = useState(false);
   const selected = options.find((o) => o.id === valueId) ?? null;
+  const frameClass = selected
+    ? "border-white/25 ring-white/12 hover:ring-white/20"
+    : "border-white/12 ring-white/7 hover:ring-white/12";
+  const orderedOptions = selected
+    ? [selected, ...options.filter((o) => o.id !== selected.id)]
+    : options;
 
   return (
     <div className="flex flex-col gap-1">
@@ -162,10 +267,7 @@ function Dropdown({
             type="button"
             disabled={!!disabled}
             aria-expanded={open}
-            onClick={() => {
-              if (!disabled) setOpen(true);
-            }}
-            className={`btn-pill flex min-w-[260px] items-center justify-between gap-2 border border-white/10 bg-card/60 px-4 py-2 text-sm shadow-sm ring-1 ring-white/5 transition hover:bg-card hover:ring-white/10 disabled:cursor-not-allowed disabled:opacity-60`}
+            className={`btn-pill flex min-w-[260px] items-center justify-between gap-2 border bg-card/60 px-4 py-2 text-sm shadow-sm ring-1 transition hover:bg-card disabled:cursor-not-allowed disabled:opacity-60 ${frameClass}`}
           >
             <span className="truncate">
               {selected ? `${selected.code} - ${selected.name}` : placeholder}
@@ -180,10 +282,10 @@ function Dropdown({
           className="w-[340px] rounded-xl border border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] p-1 shadow-xl backdrop-blur-md"
         >
           <div className="max-h-[300px] overflow-y-auto">
-            {options.length === 0 ? (
+            {orderedOptions.length === 0 ? (
               <div className="px-3 py-2 text-sm text-white/80">No options</div>
             ) : (
-              options.map((opt) => {
+              orderedOptions.map((opt) => {
                 const isSelected = opt.id === valueId;
                 return (
                   <button
@@ -248,6 +350,8 @@ export function RecipientsTab() {
   
   // Recipient type dropdown
   const [typeDropdownOpen, setTypeDropdownOpen] = useState(false);
+
+  // (no-op) footer text is rendered directly; avoid side-effect logging here.
 
   // Reset password modal
   const [resettingRecipient, setResettingRecipient] = useState<Recipient | null>(null);
@@ -394,14 +498,17 @@ export function RecipientsTab() {
         state: formData.state.trim() || undefined,
         zip_code: formData.zip_code.trim() || undefined,
         recipient_type: formData.recipient_type,
+        receives_reports: formData.recipient_type === "Member" ? formData.receives_reports : false,
       };
 
       if (editingId) {
         payload.id = editingId;
         payload.on_hold = formOnHold;
       } else {
-        // New workflow: onboarding via email OTP (no temporary passwords).
-        payload.create_auth_user = true;
+        // Branch/Admin recipients get a login (OTP onboarding). Members are email-only.
+        if (formData.recipient_type !== "Member") {
+          payload.create_auth_user = true;
+        }
       }
 
       const res = await fetch("/api/maintenance/recipients", {
@@ -453,6 +560,8 @@ export function RecipientsTab() {
   const startEdit = (recipient: Recipient) => {
     setEditingId(recipient.id);
     setShowForm(true);
+    const normalizedType =
+      recipient.recipient_type === "Normal" ? "Branch" : recipient.recipient_type;
     setFormData({
       email: recipient.email || "",
       first_name: recipient.first_name || "",
@@ -462,7 +571,8 @@ export function RecipientsTab() {
       city: recipient.city || "",
       state: recipient.state || "",
       zip_code: recipient.zip_code || "",
-      recipient_type: recipient.recipient_type || "Normal",
+      recipient_type: normalizedType === "Administrator" || normalizedType === "Member" ? normalizedType : "Branch",
+      receives_reports: normalizedType === "Member" ? !!recipient.receives_reports : false,
     });
     setFormOnHold(!!recipient.on_hold);
     setFormError(null);
@@ -548,7 +658,7 @@ export function RecipientsTab() {
     }
   };
 
-  const updateField = <K extends keyof FormData>(field: K, value: string) => {
+  const updateField = <K extends keyof FormData>(field: K, value: FormData[K]) => {
     setFormData((f) => ({ ...f, [field]: value }));
     if (validationErrors[field]) {
       setValidationErrors((v) => ({ ...v, [field]: undefined }));
@@ -579,7 +689,7 @@ export function RecipientsTab() {
           <Mail className="h-5 w-5 text-[var(--brand)]" />
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-3">
-              <h2 className="text-base font-semibold">Member Accounts</h2>
+              <h2 className="text-base font-semibold">Recipients</h2>
               <button
                 type="button"
                 onClick={() => {
@@ -612,7 +722,7 @@ export function RecipientsTab() {
               </button>
             </div>
             <p className="mt-[5px] text-xs text-muted-foreground">
-              Select a branch (Alliance → Association → Branch) then manage member login accounts.
+              Select a branch (Alliance → Association → Branch) to assign to a new Branch Manager. Members only added for reporting purposes.
             </p>
           </div>
         </div>
@@ -731,6 +841,8 @@ export function RecipientsTab() {
                       <span className="flex items-center gap-2">
                         {formData.recipient_type === "Administrator" ? (
                           <Shield className="h-4 w-4 text-purple-400" />
+                        ) : formData.recipient_type === "Member" ? (
+                          <Mail className="h-4 w-4 text-emerald-300" />
                         ) : (
                           <User className="h-4 w-4 text-muted-foreground" />
                         )}
@@ -747,22 +859,39 @@ export function RecipientsTab() {
                     <button
                       type="button"
                       onClick={() => {
-                        updateField("recipient_type", "Normal");
+                        updateField("recipient_type", "Branch");
+                        updateField("receives_reports", false);
                         setTypeDropdownOpen(false);
                       }}
                       className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition ${
-                        formData.recipient_type === "Normal"
+                        formData.recipient_type === "Branch"
                           ? "bg-[var(--cta)] text-[var(--cta-foreground)]"
                           : "text-[var(--brand-ink)] hover:bg-[var(--brand-strong)] hover:text-white"
                       }`}
                     >
                       <User className="h-4 w-4" />
-                      Normal
+                      Branch
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        updateField("recipient_type", "Member");
+                        setTypeDropdownOpen(false);
+                      }}
+                      className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition ${
+                        formData.recipient_type === "Member"
+                          ? "bg-[var(--cta)] text-[var(--cta-foreground)]"
+                          : "text-[var(--brand-ink)] hover:bg-[var(--brand-strong)] hover:text-white"
+                      }`}
+                    >
+                      <Mail className="h-4 w-4" />
+                      Member
                     </button>
                     <button
                       type="button"
                       onClick={() => {
                         updateField("recipient_type", "Administrator");
+                        updateField("receives_reports", false);
                         setTypeDropdownOpen(false);
                       }}
                       className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition ${
@@ -777,10 +906,36 @@ export function RecipientsTab() {
                   </PopoverContent>
                 </Popover>
                 <p className="mt-1 text-xs text-foreground/50">
-                  Admins receive system error notifications
+                  {formData.recipient_type === "Administrator"
+                    ? "Admins receive system error notifications"
+                    : formData.recipient_type === "Member"
+                      ? "Members are email-only contacts (no login)"
+                      : "Branch users can sign in and manage their branch"}
                 </p>
               </div>
             </div>
+
+            {/* Member-only: report opt-in */}
+            {formData.recipient_type === "Member" && (
+              <label
+                htmlFor="receives_reports"
+                className="flex cursor-pointer items-start gap-3 rounded-xl border border-white/10 bg-black/20 px-4 py-3"
+              >
+                <input
+                  id="receives_reports"
+                  type="checkbox"
+                  checked={!!formData.receives_reports}
+                  onChange={(e) => updateField("receives_reports", e.target.checked)}
+                  className="mt-0.5 h-5 w-5 shrink-0 accent-[var(--cta)]"
+                />
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-foreground">Receives reports</div>
+                  <div className="text-xs text-foreground/60">
+                    If checked, this email will appear in the report Email To/CC/BCC recipient lists.
+                  </div>
+                </div>
+              </label>
+            )}
 
             {/* Row 2: First Name and Last Name */}
             <div className="grid gap-4 sm:grid-cols-2">
@@ -987,7 +1142,7 @@ export function RecipientsTab() {
               No additional recipients added yet.
             </p>
             <p className="mt-1 text-xs text-muted-foreground/70">
-              Select a branch above, then click &quot;Add Member&quot; to create a login account (welcome email + sign-in link).
+              Select a branch above, then click &quot;Add Member&quot; to add a Branch Manager or a Member for reporting.
             </p>
           </div>
         ) : (
@@ -1049,13 +1204,30 @@ export function RecipientsTab() {
                           </span>
                         </td>
                         <td className="px-4 py-2">
-                          {recipient.recipient_type === "Administrator" ? (
-                            <span className="rounded-full bg-purple-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-purple-300">
-                              Admin
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground text-xs">Normal</span>
-                          )}
+                          {(() => {
+                            const type =
+                              recipient.recipient_type === "Normal" ? "Branch" : recipient.recipient_type;
+                            if (type === "Administrator") {
+                              return (
+                                <span className="rounded-full bg-purple-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-purple-300">
+                                  Admin
+                                </span>
+                              );
+                            }
+                            if (type === "Member") {
+                              return (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-200">
+                                  Member
+                                  <MemberReportPill receivesReports={!!recipient.receives_reports} />
+                                </span>
+                              );
+                            }
+                            return (
+                              <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-foreground/80">
+                                Branch
+                              </span>
+                            );
+                          })()}
                         </td>
                         <td className="hidden px-4 py-2 text-foreground md:table-cell">
                           <span className="text-xs text-foreground/90">{formatLastLogin(recipient.last_login_at)}</span>
@@ -1068,53 +1240,59 @@ export function RecipientsTab() {
                         </td>
                         <td className="px-4 py-2 text-right" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-end gap-2">
-                            <button
-                              type="button"
+                            <ActionIconButton
+                              tooltip="Edit member"
+                              ariaLabel="Edit member"
                               onClick={() => startEdit(recipient)}
                               className="rounded-lg p-1.5 text-[var(--brand)] hover:bg-[var(--brand-soft)]/30"
-                              title="Edit recipient"
                             >
                               <Pencil className="h-4 w-4" />
-                            </button>
-                            <button
-                              type="button"
+                            </ActionIconButton>
+
+                            <ActionIconButton
+                              tooltip={hasLogin ? "Reset member password" : "No login account linked"}
+                              ariaLabel="Reset member password"
                               onClick={() => openResetPassword(recipient)}
                               disabled={!hasLogin}
+                              allowTooltipWhenDisabled={!hasLogin}
                               className="rounded-lg p-1.5 text-sky-300 hover:bg-sky-500/20 disabled:opacity-40"
-                              title={hasLogin ? "Reset password" : "No login account linked"}
                             >
                               <KeyRound className="h-4 w-4" />
-                            </button>
+                            </ActionIconButton>
                             {hasLogin ? (
                               recipient.is_active === false ? (
-                                <button
-                                  type="button"
+                                <ActionIconButton
+                                  tooltip="Reactivate member account"
+                                  ariaLabel="Reactivate member account"
                                   onClick={() => handleActivate(recipient)}
                                   className="rounded-lg p-1.5 text-green-300 hover:bg-green-500/20"
-                                  title="Reactivate account"
                                 >
                                   <PlayCircle className="h-4 w-4" />
-                                </button>
+                                </ActionIconButton>
                               ) : (
-                                <button
-                                  type="button"
+                                <ActionIconButton
+                                  tooltip="Deactivate member account"
+                                  ariaLabel="Deactivate member account"
                                   onClick={() => handleDeactivate(recipient)}
                                   className="rounded-lg p-1.5 text-red-300 hover:bg-red-500/20"
-                                  title="Deactivate account"
                                 >
                                   <PauseCircle className="h-4 w-4" />
-                                </button>
+                                </ActionIconButton>
                               )
                             ) : null}
-                            <button
-                              type="button"
+                            <ActionIconButton
+                              tooltip={recipient.on_hold ? "Resume member" : "Put member on hold"}
+                              ariaLabel={recipient.on_hold ? "Resume member" : "Put member on hold"}
                               onClick={() => handleToggleHold(recipient)}
                               disabled={holdUpdatingId === recipient.id}
                               className="rounded-lg p-1.5 text-amber-300 hover:bg-amber-500/20 disabled:opacity-50"
-                              title={recipient.on_hold ? "Resume recipient" : "Put on hold"}
                             >
-                              {recipient.on_hold ? <PlayCircle className="h-4 w-4" /> : <PauseCircle className="h-4 w-4" />}
-                            </button>
+                              {recipient.on_hold ? (
+                                <PlayCircle className="h-4 w-4" />
+                              ) : (
+                                <PauseCircle className="h-4 w-4" />
+                              )}
+                            </ActionIconButton>
                             {deletingId === recipient.id ? (
                               <div className="flex items-center gap-2">
                                 <span className="text-xs text-foreground/70">Delete?</span>
@@ -1134,14 +1312,14 @@ export function RecipientsTab() {
                                 </button>
                               </div>
                             ) : (
-                              <button
-                                type="button"
+                              <ActionIconButton
+                                tooltip="Remove member"
+                                ariaLabel="Remove member"
                                 onClick={() => setDeletingId(recipient.id)}
                                 className="rounded-lg p-1.5 text-red-400 hover:bg-red-500/20"
-                                title="Remove recipient"
                               >
                                 <Trash2 className="h-4 w-4" />
-                              </button>
+                              </ActionIconButton>
                             )}
                           </div>
                         </td>
@@ -1190,7 +1368,7 @@ export function RecipientsTab() {
 
         {recipients.length > 0 && (
           <p className="mt-3 text-xs text-muted-foreground">
-            {recipients.length} recipient{recipients.length !== 1 ? "s" : ""} loaded for the selected branch.
+            {recipients.length} member{recipients.length !== 1 ? "s" : ""} loaded for the selected branch.
           </p>
         )}
       </div>

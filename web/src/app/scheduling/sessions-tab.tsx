@@ -121,7 +121,11 @@ export function SessionsTab({ scheduleId, branchId, programGroupId, refreshKey, 
             branchId
           )}&program_group_id=${encodeURIComponent(programGroupId)}`
         ),
-        fetch("/api/maintenance/locations?include_inactive=true"),
+        fetch(
+          `/api/maintenance/locations?include_inactive=true&branch_id=${encodeURIComponent(
+            branchId
+          )}`
+        ),
         fetch("/api/maintenance/instructors?include_inactive=true"),
       ]);
       let nextClasses: ClassOption[] = [];

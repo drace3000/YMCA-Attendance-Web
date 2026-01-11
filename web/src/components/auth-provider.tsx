@@ -22,7 +22,7 @@ type AuthContextType = {
   user: User | null;
   session: Session | null;
   recipientContext: {
-    recipient_type: "Administrator" | "Normal" | null;
+    recipient_type: "Administrator" | "Branch" | null;
     branch_id: string | null;
     association_id: string | null;
     alliance_id: string | null;
@@ -33,7 +33,7 @@ type AuthContextType = {
   devSignIn: (email?: string) => void; // Dev bypass sign-in with optional email
   isDevMode: boolean; // Flag to indicate dev bypass mode
   setRecipientContext: (ctx: {
-    recipient_type: "Administrator" | "Normal" | null;
+    recipient_type: "Administrator" | "Branch" | null;
     branch_id: string | null;
     association_id: string | null;
     alliance_id: string | null;
@@ -58,7 +58,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(!DEV_AUTH_BYPASS); // Not loading if dev bypass
   const [recipientContext, setRecipientContext] = useState<{
-    recipient_type: "Administrator" | "Normal" | null;
+    recipient_type: "Administrator" | "Branch" | null;
     branch_id: string | null;
     association_id: string | null;
     alliance_id: string | null;

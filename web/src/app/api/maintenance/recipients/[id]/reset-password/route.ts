@@ -38,7 +38,7 @@ async function sendPasswordResetEmail(params: {
 export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<Response> {
   const required = await requireRecipientAccess(req, { allowDevPassthrough: true });
   if (!required.ok) return required.response;
-  if (required.access?.recipient_type === "Normal") {
+  if (required.access?.recipient_type === "Branch") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

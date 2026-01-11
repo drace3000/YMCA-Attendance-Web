@@ -36,6 +36,12 @@ export function EmailExcelModal({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
+  type RecipientApiRow = Recipient & {
+    on_hold?: boolean;
+    recipient_type?: "Administrator" | "Branch" | "Member" | "Normal" | string;
+    receives_reports?: boolean;
+  };
+
   // Load recipients when modal opens
   const loadRecipients = useCallback(async () => {
     if (!branchId) return;
@@ -45,11 +51,24 @@ export function EmailExcelModal({
       const res = await fetch(`/api/maintenance/recipients?branch_id=${branchId}`);
       if (res.ok) {
         const data = await res.json();
-        // Filter out on_hold recipients
-        const activeRecipients = (data as Recipient[]).filter(
-          (r: Recipient & { on_hold?: boolean }) => !r.on_hold
-        );
-        setRecipients(activeRecipients);
+        const rows = (data ?? []) as RecipientApiRow[];
+        const selectable = rows
+          .filter((r) => !r.on_hold)
+          .filter((r) => {
+            const type =
+              r.recipient_type === "Normal" ? "Branch" : r.recipient_type;
+            if (type === "Branch") return true;
+            if (type === "Member") return r.receives_reports === true;
+            return false;
+          })
+          .map((r) => ({
+            id: r.id,
+            email: r.email,
+            first_name: r.first_name,
+            last_name: r.last_name,
+          }));
+
+        setRecipients(selectable);
       }
     } catch (err) {
       console.error("Failed to load recipients:", err);

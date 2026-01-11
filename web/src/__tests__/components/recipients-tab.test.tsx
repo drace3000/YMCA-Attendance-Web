@@ -57,7 +57,7 @@ describe("Phase 4 - RecipientsTab (Admin)", () => {
             state: null,
             zip_code: null,
             on_hold: false,
-            recipient_type: "Normal",
+            recipient_type: "Branch",
             created_at: "2026-01-01T00:00:00Z",
             auth_user_id: "u1",
             is_active: true,
@@ -122,7 +122,7 @@ describe("Phase 4 - RecipientsTab (Admin)", () => {
     expect(screen.getByText(/phl - ymca of greater philadelphia/i)).toBeInTheDocument()
   })
 
-  it("creates a branch manager (POST) when form is valid", async () => {
+  it("creates a Branch recipient (POST) when form is valid", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.includes("/api/maintenance/organization")) {
@@ -147,7 +147,7 @@ describe("Phase 4 - RecipientsTab (Admin)", () => {
     vi.stubGlobal("fetch", fetchMock as any)
 
     render(<RecipientsTab />)
-    await screen.findByText(/member accounts/i)
+    await screen.findByRole("heading", { name: /recipients/i })
 
     fireEvent.click(screen.getByRole("button", { name: /add member/i }))
 

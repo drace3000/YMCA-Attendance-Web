@@ -5,7 +5,7 @@ type RecipientAccessResponse = {
   recipient: {
     id: string;
     email: string;
-    recipient_type: "Administrator" | "Normal";
+    recipient_type: "Administrator" | "Branch";
     is_active: boolean;
     needs_password_setup: boolean;
     last_login_at: string | null;

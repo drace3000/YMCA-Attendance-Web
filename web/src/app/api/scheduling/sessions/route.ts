@@ -52,7 +52,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const requestedBranchId = searchParams.get("branch_id");
 
   const branchId =
-    required.access?.recipient_type === "Normal"
+    required.access?.recipient_type === "Branch"
       ? required.access.branch_id
       : requestedBranchId;
 
@@ -176,7 +176,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   } = body;
 
   const branch_id =
-    required.access?.recipient_type === "Normal"
+    required.access?.recipient_type === "Branch"
       ? required.access.branch_id
       : requestedBranchId;
 
@@ -188,6 +188,27 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   const supabase = createSupabaseServerClient();
+
+  // Ensure the selected location belongs to this branch (friendly error vs DB constraint failure).
+  {
+    const { data: locationRow, error: locationError } = await supabase
+      .from("locations")
+      .select("id")
+      .eq("id", location_id)
+      .eq("branch_id", branch_id)
+      .maybeSingle();
+
+    if (locationError) {
+      return NextResponse.json({ error: locationError.message }, { status: 500 });
+    }
+
+    if (!locationRow) {
+      return NextResponse.json(
+        { error: "Selected location is not available for this branch" },
+        { status: 409 }
+      );
+    }
+  }
 
   // Insert the session
   const { data: session, error: sessionError } = await supabase
@@ -252,6 +273,49 @@ export async function PUT(req: NextRequest): Promise<Response> {
 
   const supabase = createSupabaseServerClient();
 
+  // Friendly validation: if updating location_id, ensure it belongs to the session's branch.
+  if (updates.location_id !== undefined) {
+    let effectiveBranchId: string | null = null;
+
+    if (required.access?.recipient_type === "Branch") {
+      effectiveBranchId = required.access.branch_id;
+    } else {
+      const { data: sessionRow, error: sessionError } = await supabase
+        .from("class_sessions")
+        .select("branch_id")
+        .eq("id", id)
+        .single();
+
+      if (sessionError) {
+        return NextResponse.json({ error: sessionError.message }, { status: 500 });
+      }
+
+      effectiveBranchId = sessionRow?.branch_id ?? null;
+    }
+
+    if (!effectiveBranchId) {
+      return NextResponse.json({ error: "Session not found" }, { status: 404 });
+    }
+
+    const { data: locationRow, error: locationError } = await supabase
+      .from("locations")
+      .select("id")
+      .eq("id", updates.location_id)
+      .eq("branch_id", effectiveBranchId)
+      .maybeSingle();
+
+    if (locationError) {
+      return NextResponse.json({ error: locationError.message }, { status: 500 });
+    }
+
+    if (!locationRow) {
+      return NextResponse.json(
+        { error: "Selected location is not available for this branch" },
+        { status: 409 }
+      );
+    }
+  }
+
   // Update session fields if any
   if (Object.keys(updates).length > 0) {
     const updateData: Record<string, unknown> = { ...updates };
@@ -264,7 +328,7 @@ export async function PUT(req: NextRequest): Promise<Response> {
       .update(updateData)
       .eq("id", id);
 
-    if (required.access?.recipient_type === "Normal") {
+    if (required.access?.recipient_type === "Branch") {
       updateQuery = updateQuery.eq("branch_id", required.access.branch_id);
     }
 
@@ -334,7 +398,7 @@ export async function DELETE(req: NextRequest): Promise<Response> {
     .delete()
     .eq("id", id);
 
-  if (required.access?.recipient_type === "Normal") {
+  if (required.access?.recipient_type === "Branch") {
     delQuery = delQuery.eq("branch_id", required.access.branch_id);
   }
 

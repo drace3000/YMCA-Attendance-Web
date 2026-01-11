@@ -183,7 +183,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     .gte("session_date", toIsoDate(start))
     .lt("session_date", toIsoDate(end));
 
-  if (required.access?.recipient_type === "Normal") {
+  if (required.access?.recipient_type === "Branch") {
     countQuery = countQuery.eq("branch_id", required.access.branch_id);
   }
 
@@ -211,7 +211,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       .gte("session_date", toIsoDate(start))
       .lt("session_date", toIsoDate(end));
 
-    if (required.access?.recipient_type === "Normal") {
+    if (required.access?.recipient_type === "Branch") {
       pageQuery = pageQuery.eq("branch_id", required.access.branch_id);
     }
 

@@ -44,7 +44,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const programGroupId = searchParams.get("program_group_id");
 
   const branchId =
-    required.access?.recipient_type === "Normal"
+    required.access?.recipient_type === "Branch"
       ? required.access.branch_id
       : requestedBranchId;
 
@@ -112,7 +112,7 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const requestedBranchId = body.branch_id;
   const branch_id =
-    required.access?.recipient_type === "Normal"
+    required.access?.recipient_type === "Branch"
       ? required.access.branch_id
       : requestedBranchId;
   const { name, description, category, program_group_id } = body;
@@ -196,7 +196,7 @@ export async function PUT(req: NextRequest): Promise<Response> {
   // Check name uniqueness if changing
   if (name !== undefined && name.trim().toLowerCase() !== current.name.toLowerCase()) {
     const nextBranchId =
-      required.access?.recipient_type === "Normal"
+      required.access?.recipient_type === "Branch"
         ? required.access.branch_id
         : branch_id ?? current.branch_id;
     const nextProgramGroupId = program_group_id ?? current.program_group_id;
@@ -222,7 +222,7 @@ export async function PUT(req: NextRequest): Promise<Response> {
   if (description !== undefined) updates.description = description?.trim() || null;
   if (category !== undefined) updates.category = category?.trim() || null;
   if (is_active !== undefined) updates.is_active = is_active;
-  if (required.access?.recipient_type === "Normal") {
+  if (required.access?.recipient_type === "Branch") {
     updates.branch_id = required.access.branch_id;
   } else if (branch_id !== undefined) {
     updates.branch_id = branch_id;
@@ -231,7 +231,7 @@ export async function PUT(req: NextRequest): Promise<Response> {
 
   let query = supabase.from("classes").update(updates).eq("id", id);
 
-  if (required.access?.recipient_type === "Normal") {
+  if (required.access?.recipient_type === "Branch") {
     query = query.eq("branch_id", required.access.branch_id);
   }
 
@@ -269,7 +269,7 @@ export async function PATCH(req: NextRequest): Promise<Response> {
 
   let query = supabase.from("classes").update({ is_active }).eq("id", id);
 
-  if (required.access?.recipient_type === "Normal") {
+  if (required.access?.recipient_type === "Branch") {
     query = query.eq("branch_id", required.access.branch_id);
   }
 

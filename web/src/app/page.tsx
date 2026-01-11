@@ -229,7 +229,7 @@ export default function Home() {
     const ctx = (await ctxRes.json()) as {
       recipient: {
         email: string;
-        recipient_type: "Administrator" | "Normal";
+        recipient_type: "Administrator" | "Branch";
         branch_id: string;
         association_id?: string | null;
         alliance_id?: string | null;
@@ -245,14 +245,14 @@ export default function Home() {
       alliance_id: ctx.recipient.alliance_id ?? null,
     });
 
-    if (ctx.recipient.recipient_type === "Normal" && ctx.branch) {
+    if (ctx.recipient.recipient_type === "Branch" && ctx.branch) {
       setBranch({ id: ctx.branch.id, name: ctx.branch.name });
     }
 
     if (ctx.recipient.needs_password_setup) {
       setPendingBranchId(ctx.recipient.branch_id);
       setPendingHierarchy(null);
-      setShowWelcomeAfterPasswordSetup(ctx.recipient.recipient_type === "Normal");
+      setShowWelcomeAfterPasswordSetup(ctx.recipient.recipient_type === "Branch");
       setShowCreatePasswordModal(true);
       setCreatePasswordError(null);
       setNewPassword("");
@@ -419,7 +419,7 @@ export default function Home() {
         if (!ctxRes.ok) return;
         const ctx = (await ctxRes.json()) as {
           recipient: {
-            recipient_type: "Administrator" | "Normal";
+            recipient_type: "Administrator" | "Branch";
             branch_id: string;
             association_id?: string | null;
             alliance_id?: string | null;
@@ -432,7 +432,7 @@ export default function Home() {
           association_id: ctx.recipient.association_id ?? null,
           alliance_id: ctx.recipient.alliance_id ?? null,
         });
-        if (ctx.recipient.recipient_type === "Normal" && ctx.branch) {
+        if (ctx.recipient.recipient_type === "Branch" && ctx.branch) {
           setBranch({ id: ctx.branch.id, name: ctx.branch.name });
         }
       } catch {
