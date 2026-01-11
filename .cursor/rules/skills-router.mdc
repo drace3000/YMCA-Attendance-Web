@@ -35,7 +35,7 @@ When responding to requests, always identify the work area and apply the corresp
   - Apply: `supabase-migrations.mdc`, `supabase.mdc`, `docker-supabase.mdc`
 
 - **Local DB backup/restore**:
-  - Apply: `supabase-local-restore.mdc`, `docker-supabase.mdc`
+  - Apply: `supabase-local-backup.mdc`, `supabase-local-restore.mdc`, `docker-supabase.mdc`
 
 - **Forms**:
   - Apply: `forms.mdc` (react-hook-form + zod), `typescript.mdc`

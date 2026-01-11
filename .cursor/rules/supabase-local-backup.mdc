@@ -1,0 +1,92 @@
+---
+description: Rules for creating and validating local Supabase Postgres backups (pg_dump -Fc) before schema/app changes. Ensures backups are restorable by validating the archive with pg_restore --list (NO restore).
+globs: backups/**/*.dump, backups/**/*.backup, scripts/backup*.ps1, supabase/config.toml, documents/**/*backup*.md
+alwaysApply: false
+---
+
+# Local Supabase Backup Rules (pg_dump -Fc + validation)
+
+These rules apply when creating a **local dev** Supabase Postgres backup (Step 0) before risky work (migrations, refactors, restores).
+
+## Core requirement: create a restorable archive + validate it (no restore)
+
+- **Backup format must be `pg_dump -Fc`** (custom format).
+- **Validation must be `pg_restore --list`** on the archive.
+- Do **NOT** perform a restore unless the user explicitly asks.
+- **Do not continue to later steps** (migrations / schema changes) until the backup **and** validation are successful.
+
+## Always identify the DB container first
+
+Prefer:
+
+```powershell
+docker ps --filter "name=supabase_db_" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+```
+
+Notes:
+- The container is commonly named `supabase_db_<project_id>`.
+- In this repo, `supabase/config.toml` contains `project_id`, which often appears in the container name.
+
+## Preferred workflow (PowerShell, Windows)
+
+### 1) Create the archive inside the container, copy to `backups/`, then cleanup
+
+Requirements:
+- Use `--no-owner --no-acl` so restores are more portable.
+- Prefer running `pg_dump` inside the container to avoid host port confusion.
+
+```powershell
+# From repo root
+New-Item -ItemType Directory -Force -Path .\backups | Out-Null
+
+$dbContainer = docker ps --filter "name=supabase_db_" --format "{{.Names}}" | Select-Object -First 1
+if (-not $dbContainer) { throw "Supabase DB container not found (start local Supabase first)" }
+
+$ts = Get-Date -Format "yyyyMMdd_HHmmss"
+$dumpName = "supabase_backup_${ts}_full.dump"
+$hostDumpPath = Join-Path (Resolve-Path .\backups) $dumpName
+
+docker exec -i $dbContainer pg_dump -U postgres -d postgres -Fc --verbose --no-owner --no-acl -f "/tmp/$dumpName"
+if ($LASTEXITCODE -ne 0) { throw "pg_dump failed" }
+
+docker cp "$dbContainer`:/tmp/$dumpName" "$hostDumpPath"
+if ($LASTEXITCODE -ne 0) { throw "docker cp failed" }
+
+docker exec -i $dbContainer rm -f "/tmp/$dumpName" | Out-Null
+```
+
+### 2) Validate the archive (NO restore)
+
+Important: **don’t truncate output** with `Select-Object -First N` or `head` while validating, because that can break the pipe and cause a false non‑zero exit.
+
+```powershell
+docker cp "$hostDumpPath" "$dbContainer`:/tmp/$dumpName"
+if ($LASTEXITCODE -ne 0) { throw "docker cp failed" }
+
+# Consume output fully so exit code is meaningful
+docker exec -i $dbContainer pg_restore --list "/tmp/$dumpName" | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "pg_restore --list failed (dump may be invalid)" }
+
+docker exec -i $dbContainer rm -f "/tmp/$dumpName" | Out-Null
+```
+
+### 3) Create a checksum sidecar (recommended)
+
+```powershell
+$hash = Get-FileHash $hostDumpPath -Algorithm SHA256
+$hash.Hash | Out-File "$hostDumpPath.sha256.txt" -Encoding ascii
+```
+
+## Acceptance criteria (Step 0 gate)
+
+- A new file exists in `backups/` with a timestamped name and **non-zero size**.
+- `pg_restore --list` exits with code 0 (validation passes).
+- A `.sha256.txt` exists next to the dump (recommended).
+
+## Safety rules (must follow)
+
+- Do NOT run destructive Docker/Supabase commands unless the user explicitly approves:
+  - `docker system prune -a`, `docker volume prune`, `supabase db reset`, etc. (see `docker-supabase.mdc`)
+- Do NOT restore as part of “validate” (validation is list-only).
+- Do NOT commit `.dump` / `.backup` files to git (see `git.mdc` patterns).
+

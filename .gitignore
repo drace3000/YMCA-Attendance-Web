@@ -47,4 +47,8 @@ backups/*.dump
 backups/*.backup
 backups/*.sql
 backups/*.gz
+backups/*.sha256.txt
+
+# Local notebooks (scratch)
+*.ipynb
 
