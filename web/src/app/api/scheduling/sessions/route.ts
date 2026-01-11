@@ -80,7 +80,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       session_date,
       headcount,
       class:class_id(id, name),
-      location:location_id(id, code, name)
+      location:locations!class_sessions_branch_location_fkey(id, code, name)
     `)
     .eq("schedule_id", scheduleId)
     .eq("branch_id", branchId)

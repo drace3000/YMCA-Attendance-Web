@@ -176,7 +176,7 @@ export async function GET(req: NextRequest): Promise<Response> {
         day_of_week,
         headcount,
         class:class_id(name,category),
-        location:location_id(name,code)
+        location:locations!class_sessions_branch_location_fkey(name,code)
       `,
       { count: "exact" },
     );
@@ -203,7 +203,7 @@ export async function GET(req: NextRequest): Promise<Response> {
         day_of_week,
         headcount,
         class:class_id(name,category),
-        location:location_id(name,code),
+        location:locations!class_sessions_branch_location_fkey(name,code),
         session_instructors!inner(instructor_id)
       `,
       { count: "exact" },
