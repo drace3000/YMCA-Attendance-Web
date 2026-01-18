@@ -189,9 +189,16 @@ export default function SchedulingPage() {
       if (res.ok) {
         const data = await res.json();
         setSchedules(data.schedules || []);
-        // Default to first schedule if none selected
-        if (data.schedules?.length > 0 && !selectedScheduleId) {
-          setSelectedScheduleId(data.schedules[0].id);
+        // Default to first schedule if none selected (or if current selection is no longer valid)
+        if (Array.isArray(data.schedules)) {
+          setSelectedScheduleId((prev) => {
+            if (data.schedules.length === 0) return "";
+            if (!prev) return data.schedules[0].id;
+            const stillValid = data.schedules.some((s: Schedule) => s.id === prev);
+            return stillValid ? prev : data.schedules[0].id;
+          });
+        } else {
+          setSelectedScheduleId("");
         }
       }
     } catch (err) {
@@ -204,7 +211,7 @@ export default function SchedulingPage() {
     } finally {
       setLoadingSchedules(false);
     }
-  }, [selectedScheduleId, branch.id, selectedProgramGroupId]);
+  }, [branch.id, selectedProgramGroupId]);
 
   // Fetch Alliance + Association for the selected branch
   useEffect(() => {
@@ -355,32 +362,8 @@ export default function SchedulingPage() {
     setSessionsForPrint([]);
   }, [branch.id, selectedScheduleId, selectedProgramGroupId]);
 
-  // Always load sessions for print/reporting (even if grid tab isn't active)
-  useEffect(() => {
-    const load = async () => {
-      if (!branch?.id || !selectedScheduleId) return;
-      try {
-        const url =
-          "/api/scheduling/sessions?schedule_id=" +
-          selectedScheduleId +
-          "&branch_id=" +
-          branch.id;
-        const res = await fetch(url);
-        if (!res.ok) throw new Error("Failed to fetch sessions for print");
-        const data = await res.json();
-        const loaded = data.sessions || [];
-        setSessionsForPrint(loaded);
-      } catch (err) {
-        await logError(
-          err instanceof Error ? err : new Error(String(err)),
-          "API_ERROR",
-          { page: "scheduling", action: "fetchSessionsForPrint", branchId: branch.id, params: { scheduleId: selectedScheduleId } }
-        );
-        setSessionsForPrint([]);
-      }
-    };
-    void load();
-  }, [branch.id, selectedScheduleId, refreshKey]);
+  // Sessions for reporting/printing are sourced from `SessionsTab` via `onSessionsLoaded`,
+  // to avoid double-fetching `/api/scheduling/sessions` (which can be expensive locally).
 
   const fetchClonePreflight = useCallback(async () => {
     if (!branch?.id || !selectedProgramGroupId) return;

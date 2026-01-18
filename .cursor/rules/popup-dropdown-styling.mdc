@@ -69,6 +69,14 @@ For interactive dropdown panels:
 - **Hover**: `hover:bg-[var(--brand-strong)]/50`
 - **Typography**: `text-sm font-semibold`
 
+## Scrollbar styling (required; vertical + horizontal)
+
+Any time you introduce a scroll container (e.g. `overflow-y-auto`, `overflow-x-auto`, `overflow-auto`) inside a popup/dropdown/modal/picker:
+
+- **Use theme-first scrollbars** (no hex colors): rely on the global scrollbar styling in `web/src/app/globals.css`.
+- **Prefer adding the explicit class** `ymca-scrollbar` on the scroll container to document intent and keep consistent styling across browsers.
+- **Support both directions**: if horizontal scrolling is possible, keep `overflow-x-auto` and ensure the container uses the themed scrollbar as well.
+
 ## Use approved components (avoid native widgets when panel must be themed)
 
 - Prefer `PopoverSelect` for dropdown lists:

@@ -600,6 +600,23 @@ export function SessionsTab({
   const slotHelperMultiDayDrag = useDraggableModal(slotHelperMultiDayOpen, slotHelperMultiDayDragStorageKey, (offset) =>
     persistUiOffset("slot_helper_multi_day_modal_offset", offset),
   );
+
+  const slotHelperMultiDayCheckedCount = useMemo(() => {
+    return slotHelperMultiDayOptions.filter((o) => o.checked).length;
+  }, [slotHelperMultiDayOptions]);
+
+  const slotHelperMultiDayAllChecked =
+    slotHelperMultiDayOptions.length > 0 &&
+    slotHelperMultiDayCheckedCount === slotHelperMultiDayOptions.length;
+
+  const toggleSlotHelperMultiDaySelectAll = useCallback(() => {
+    setSlotHelperMultiDayOptions((prev) => {
+      if (prev.length === 0) return prev;
+      const allChecked = prev.every((p) => p.checked);
+      const nextChecked = !allChecked;
+      return prev.map((p) => (p.checked === nextChecked ? p : { ...p, checked: nextChecked }));
+    });
+  }, []);
   const [slotHelperRulesPopoverOpen, setSlotHelperRulesPopoverOpen] = useState(false);
   const [slotHelperRulesTooltipOpen, setSlotHelperRulesTooltipOpen] = useState(false);
   const [slotHelperTotalTooltipOpen, setSlotHelperTotalTooltipOpen] = useState(false);
@@ -1984,28 +2001,31 @@ useEffect(() => {
     scheduleId,
   ]);
 
-  const handleDelete = (sessionId: string) => {
-    openDeleteConfirm(sessionId);
-  };
+  const handleDelete = useCallback(
+    (sessionId: string) => {
+      openDeleteConfirm(sessionId);
+    },
+    [openDeleteConfirm],
+  );
 
-  const formatInstructors = (list: Session["instructors"]) => {
+  const formatInstructors = useCallback((list: Session["instructors"]): string => {
     if (!list || list.length === 0) return "-";
     return list.map((i) => i.nickname || (i.first_name + " " + i.last_name).trim()).join(", ");
-  };
+  }, []);
 
-  const formatInstructorIds = (list: Session["instructors"]) => {
+  const formatInstructorIds = useCallback((list: Session["instructors"]): string => {
     if (!list || list.length === 0) return "-";
     const ids = list
       .map((i) => (i.readable_id || "").trim())
       .filter(Boolean);
     if (ids.length === 0) return "-";
     return ids.join(", ");
-  };
+  }, []);
 
-  const formatLocation = (loc: Session["location"]) => {
+  const formatLocation = useCallback((loc: Session["location"]): string => {
     if (!loc) return "-";
     return loc.code + " - " + loc.name;
-  };
+  }, []);
 
   // Unique values for column filters
   const uniqueClassValues = useMemo(() => {
@@ -3884,7 +3904,7 @@ useEffect(() => {
       if (dateDiff !== 0) return dateDiff;
       return a.start_time.localeCompare(b.start_time);
     });
-  }, [riskFilteredSessions, sortOrder]);
+  }, [formatInstructors, formatLocation, riskFilteredSessions, sortOrder]);
 
   // NOTE: Inline edit candidate conflicts were removed (editing is now modal-based).
 
@@ -4445,7 +4465,7 @@ function buildAvailabilityVm(opts: {
     });
   }, [onGridChange, sortedSessions, gridCriteria, sessions.length, localConflictSummary]);
 
-  const renderConflictBadge = (sessionId: string, conflicts: ScheduleConflict[] | null) => {
+  const renderConflictBadge = useCallback((sessionId: string, conflicts: ScheduleConflict[] | null) => {
     const list = conflicts ?? [];
     if (list.length === 0) return <span className="inline-flex h-8 w-8" />;
 
@@ -4518,7 +4538,74 @@ function buildAvailabilityVm(opts: {
         </PopoverContent>
       </Popover>
     );
-  };
+  }, [conflictPopoverId, formatInstructorOutsideAvailabilityMessage]);
+
+  const sessionTableRows = useMemo(() => {
+    const rows = sortedSessions.map((session, idx) => (
+      <tr
+        key={session.id}
+        onClick={() => handleEdit(session)}
+        className={`cursor-pointer border-b border-white/5 transition hover:bg-white/5 ${idx % 2 === 0 ? "bg-white/[0.02]" : ""}`}
+      >
+        <td className="px-3 py-2">
+          <div className="flex items-center gap-2">
+            {renderConflictBadge(session.id, localConflictsBySessionId[session.id] ?? null)}
+            <span>{session.day_of_week.slice(0, 3)}</span>
+          </div>
+        </td>
+        <td className="px-3 py-2">{session.session_date}</td>
+        <td className="px-3 py-2">{session.start_time.slice(0, 5)}</td>
+        <td className="px-3 py-2">{session.end_time.slice(0, 5)}</td>
+        <td className="px-3 py-2">{session.class?.name || "-"}</td>
+        <td className="px-3 py-2">{formatLocation(session.location)}</td>
+        <td className="px-3 py-2 max-w-[200px] truncate">{formatInstructors(session.instructors)}</td>
+        <td
+          className="px-3 py-2 max-w-[240px] truncate font-mono text-xs text-muted-foreground"
+          title={formatInstructorIds(session.instructors)}
+        >
+          {formatInstructorIds(session.instructors)}
+        </td>
+        <td className="px-3 py-2 text-center">{session.headcount ?? "-"}</td>
+        <td className="px-2 py-2">
+          <div className="flex justify-center gap-1">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleEdit(session);
+              }}
+              className="rounded p-1.5 text-blue-400 transition hover:bg-blue-500/20"
+              title="Edit session"
+              aria-label="Edit session"
+            >
+              <Edit2 className="h-4 w-4" />
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDelete(session.id);
+              }}
+              className="rounded p-1.5 text-red-400 transition hover:bg-red-500/20"
+              title="Delete session"
+              aria-label="Delete session"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
+        </td>
+      </tr>
+    ));
+    return rows;
+  }, [
+    editModalOpen,
+    formatInstructorIds,
+    formatInstructors,
+    formatLocation,
+    handleDelete,
+    handleEdit,
+    localConflictsBySessionId,
+    renderConflictBadge,
+    sortedSessions,
+  ]);
 
   if (loading) {
     return (
@@ -5201,59 +5288,7 @@ function buildAvailabilityVm(opts: {
             </tr>
           </thead>
           <tbody>
-            {sortedSessions.map((session, idx) => (
-              <tr
-                key={session.id}
-                onClick={() => handleEdit(session)}
-                className={`cursor-pointer border-b border-white/5 transition hover:bg-white/5 ${idx % 2 === 0 ? "bg-white/[0.02]" : ""}`}
-              >
-                <td className="px-3 py-2">
-                  <div className="flex items-center gap-2">
-                    {renderConflictBadge(session.id, localConflictsBySessionId[session.id] ?? null)}
-                    <span>{session.day_of_week.slice(0, 3)}</span>
-                  </div>
-                </td>
-                <td className="px-3 py-2">{session.session_date}</td>
-                <td className="px-3 py-2">{session.start_time.slice(0, 5)}</td>
-                <td className="px-3 py-2">{session.end_time.slice(0, 5)}</td>
-                <td className="px-3 py-2">{session.class?.name || "-"}</td>
-                <td className="px-3 py-2">{formatLocation(session.location)}</td>
-                <td className="px-3 py-2 max-w-[200px] truncate">{formatInstructors(session.instructors)}</td>
-                <td
-                  className="px-3 py-2 max-w-[240px] truncate font-mono text-xs text-muted-foreground"
-                  title={formatInstructorIds(session.instructors)}
-                >
-                  {formatInstructorIds(session.instructors)}
-                </td>
-                <td className="px-3 py-2 text-center">{session.headcount ?? "-"}</td>
-                <td className="px-2 py-2">
-                  <div className="flex justify-center gap-1">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleEdit(session);
-                      }}
-                      className="rounded p-1.5 text-blue-400 transition hover:bg-blue-500/20"
-                      title="Edit session"
-                      aria-label="Edit session"
-                    >
-                      <Edit2 className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDelete(session.id);
-                      }}
-                      className="rounded p-1.5 text-red-400 transition hover:bg-red-500/20"
-                      title="Delete session"
-                      aria-label="Delete session"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
+            {sessionTableRows}
             {sortedSessions.length === 0 && (
               <tr>
                 <td colSpan={10} className="px-3 py-8 text-center text-muted-foreground">
@@ -7566,7 +7601,7 @@ function buildAvailabilityVm(opts: {
                     </button>
                   </div>
 
-                  <div className="mt-2 text-sm text-[var(--brand-ink)]/80">
+                  <div className="mt-2 text-sm text-foreground">
                     These are other available time slots in the days selected in Select Weekdays.
                   </div>
 
@@ -7584,7 +7619,32 @@ function buildAvailabilityVm(opts: {
                     })}
                   </div>
 
-                  <div className="mt-3 max-h-[320px] overflow-y-auto rounded-xl border border-white/10 bg-black/10 p-2">
+                  <div className="mt-3 flex items-center justify-between gap-3">
+                    <div className="text-xs font-semibold text-muted-foreground">
+                      Selected: {slotHelperMultiDayCheckedCount}/{slotHelperMultiDayOptions.length}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={toggleSlotHelperMultiDaySelectAll}
+                      disabled={slotHelperMultiDayOptions.length === 0}
+                      aria-label="Toggle all auto locate options"
+                      className="flex items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-3 py-1.5 text-xs font-semibold text-foreground transition hover:bg-black/30 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <span
+                        className={`flex h-4 w-4 items-center justify-center rounded border ${
+                          slotHelperMultiDayAllChecked
+                            ? "border-[var(--cta)] bg-[var(--cta)] text-[var(--cta-foreground)]"
+                            : "border-white/30 bg-black/10"
+                        }`}
+                        aria-hidden="true"
+                      >
+                        {slotHelperMultiDayAllChecked ? <Check className="h-3 w-3" /> : null}
+                      </span>
+                      {slotHelperMultiDayAllChecked ? "Unselect all" : "Select all"}
+                    </button>
+                  </div>
+
+                  <div className="ymca-scrollbar mt-3 max-h-[320px] overflow-y-auto rounded-xl border border-white/10 bg-black/10 p-2">
                     {slotHelperMultiDayOptions.map((opt) => (
                       <button
                         key={opt.key}

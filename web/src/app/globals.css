@@ -225,29 +225,65 @@
   animation: ymca-press 2.4s ease-in-out infinite;
 }
 
-/* Reports scrollbar styling (theme-colored track) */
-.report-scroll {
+/* Global themed scrollbar styling (theme-colored track) */
+:root {
   scrollbar-width: thin;
   scrollbar-color: rgb(255 255 255 / 0.35) rgb(var(--brand-rgb) / 0.55);
 }
 
-.report-scroll::-webkit-scrollbar {
+/* WebKit global scrollbar styling (Chrome/Edge/Safari) */
+*::-webkit-scrollbar {
   width: 12px;
+  height: 12px; /* horizontal scrollbars */
 }
 
-.report-scroll::-webkit-scrollbar-track {
+*::-webkit-scrollbar-track {
   background: rgb(var(--brand-rgb) / 0.55);
   border-radius: 9999px;
 }
 
-.report-scroll::-webkit-scrollbar-thumb {
+*::-webkit-scrollbar-thumb {
   background: rgb(255 255 255 / 0.35);
   border-radius: 9999px;
   border: 3px solid rgb(var(--brand-rgb) / 0.55);
 }
 
-.report-scroll::-webkit-scrollbar-thumb:hover {
+*::-webkit-scrollbar-thumb:hover {
   background: rgb(255 255 255 / 0.5);
+}
+
+*::-webkit-scrollbar-corner {
+  background: rgb(var(--brand-rgb) / 0.55);
+}
+
+/* Named scrollbar class for intentional scroll containers (legacy + shared) */
+:where(.report-scroll, .ymca-scrollbar) {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(255 255 255 / 0.35) rgb(var(--brand-rgb) / 0.55);
+}
+
+:where(.report-scroll, .ymca-scrollbar)::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+:where(.report-scroll, .ymca-scrollbar)::-webkit-scrollbar-track {
+  background: rgb(var(--brand-rgb) / 0.55);
+  border-radius: 9999px;
+}
+
+:where(.report-scroll, .ymca-scrollbar)::-webkit-scrollbar-thumb {
+  background: rgb(255 255 255 / 0.35);
+  border-radius: 9999px;
+  border: 3px solid rgb(var(--brand-rgb) / 0.55);
+}
+
+:where(.report-scroll, .ymca-scrollbar)::-webkit-scrollbar-thumb:hover {
+  background: rgb(255 255 255 / 0.5);
+}
+
+:where(.report-scroll, .ymca-scrollbar)::-webkit-scrollbar-corner {
+  background: rgb(var(--brand-rgb) / 0.55);
 }
 
 /* Theme-colored native selects */
