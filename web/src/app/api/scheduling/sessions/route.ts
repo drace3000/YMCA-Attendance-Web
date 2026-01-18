@@ -516,7 +516,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   {
     const { data: scheduleRow, error: scheduleError } = await supabase
       .from("schedules")
-      .select("id, month_start")
+      .select("id, month_start, is_approved")
       .eq("id", schedule_id)
       .eq("branch_id", branch_id)
       .maybeSingle();
@@ -529,6 +529,13 @@ export async function POST(req: NextRequest): Promise<Response> {
       return NextResponse.json(
         { error: "Selected schedule is not available for this branch" },
         { status: 409 }
+      );
+    }
+
+    if ((scheduleRow as { is_approved?: boolean | null }).is_approved === false) {
+      return NextResponse.json(
+        { error: "Schedule is pending approval; no changes are allowed until approved" },
+        { status: 409 },
       );
     }
 
@@ -795,6 +802,31 @@ export async function PUT(req: NextRequest): Promise<Response> {
   }
   if (access?.recipient_type === "Branch" && currentSession.branch_id !== access.branch_id) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  // Approval lock: block edits to sessions when the schedule is pending approval.
+  {
+    const { data: scheduleRow, error: scheduleError } = await supabase
+      .from("schedules")
+      .select("id, is_approved")
+      .eq("id", currentSession.schedule_id)
+      .eq("branch_id", currentSession.branch_id)
+      .maybeSingle<{ id: string; is_approved: boolean }>();
+
+    if (scheduleError) {
+      return NextResponse.json({ error: scheduleError.message }, { status: 500 });
+    }
+
+    if (!scheduleRow) {
+      return NextResponse.json({ error: "Selected schedule is not available for this branch" }, { status: 409 });
+    }
+
+    if (scheduleRow.is_approved === false) {
+      return NextResponse.json(
+        { error: "Schedule is pending approval; no changes are allowed until approved" },
+        { status: 409 },
+      );
+    }
   }
 
   const getEffectiveBranchIdForSession = async (): Promise<
@@ -1068,13 +1100,52 @@ export async function DELETE(req: NextRequest): Promise<Response> {
 
   const supabase = createSupabaseServerClient();
 
+  const access = required.access;
+
+  // Approval lock: prevent deletion when the schedule is pending approval.
+  {
+    let sessionQuery = supabase
+      .from("class_sessions")
+      .select("id, branch_id, schedule_id")
+      .eq("id", id);
+
+    if (access?.recipient_type === "Branch") {
+      sessionQuery = sessionQuery.eq("branch_id", access.branch_id);
+    }
+
+    const { data: sessionRow, error: sessionError } = await sessionQuery.maybeSingle<{
+      id: string;
+      branch_id: string;
+      schedule_id: string;
+    }>();
+
+    if (sessionError) return NextResponse.json({ error: sessionError.message }, { status: 500 });
+    if (!sessionRow) return NextResponse.json({ error: "Session not found" }, { status: 404 });
+
+    const { data: scheduleRow, error: scheduleError } = await supabase
+      .from("schedules")
+      .select("id, is_approved")
+      .eq("id", sessionRow.schedule_id)
+      .eq("branch_id", sessionRow.branch_id)
+      .maybeSingle<{ id: string; is_approved: boolean }>();
+
+    if (scheduleError) return NextResponse.json({ error: scheduleError.message }, { status: 500 });
+    if (!scheduleRow) {
+      return NextResponse.json({ error: "Selected schedule is not available for this branch" }, { status: 409 });
+    }
+    if (scheduleRow.is_approved === false) {
+      return NextResponse.json(
+        { error: "Schedule is pending approval; no changes are allowed until approved" },
+        { status: 409 },
+      );
+    }
+  }
+
   // session_instructors will be deleted via CASCADE
   let delQuery = supabase
     .from("class_sessions")
     .delete()
     .eq("id", id);
-
-  const access = required.access;
   if (access?.recipient_type === "Branch") {
     delQuery = delQuery.eq("branch_id", access.branch_id);
   }

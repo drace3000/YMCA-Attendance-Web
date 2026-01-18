@@ -200,7 +200,8 @@ describe("SchedulingPage publish confirmation", () => {
     const publishBtn = await screen.findByRole("button", { name: "Publish" });
 
     await waitFor(() => {
-      expect(cloneBtn).toBeDisabled();
+      // Clone is enabled for testing even if there are HIGH conflicts.
+      expect(cloneBtn).not.toBeDisabled();
       expect(publishBtn).toBeDisabled();
     });
   });

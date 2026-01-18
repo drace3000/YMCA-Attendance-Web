@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useState, useCallback, useRef, useMemo } from "react";
+import { useEffect, useLayoutEffect, useState, useCallback, useRef, useMemo, useTransition } from "react";
 import type * as React from "react";
 import { createPortal } from "react-dom";
 import {
@@ -193,6 +193,8 @@ type SessionsTabProps = {
   branchId: string;
   programGroupId: string;
   refreshKey: number;
+  scheduleApproved?: boolean;
+  onApprovalBlockedAction?: (action: string) => void;
   onSessionsLoaded?: (sessions: Session[]) => void;
   onGridChange?: (payload: {
     sessions: Session[];
@@ -462,6 +464,8 @@ export function SessionsTab({
   branchId,
   programGroupId,
   refreshKey,
+  scheduleApproved = true,
+  onApprovalBlockedAction,
   onSessionsLoaded,
   onGridChange,
   filterDate,
@@ -543,6 +547,8 @@ export function SessionsTab({
 
   // Add session modal
   const [addOpen, setAddOpen] = useState(false);
+  const [addSessionOpening, setAddSessionOpening] = useState(false);
+  const [isAddSessionTransitionPending, startAddSessionTransition] = useTransition();
   const addDrag = useDraggableModal(addOpen, addDragStorageKey, (offset) =>
     persistUiOffset("add_session_modal_offset", offset),
   );
@@ -1638,7 +1644,17 @@ useEffect(() => {
     }
   }, []);
 
-  const handleEdit = (session: Session) => {
+  const requireApproved = useCallback(
+    (action: string): boolean => {
+      if (scheduleApproved) return true;
+      onApprovalBlockedAction?.(action);
+      return false;
+    },
+    [onApprovalBlockedAction, scheduleApproved],
+  );
+
+  const handleEdit = useCallback((session: Session) => {
+    if (!requireApproved("edit sessions")) return;
     setEditModalOpening(true);
     setSaveError(null);
     setSaveConflicts(null);
@@ -1653,7 +1669,7 @@ useEffect(() => {
       headcount: session.headcount,
     });
     setEditModalOpen(true);
-  };
+  }, [requireApproved, setEditModalForm]);
 
   const closeEditModal = () => {
     setSaveError(null);
@@ -1772,6 +1788,7 @@ useEffect(() => {
 
   const openAddSessionDirect = useCallback(
     (prefill?: Partial<CreateFormData>) => {
+      if (!requireApproved("add sessions")) return;
       setAddError(null);
       setAddConflicts(null);
       setAddForm({
@@ -1786,10 +1803,11 @@ useEffect(() => {
       });
       setAddOpen(true);
     },
-    [filterDate],
+    [filterDate, requireApproved],
   );
 
-  const openAddSession = () => {
+  const openAddSession = useCallback(() => {
+    if (!requireApproved("add sessions")) return;
     slotHelperCloseSeq.current += 1; // cancel any pending close deferrals
     setSlotHelperClosing(false);
     setSlotHelperReviewOpen(false);
@@ -1810,7 +1828,15 @@ useEffect(() => {
     setSlotHelperLocationDropdownOpen(false);
     setSlotHelperInstructorDropdownOpen(false);
     setSlotHelperOpen(true);
-  };
+  }, [requireApproved]);
+
+  const handleAddSessionClick = useCallback(() => {
+    if (!requireApproved("add sessions")) return;
+    setAddSessionOpening(true);
+    startAddSessionTransition(() => {
+      openAddSession();
+    });
+  }, [openAddSession, requireApproved, startAddSessionTransition]);
 
   const closeAddSession = () => {
     setAddOpen(false);
@@ -2003,9 +2029,10 @@ useEffect(() => {
 
   const handleDelete = useCallback(
     (sessionId: string) => {
+      if (!requireApproved("delete sessions")) return;
       openDeleteConfirm(sessionId);
     },
-    [openDeleteConfirm],
+    [openDeleteConfirm, requireApproved],
   );
 
   const formatInstructors = useCallback((list: Session["instructors"]): string => {
@@ -4979,13 +5006,28 @@ function buildAvailabilityVm(opts: {
 
           <button
             type="button"
-            onClick={openAddSession}
-            disabled={!scheduleId || !branchId}
+            onClick={handleAddSessionClick}
+            disabled={
+              !scheduleId ||
+              !branchId ||
+              slotHelperOpen ||
+              addSessionOpening ||
+              isAddSessionTransitionPending
+            }
             className="btn-pill inline-flex items-center gap-1.5 rounded-full border border-[var(--brand-strong)] bg-[var(--cta)] px-2.5 py-1 text-xs font-semibold text-[var(--cta-foreground)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-            aria-label="Add session"
+            aria-label={addSessionOpening || isAddSessionTransitionPending ? "Add session (loading)" : "Add session"}
           >
-            <Plus className="h-3.5 w-3.5" />
-            Add Session
+            {addSessionOpening || isAddSessionTransitionPending ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Loading
+              </>
+            ) : (
+              <>
+                <Plus className="h-3.5 w-3.5" />
+                Add Session
+              </>
+            )}
           </button>
 
           {saving && (
@@ -6458,6 +6500,10 @@ function buildAvailabilityVm(opts: {
               role="dialog"
               aria-modal="true"
               aria-label="Add session helper"
+              ref={(node) => {
+                if (!node) return;
+                setAddSessionOpening((prev) => (prev ? false : prev));
+              }}
               className="relative z-10 flex w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] p-6 shadow-2xl backdrop-blur-md max-h-[85vh]"
               onPointerDown={(e) => {
                 if (!shouldStartModalDrag(e.target)) return;
@@ -7275,7 +7321,10 @@ function buildAvailabilityVm(opts: {
                           <input
                             type="checkbox"
                             checked={slotHelperAutoLocateEnabled}
-                            onChange={(e) => setSlotHelperAutoLocateEnabled(e.target.checked)}
+                            onChange={(e) => {
+                              if (!requireApproved("use Auto Locate")) return;
+                              setSlotHelperAutoLocateEnabled(e.target.checked);
+                            }}
                             aria-label="Auto Locate"
                             className="h-4 w-4 cursor-pointer accent-[var(--cta)]"
                           />

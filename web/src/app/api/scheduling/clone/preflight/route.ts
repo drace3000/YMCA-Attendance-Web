@@ -19,6 +19,7 @@ type ScheduleRow = {
 
 type MissingSessionRow = {
   id: string;
+  class_id?: string | null;
   session_date: string;
   day_of_week: string;
   start_time: string;
@@ -31,6 +32,15 @@ type MissingSessionRow = {
 function normalizeRel<T>(value: T | T[] | null | undefined): T | null {
   if (!value) return null;
   return Array.isArray(value) ? value[0] ?? null : value;
+}
+
+function chunkArray<T>(items: T[], chunkSize: number): T[][] {
+  const out: T[][] = [];
+  const size = Math.max(1, Math.floor(chunkSize));
+  for (let i = 0; i < items.length; i += size) {
+    out.push(items.slice(i, i + size));
+  }
+  return out;
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
@@ -92,6 +102,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     .select(
       `
         id,
+        class_id,
         session_date,
         day_of_week,
         start_time,
@@ -122,6 +133,34 @@ export async function POST(req: NextRequest): Promise<Response> {
       location_code: normalizeRel(s.location)?.code ?? null,
     }));
 
+  const uniqueClassKey = (s: MissingSessionRow): string | null => {
+    if (typeof s.class_id === "string" && s.class_id.trim()) return s.class_id;
+    const name = normalizeRel(s.class)?.name ?? null;
+    return typeof name === "string" && name.trim() ? name : null;
+  };
+
+  const uniqueClasses = new Set(allSessions.map(uniqueClassKey).filter(Boolean)).size;
+
+  let uniqueInstructors = 0;
+  const sessionIds = allSessions.map((s) => s.id).filter(Boolean);
+  if (sessionIds.length > 0) {
+    // Avoid PostgREST "URI too long" by chunking large IN lists.
+    const instructorIds = new Set<string>();
+    for (const chunk of chunkArray(sessionIds, 150)) {
+      const { data: links, error: linksError } = await supabase
+        .from("session_instructors")
+        .select("instructor_id")
+        .in("session_id", chunk);
+
+      if (linksError) return NextResponse.json({ error: linksError.message }, { status: 500 });
+
+      for (const row of (links ?? []) as Array<{ instructor_id: string | null }>) {
+        if (row.instructor_id) instructorIds.add(row.instructor_id);
+      }
+    }
+    uniqueInstructors = instructorIds.size;
+  }
+
   return NextResponse.json({
     branch_id: branchId,
     program_group_id: programGroupId,
@@ -129,6 +168,11 @@ export async function POST(req: NextRequest): Promise<Response> {
     target_month_start: targetMonthStart,
     target_exists: !!existingTarget,
     existing_target_schedule: existingTarget ?? null,
+    stats: {
+      total_sessions: allSessions.length,
+      unique_classes: uniqueClasses,
+      unique_instructors: uniqueInstructors,
+    },
     headcount: {
       total_sessions: allSessions.length,
       missing_count: missing.length,

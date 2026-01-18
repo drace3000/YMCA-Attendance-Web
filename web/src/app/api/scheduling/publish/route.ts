@@ -25,6 +25,7 @@ type ScheduleRow = {
   name: string;
   month_start: string; // "YYYY-MM-DD"
   status: string;
+  is_approved?: boolean;
   published_at: string | null;
   branch_id: string;
   program_group_id: string;
@@ -119,7 +120,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   // 1) Load schedule and ensure it's eligible
   const { data: scheduleRow, error: scheduleError } = await supabase
     .from("schedules")
-    .select("id, name, month_start, status, published_at, branch_id, program_group_id")
+    .select("id, name, month_start, status, is_approved, published_at, branch_id, program_group_id")
     .eq("id", scheduleId)
     .eq("branch_id", branchId)
     .maybeSingle<ScheduleRow>();
@@ -141,6 +142,13 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   if (scheduleRow.status === "published") {
     return NextResponse.json({ error: "Schedule is already published" }, { status: 409 });
+  }
+
+  if (scheduleRow.is_approved === false) {
+    return NextResponse.json(
+      { error: "Schedule is pending approval; no changes are allowed until approved" },
+      { status: 409 },
+    );
   }
 
   const scheduleMonth = scheduleRow.month_start.slice(0, 7);

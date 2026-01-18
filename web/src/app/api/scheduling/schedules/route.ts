@@ -22,19 +22,42 @@ export async function GET(req: NextRequest): Promise<Response> {
     return NextResponse.json({ error: "branch_id is required" }, { status: 400 });
   }
 
-  let query = supabase
-    .from("schedules")
-    .select("id, name, month_start, status, published_at, created_at, branch_id, program_group_id")
-    .order("month_start", { ascending: false });
+  const isMissingApprovalColumnError = (message: string): boolean => {
+    const m = String(message || "");
+    return (
+      m.includes("is_approved") ||
+      m.includes("column") && m.includes("does not exist") ||
+      m.includes("42703")
+    );
+  };
 
-  query = query.eq("branch_id", branchId);
-  if (programGroupId) query = query.eq("program_group_id", programGroupId);
+  const buildQuery = (withApproval: boolean) => {
+    const columns = withApproval
+      ? "id, name, month_start, status, is_approved, published_at, created_at, branch_id, program_group_id"
+      : "id, name, month_start, status, published_at, created_at, branch_id, program_group_id";
 
-  const { data: schedules, error } = await query;
+    let query = supabase
+      .from("schedules")
+      .select(columns)
+      .order("month_start", { ascending: false });
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    query = query.eq("branch_id", branchId);
+    if (programGroupId) query = query.eq("program_group_id", programGroupId);
+    return query;
+  };
+
+  let { data: schedules, error } = await buildQuery(true);
+
+  // Backward-compatible fallback: if the DB hasn't applied the approval-lock migration yet,
+  // the `is_approved` column won't exist and the select will fail.
+  if (error && isMissingApprovalColumnError(error.message)) {
+    const retry = await buildQuery(false);
+    const res2 = await retry;
+    schedules = res2.data;
+    error = res2.error;
   }
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   return NextResponse.json({ schedules: schedules || [] });
 }

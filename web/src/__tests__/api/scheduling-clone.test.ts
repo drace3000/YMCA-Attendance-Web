@@ -93,7 +93,7 @@ describe("/api/scheduling/clone", () => {
     vi.clearAllMocks();
   });
 
-  it("blocks cloning when headcounts are missing and override is false", async () => {
+  it("blocks cloning (prod gate) when headcounts are missing", async () => {
     mockRequireRecipientAccess.mockResolvedValueOnce({
       ok: true,
       access: { recipient_type: "Branch", branch_id: "br-1" },
@@ -120,7 +120,21 @@ describe("/api/scheduling/clone", () => {
         class_sessions: async (state) => {
           // headcount gate query
           if (state.action === "select") {
-            return { data: [{ id: "sess-1", headcount: null }], error: null };
+            return {
+              data: [
+                {
+                  id: "sess-1",
+                  session_date: "2025-12-01",
+                  day_of_week: "MONDAY",
+                  start_time: "09:00",
+                  end_time: "10:00",
+                  headcount: null,
+                  class: { name: "Yoga" },
+                  location: { code: "STUDIO" },
+                },
+              ],
+              error: null,
+            };
           }
           return { data: null, error: null };
         },
@@ -129,7 +143,8 @@ describe("/api/scheduling/clone", () => {
 
     const req = new NextRequest("http://localhost:3000/api/scheduling/clone", {
       method: "POST",
-      body: JSON.stringify({ branch_id: "br-1", program_group_id: "pg-1", override_missing_headcounts: false }),
+      headers: { "x-ymca-emulate-prod-clone-gate": "1" },
+      body: JSON.stringify({ branch_id: "br-1", program_group_id: "pg-1" }),
     });
 
     const res = await POST(req);
@@ -137,9 +152,10 @@ describe("/api/scheduling/clone", () => {
     expect(res.status).toBe(409);
     expect(json.error).toBe("Missing headcounts in current schedule");
     expect(json.missing_headcount_count).toBe(1);
+    expect(Array.isArray(json.missing_sessions)).toBe(true);
   });
 
-  it("creates next month's schedule and maps session dates by weekday ordinal when override is true", async () => {
+  it("creates next month's schedule and maps session dates by weekday ordinal (headcounts reset)", async () => {
     mockRequireRecipientAccess.mockResolvedValueOnce({
       ok: true,
       access: { recipient_type: "Branch", branch_id: "br-1", email: "bm@example.com" },
@@ -160,6 +176,7 @@ describe("/api/scheduling/clone", () => {
                 name: (state.payload as any)?.name ?? "January 2026",
                 month_start: (state.payload as any)?.month_start ?? "2026-01-01",
                 status: (state.payload as any)?.status ?? "draft",
+                is_approved: (state.payload as any)?.is_approved ?? false,
                 branch_id: "br-1",
                 program_group_id: "pg-1",
               },
@@ -190,11 +207,22 @@ describe("/api/scheduling/clone", () => {
             classSessionsSelectCalls += 1;
 
             // The clone route selects from class_sessions twice:
-            // 1) headcount gate: select("id, headcount")
-            // 2) source sessions: select("id, class_id, location_id, ... session_date ...")
+            // 1) headcount gate (details)
+            // 2) source sessions
             if (classSessionsSelectCalls === 1) {
               return {
-                data: [{ id: "sess-src-1", headcount: null }],
+                data: [
+                  {
+                    id: "sess-src-1",
+                    session_date: "2025-12-01",
+                    day_of_week: "MONDAY",
+                    start_time: "09:00",
+                    end_time: "10:00",
+                    headcount: null,
+                    class: { name: "Yoga" },
+                    location: { code: "STUDIO" },
+                  },
+                ],
                 error: null,
               };
             }
@@ -233,7 +261,7 @@ describe("/api/scheduling/clone", () => {
 
     const req = new NextRequest("http://localhost:3000/api/scheduling/clone", {
       method: "POST",
-      body: JSON.stringify({ branch_id: "br-1", program_group_id: "pg-1", override_missing_headcounts: true }),
+      body: JSON.stringify({ branch_id: "br-1", program_group_id: "pg-1" }),
     });
 
     const res = await POST(req);
@@ -245,6 +273,7 @@ describe("/api/scheduling/clone", () => {
       program_group_id: "pg-1",
       month_start: "2026-01-01",
       status: "draft",
+      is_approved: false,
       cloned_from_id: "sch-latest",
     });
 

@@ -37,11 +37,20 @@ function normalizeHm(value: unknown, fallback: string): string {
   return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
 }
 
+function monthNameYearFromMonthStart(monthStartIsoDate: string | null | undefined): string {
+  const iso = typeof monthStartIsoDate === "string" ? monthStartIsoDate.trim() : "";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return "—";
+  const d = new Date(`${iso}T00:00:00Z`);
+  if (!Number.isFinite(d.getTime())) return "—";
+  return d.toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
+}
+
 type Schedule = {
   id: string;
   name: string;
   month_start: string;
   status: string;
+  is_approved?: boolean;
 };
 
 type Branch = {
@@ -106,10 +115,16 @@ export default function SchedulingPage() {
   const [cloneLoading, setCloneLoading] = useState(false);
   const [cloneError, setCloneError] = useState<string | null>(null);
   const [clonePreflight, setClonePreflight] = useState<any>(null);
-  const [cloneOverride, setCloneOverride] = useState(false);
-  const [cloneShowMissing, setCloneShowMissing] = useState(false);
   const [cloneSaving, setCloneSaving] = useState(false);
   const [cloneResult, setCloneResult] = useState<any>(null);
+  const [cloneProgress, setCloneProgress] = useState<{ done: number; total: number; percent: number } | null>(null);
+  const [cloneOkPendingScheduleId, setCloneOkPendingScheduleId] = useState<string | null>(null);
+
+  // Approval actions for pending schedules
+  const [approveSaving, setApproveSaving] = useState(false);
+  const [backoutConfirmOpen, setBackoutConfirmOpen] = useState(false);
+  const [backoutSaving, setBackoutSaving] = useState(false);
+  const [approvalActionError, setApprovalActionError] = useState<string | null>(null);
 
   // Phase 7: Verify → Publish + Email
   const [publishOpen, setPublishOpen] = useState(false);
@@ -277,6 +292,19 @@ export default function SchedulingPage() {
 
   const selectedSchedule = schedules.find((s) => s.id === selectedScheduleId);
   const selectedBranch = branch as unknown as Branch;
+  const scheduleApproved = selectedSchedule?.is_approved !== false;
+
+  const [approvalBlockedOpen, setApprovalBlockedOpen] = useState(false);
+  const [approvalBlockedAction, setApprovalBlockedAction] = useState<string>("change this schedule");
+
+  const openApprovalBlocked = useCallback((action: string) => {
+    setApprovalBlockedAction(action || "change this schedule");
+    setApprovalBlockedOpen(true);
+  }, []);
+
+  const closeApprovalBlocked = useCallback(() => {
+    setApprovalBlockedOpen(false);
+  }, []);
 
   // Compute unique dates from sessions (sorted ascending)
   const uniqueDates = useMemo(() => {
@@ -365,12 +393,17 @@ export default function SchedulingPage() {
   // Sessions for reporting/printing are sourced from `SessionsTab` via `onSessionsLoaded`,
   // to avoid double-fetching `/api/scheduling/sessions` (which can be expensive locally).
 
+  const emulateProdCloneGate = process.env.NEXT_PUBLIC_EMULATE_PROD_CLONE_GATE === "true";
+  const prodCloneGateActive = process.env.NODE_ENV === "production" || emulateProdCloneGate;
+
   const fetchClonePreflight = useCallback(async () => {
     if (!branch?.id || !selectedProgramGroupId) return;
     setCloneLoading(true);
     setCloneError(null);
     setClonePreflight(null);
     setCloneResult(null);
+    setCloneProgress(null);
+    setCloneOkPendingScheduleId(null);
     try {
       const res = await fetch("/api/scheduling/clone/preflight", {
         method: "POST",
@@ -394,22 +427,22 @@ export default function SchedulingPage() {
   }, [branch.id, selectedProgramGroupId]);
 
   const openClone = async () => {
-    setCloneOverride(false);
-    setCloneShowMissing(false);
     setCloneError(null);
     setCloneResult(null);
+    setCloneProgress(null);
+    setCloneOkPendingScheduleId(null);
     setCloneOpen(true);
     await fetchClonePreflight();
   };
 
   const closeClone = () => {
     setCloneOpen(false);
-    setCloneOverride(false);
-    setCloneShowMissing(false);
     setCloneError(null);
     setClonePreflight(null);
     setCloneResult(null);
     setCloneSaving(false);
+    setCloneProgress(null);
+    setCloneOkPendingScheduleId(null);
   };
 
   const handleClone = async () => {
@@ -417,39 +450,170 @@ export default function SchedulingPage() {
     setCloneSaving(true);
     setCloneError(null);
     setCloneResult(null);
+    setCloneProgress(null);
+    setCloneOkPendingScheduleId(null);
     try {
       const res = await fetch("/api/scheduling/clone", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "text/event-stream",
+          ...(emulateProdCloneGate ? { "x-ymca-emulate-prod-clone-gate": "1" } : {}),
+        },
         body: JSON.stringify({
           branch_id: branch.id,
           program_group_id: selectedProgramGroupId,
-          override_missing_headcounts: cloneOverride,
         }),
       });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json?.error || "Failed to clone schedule");
-      setCloneResult(json);
 
-      const newId = json?.target_schedule?.id as string | undefined;
-      if (newId) {
-        setSelectedScheduleId(newId);
-        // Refresh schedules list + sessions so UI reflects the new month immediately.
-        await fetchSchedules();
-        handleRefresh();
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        // Production headcount gate (or emulate-prod)
+        if (res.status === 409 && Array.isArray(json?.missing_sessions)) {
+          setCloneError(json?.error || "Missing headcounts in current schedule");
+          setClonePreflight((prev: any) => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              headcount: {
+                ...(prev.headcount ?? {}),
+                total_sessions: json.total_sessions ?? prev.headcount?.total_sessions,
+                missing_count: json.missing_headcount_count ?? prev.headcount?.missing_count,
+                missing_sessions: json.missing_sessions,
+              },
+            };
+          });
+          return;
+        }
+
+        throw new Error(json?.error || "Failed to clone schedule");
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("Failed to read clone progress stream");
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      const handleEvent = (event: string, data: any) => {
+        if (event === "progress" && data && typeof data.percent === "number") {
+          setCloneProgress({ done: data.done ?? 0, total: data.total ?? 0, percent: data.percent });
+          return;
+        }
+
+        if (event === "complete") {
+          setCloneResult(data);
+          const newId = data?.target_schedule?.id as string | undefined;
+          setCloneOkPendingScheduleId(newId ?? null);
+          setCloneProgress({ done: data?.summary?.created_sessions ?? 0, total: data?.summary?.created_sessions ?? 0, percent: 100 });
+          return;
+        }
+
+        if (event === "error") {
+          setCloneError(typeof data?.error === "string" ? data.error : "Failed to clone schedule");
+        }
+      };
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop() ?? "";
+
+        for (const part of parts) {
+          const lines = part.split("\n").map((l) => l.trim()).filter(Boolean);
+          let event = "message";
+          let dataLine = "";
+          for (const line of lines) {
+            if (line.startsWith("event:")) event = line.slice("event:".length).trim();
+            if (line.startsWith("data:")) dataLine += line.slice("data:".length).trim();
+          }
+          if (!dataLine) continue;
+          try {
+            const data = JSON.parse(dataLine);
+            handleEvent(event, data);
+          } catch {
+            // ignore malformed chunks
+          }
+        }
       }
     } catch (err) {
       await logError(err instanceof Error ? err : new Error(String(err)), "API_ERROR", {
         page: "scheduling",
         action: "cloneSchedule",
         branchId: branch.id,
-        params: { programGroupId: selectedProgramGroupId, override_missing_headcounts: cloneOverride },
+        params: { programGroupId: selectedProgramGroupId, emulateProdCloneGate },
       });
       setCloneError(err instanceof Error ? err.message : "Failed to clone schedule");
     } finally {
       setCloneSaving(false);
     }
   };
+
+  const handleApproveSchedule = useCallback(async () => {
+    if (!branch?.id || !selectedScheduleId) return;
+    setApproveSaving(true);
+    setApprovalActionError(null);
+    try {
+      const res = await fetch("/api/scheduling/clone/approve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ branch_id: branch.id, schedule_id: selectedScheduleId }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.error || "Failed to approve schedule");
+
+      await fetchSchedules();
+      handleRefresh();
+    } catch (err) {
+      await logError(err instanceof Error ? err : new Error(String(err)), "API_ERROR", {
+        page: "scheduling",
+        action: "approveClonedSchedule",
+        branchId: branch.id,
+        params: { scheduleId: selectedScheduleId },
+      });
+      setApprovalActionError(err instanceof Error ? err.message : "Failed to approve schedule");
+    } finally {
+      setApproveSaving(false);
+    }
+  }, [branch.id, fetchSchedules, selectedScheduleId]);
+
+  const handleBackoutSchedule = useCallback(async () => {
+    if (!branch?.id || !selectedScheduleId || !selectedProgramGroupId) return;
+    setBackoutSaving(true);
+    setApprovalActionError(null);
+    try {
+      const res = await fetch("/api/scheduling/clone/backout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          branch_id: branch.id,
+          program_group_id: selectedProgramGroupId,
+          schedule_id: selectedScheduleId,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.error || "Failed to backout schedule");
+
+      const redirectId = (json?.redirect_schedule_id as string | null) ?? null;
+      setBackoutConfirmOpen(false);
+
+      // Reload schedules and switch selection back to the latest known schedule.
+      await fetchSchedules();
+      setSelectedScheduleId(redirectId ?? "");
+      handleRefresh();
+    } catch (err) {
+      await logError(err instanceof Error ? err : new Error(String(err)), "API_ERROR", {
+        page: "scheduling",
+        action: "backoutClonedSchedule",
+        branchId: branch.id,
+        params: { scheduleId: selectedScheduleId, programGroupId: selectedProgramGroupId },
+      });
+      setApprovalActionError(err instanceof Error ? err.message : "Failed to backout schedule");
+    } finally {
+      setBackoutSaving(false);
+    }
+  }, [branch.id, fetchSchedules, selectedProgramGroupId, selectedScheduleId]);
 
   const runPublishPreflight = useCallback(async () => {
     if (!branch?.id || !selectedScheduleId) return;
@@ -570,17 +734,54 @@ export default function SchedulingPage() {
           <button
             type="button"
             onClick={() => void openClone()}
-            disabled={!branch?.id || !selectedProgramGroupId || hasGridHighConflicts}
+            disabled={!branch?.id || !selectedProgramGroupId}
             className="btn-pill flex items-center gap-2 border border-white/10 bg-card/60 px-4 py-2 text-sm font-medium shadow-sm ring-1 ring-white/5 transition hover:bg-card hover:ring-white/10 disabled:cursor-not-allowed disabled:opacity-50"
             title="Clone the most recent schedule for this Branch/Group into the next month"
           >
             <Copy className="h-4 w-4 text-muted-foreground" />
             Clone Next Month
           </button>
+
+          {!scheduleApproved && !!selectedScheduleId && (
+            <>
+              <span
+                className="rounded-full border border-[var(--brand-strong)] bg-black/20 px-3 py-1 text-xs font-semibold text-foreground"
+                title="This schedule is locked pending approval. No changes are allowed until approved."
+              >
+                Pending approval
+              </span>
+              <button
+                type="button"
+                onClick={() => void handleApproveSchedule()}
+                disabled={approveSaving || backoutSaving}
+                className="btn-pill flex items-center gap-2 border border-[var(--brand-strong)] bg-[var(--cta)] px-4 py-2 text-sm font-medium text-[var(--cta-foreground)] shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                title="Approve this schedule to allow edits and publishing"
+              >
+                {approveSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                Approve
+              </button>
+              <button
+                type="button"
+                onClick={() => setBackoutConfirmOpen(true)}
+                disabled={approveSaving || backoutSaving}
+                className="btn-pill flex items-center gap-2 border border-white/10 bg-card/60 px-4 py-2 text-sm font-medium shadow-sm ring-1 ring-white/5 transition hover:bg-card hover:ring-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                title="Backout (delete) this unapproved cloned schedule"
+              >
+                {backoutSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4 text-muted-foreground" />}
+                Backout
+              </button>
+            </>
+          )}
           {/* Publish Button */}
           <button
             type="button"
-            onClick={openPublish}
+            onClick={() => {
+              if (!scheduleApproved) {
+                openApprovalBlocked("publish");
+                return;
+              }
+              openPublish();
+            }}
             disabled={!branch?.id || !selectedScheduleId || hasGridHighConflicts}
             className="btn-pill flex items-center gap-2 border border-white/10 bg-card/60 px-4 py-2 text-sm font-medium shadow-sm ring-1 ring-white/5 transition hover:bg-card hover:ring-white/10 disabled:cursor-not-allowed disabled:opacity-50"
             title="Verify the full schedule for conflicts, then publish and email instructors"
@@ -676,9 +877,22 @@ export default function SchedulingPage() {
               >
                 <span className="flex items-center gap-2">
                   <Calendar className="h-4 w-4 text-muted-foreground" />
-                  {loadingSchedules
-                    ? "Loading..."
-                    : selectedSchedule?.name || "Select a schedule"}
+                  {loadingSchedules ? (
+                    "Loading..."
+                  ) : (
+                    <>
+                      <span className="truncate">{selectedSchedule?.name || "Select a schedule"}</span>
+                      {selectedSchedule?.is_approved === false ? (
+                        <span
+                          aria-hidden="true"
+                          title="Pending approval"
+                          className="rounded-full border border-[var(--brand-strong)] bg-black/20 px-2 py-0.5 text-[11px] font-semibold text-foreground"
+                        >
+                          Pending
+                        </span>
+                      ) : null}
+                    </>
+                  )}
                 </span>
                 <ChevronDown className="h-4 w-4 text-muted-foreground" />
               </button>
@@ -718,9 +932,19 @@ export default function SchedulingPage() {
                           : "text-[var(--brand-ink)] hover:bg-[var(--brand-strong)] hover:text-white"
                       }`}
                     >
-                      <span>{schedule.name}</span>
-                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${labelStyles}`}>
-                        {label}
+                      <span className="min-w-0 truncate">{schedule.name}</span>
+                      <span className="flex items-center gap-2">
+                        {schedule.is_approved === false ? (
+                          <span
+                            title="Pending approval"
+                            className="rounded-full border border-[var(--brand-strong)] bg-black/20 px-2 py-0.5 text-[11px] font-semibold text-foreground"
+                          >
+                            Pending
+                          </span>
+                        ) : null}
+                        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${labelStyles}`}>
+                          {label}
+                        </span>
                       </span>
                     </button>
                   );
@@ -914,6 +1138,8 @@ export default function SchedulingPage() {
           branchId={branch.id}
           programGroupId={selectedProgramGroupId}
           refreshKey={refreshKey}
+          scheduleApproved={scheduleApproved}
+          onApprovalBlockedAction={openApprovalBlocked}
           onSessionsLoaded={setSessionsForPrint}
           onGridChange={(payload) => {
             setGridSessions(payload.sessions);
@@ -947,19 +1173,32 @@ export default function SchedulingPage() {
       {/* Clone Modal */}
       {cloneOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={closeClone} />
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => {
+              if (cloneSaving) return;
+              closeClone();
+            }}
+          />
           <div className="relative z-10 w-full max-w-3xl rounded-2xl border border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] p-6 shadow-2xl backdrop-blur-md">
             <div className="mb-4 flex items-start justify-between gap-4">
               <div className="min-w-0">
-                <h2 className="text-lg font-semibold text-[var(--brand-ink)]">Clone Next Month</h2>
-                <p className="text-sm text-[var(--brand-ink)]/70">
-                  This clones the <span className="font-semibold">most recent</span> schedule for the selected Branch/Group (not the month currently selected in the dropdown).
+                <h2 className="text-lg font-semibold text-foreground">
+                  {clonePreflight
+                    ? `Clone Schedule ${clonePreflight.source_schedule?.name ?? "—"} to ${monthNameYearFromMonthStart(
+                        clonePreflight.target_month_start,
+                      )}`
+                    : "Clone Schedule"}
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  Creates the next month from the <span className="font-semibold">most recent</span> schedule for the selected Branch/Group.
+                  The new schedule will be <span className="font-semibold">locked pending approval</span> until you approve it.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={closeClone}
-                className="rounded-full p-1.5 text-[var(--brand-ink)]/70 hover:bg-[var(--brand-strong)] hover:text-white"
+                className="rounded-full p-1.5 text-muted-foreground hover:bg-[var(--brand-strong)]/50 hover:text-foreground"
                 aria-label="Close clone modal"
               >
                 <X className="h-5 w-5" />
@@ -967,15 +1206,30 @@ export default function SchedulingPage() {
             </div>
 
             {(cloneLoading || cloneSaving) && (
-              <div className="mb-4 flex items-center gap-2 rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-foreground/80">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                {cloneSaving ? "Cloning schedule..." : "Loading preflight..."}
+              <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-foreground/90">
+                <div className="flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  {cloneSaving ? "Cloning schedule..." : "Loading preflight..."}
+                </div>
+                {cloneSaving && (
+                  <div className="flex items-center gap-2">
+                    <div className="h-2 w-[180px] overflow-hidden rounded-full bg-white/10">
+                      <div
+                        className="h-full bg-[var(--cta)] transition-all"
+                        style={{ width: `${Math.max(0, Math.min(100, cloneProgress?.percent ?? 0))}%` }}
+                      />
+                    </div>
+                    <div className="w-[52px] text-right font-mono text-xs">
+                      {typeof cloneProgress?.percent === "number" ? `${cloneProgress.percent}%` : "—"}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
             {cloneError && (
               <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-                Error: {cloneError}
+                {cloneError}
               </div>
             )}
 
@@ -1030,6 +1284,24 @@ export default function SchedulingPage() {
                   </div>
                 </div>
 
+                <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                  <div className="text-sm font-semibold text-foreground">Source schedule statistics</div>
+                  <div className="mt-2 grid gap-2 text-sm text-foreground/90 sm:grid-cols-3">
+                    <div>
+                      Sessions:{" "}
+                      <span className="font-semibold">{clonePreflight.stats?.total_sessions ?? "—"}</span>
+                    </div>
+                    <div>
+                      Unique classes:{" "}
+                      <span className="font-semibold">{clonePreflight.stats?.unique_classes ?? "—"}</span>
+                    </div>
+                    <div>
+                      Unique instructors:{" "}
+                      <span className="font-semibold">{clonePreflight.stats?.unique_instructors ?? "—"}</span>
+                    </div>
+                  </div>
+                </div>
+
                 {/* Headcount gate */}
                 <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1038,7 +1310,9 @@ export default function SchedulingPage() {
                         Headcount completeness (source schedule)
                       </div>
                       <div className="mt-1 text-xs text-muted-foreground">
-                        Missing headcounts prevent cloning unless you explicitly override.
+                        {prodCloneGateActive
+                          ? "Missing headcounts block cloning in production (and when emulating production)."
+                          : "For testing, cloning is allowed even when headcounts are missing (cloned headcounts will be blank)."}
                       </div>
                     </div>
 
@@ -1052,54 +1326,37 @@ export default function SchedulingPage() {
                     </div>
                   </div>
 
-                  {(clonePreflight.headcount?.missing_count ?? 0) > 0 && (
+                  {prodCloneGateActive && (clonePreflight.headcount?.missing_count ?? 0) > 0 && (
                     <div className="mt-3 space-y-2">
-                      <label className="flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={cloneOverride}
-                          onChange={(e) => setCloneOverride(e.target.checked)}
-                          className="h-4 w-4 accent-[var(--cta)]"
-                        />
-                        Override and clone anyway
-                      </label>
-
-                      <button
-                        type="button"
-                        onClick={() => setCloneShowMissing((v) => !v)}
-                        className="text-sm underline underline-offset-2 text-foreground/80 hover:text-foreground"
-                      >
-                        {cloneShowMissing ? "Hide" : "Show"} sessions missing headcount
-                      </button>
-
-                      {cloneShowMissing && (
-                        <div className="mt-2 max-h-[220px] overflow-auto rounded-xl border border-white/10">
-                          <table className="w-full text-xs">
-                            <thead className="bg-black/30 text-muted-foreground">
-                              <tr>
-                                <th className="px-3 py-2 text-left font-medium">Date</th>
-                                <th className="px-3 py-2 text-left font-medium">Day</th>
-                                <th className="px-3 py-2 text-left font-medium">Time</th>
-                                <th className="px-3 py-2 text-left font-medium">Class</th>
-                                <th className="px-3 py-2 text-left font-medium">Loc</th>
+                      <div className="text-xs text-muted-foreground">
+                        Sessions missing headcount (must be fixed before cloning):
+                      </div>
+                      <div className="mt-2 max-h-[220px] overflow-auto rounded-xl border border-white/10">
+                        <table className="w-full text-xs">
+                          <thead className="bg-black/30 text-muted-foreground">
+                            <tr>
+                              <th className="px-3 py-2 text-left font-medium">Date</th>
+                              <th className="px-3 py-2 text-left font-medium">Day</th>
+                              <th className="px-3 py-2 text-left font-medium">Time</th>
+                              <th className="px-3 py-2 text-left font-medium">Class</th>
+                              <th className="px-3 py-2 text-left font-medium">Loc</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(clonePreflight.headcount?.missing_sessions ?? []).map((s: any) => (
+                              <tr key={s.id} className="border-t border-white/5">
+                                <td className="px-3 py-2 font-mono">{s.session_date}</td>
+                                <td className="px-3 py-2">{s.day_of_week}</td>
+                                <td className="px-3 py-2 font-mono">
+                                  {s.start_time}–{s.end_time}
+                                </td>
+                                <td className="px-3 py-2">{s.class_name ?? "—"}</td>
+                                <td className="px-3 py-2">{s.location_code ?? "—"}</td>
                               </tr>
-                            </thead>
-                            <tbody>
-                              {(clonePreflight.headcount?.missing_sessions ?? []).map((s: any) => (
-                                <tr key={s.id} className="border-t border-white/5">
-                                  <td className="px-3 py-2 font-mono">{s.session_date}</td>
-                                  <td className="px-3 py-2">{s.day_of_week}</td>
-                                  <td className="px-3 py-2 font-mono">
-                                    {s.start_time}–{s.end_time}
-                                  </td>
-                                  <td className="px-3 py-2">{s.class_name ?? "—"}</td>
-                                  <td className="px-3 py-2">{s.location_code ?? "—"}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1116,35 +1373,64 @@ export default function SchedulingPage() {
                 )}
 
                 <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-                  <button
-                    type="button"
-                    onClick={closeClone}
-                    className="rounded-xl border border-white/10 bg-black/20 px-4 py-2 text-sm text-foreground transition hover:bg-black/30"
-                  >
-                    Close
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void fetchClonePreflight()}
-                    disabled={cloneLoading || cloneSaving}
-                    className="rounded-xl border border-white/10 bg-black/20 px-4 py-2 text-sm text-foreground transition hover:bg-black/30 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Refresh Preflight
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleClone()}
-                    disabled={
-                      cloneLoading ||
-                      cloneSaving ||
-                      !!clonePreflight.target_exists ||
-                      ((clonePreflight.headcount?.missing_count ?? 0) > 0 && !cloneOverride)
-                    }
-                    className="btn-pill flex items-center justify-center gap-2 bg-[var(--cta)] px-4 py-2 text-sm font-medium text-[var(--cta-foreground)] shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {cloneSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Copy className="h-4 w-4" />}
-                    Clone
-                  </button>
+                  {prodCloneGateActive && (clonePreflight.headcount?.missing_count ?? 0) > 0 ? (
+                    <button
+                      type="button"
+                      onClick={closeClone}
+                      className="btn-pill flex items-center justify-center gap-2 bg-[var(--cta)] px-4 py-2 text-sm font-medium text-[var(--cta-foreground)] shadow-sm transition hover:opacity-90"
+                    >
+                      OK
+                    </button>
+                  ) : cloneResult?.target_schedule?.id ? (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const newId = cloneOkPendingScheduleId;
+                        closeClone();
+                        if (newId) {
+                          setSelectedScheduleId(newId);
+                          await fetchSchedules();
+                          handleRefresh();
+                        }
+                      }}
+                      className="btn-pill flex items-center justify-center gap-2 bg-[var(--cta)] px-4 py-2 text-sm font-medium text-[var(--cta-foreground)] shadow-sm transition hover:opacity-90"
+                    >
+                      OK
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={closeClone}
+                        disabled={cloneSaving}
+                        className="rounded-xl border border-white/10 bg-black/20 px-4 py-2 text-sm text-foreground transition hover:bg-black/30 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void fetchClonePreflight()}
+                        disabled={cloneLoading || cloneSaving}
+                        className="rounded-xl border border-white/10 bg-black/20 px-4 py-2 text-sm text-foreground transition hover:bg-black/30 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Refresh
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleClone()}
+                        disabled={
+                          cloneLoading ||
+                          cloneSaving ||
+                          !!clonePreflight.target_exists ||
+                          (prodCloneGateActive && (clonePreflight.headcount?.missing_count ?? 0) > 0)
+                        }
+                        className="btn-pill flex items-center justify-center gap-2 bg-[var(--cta)] px-4 py-2 text-sm font-medium text-[var(--cta-foreground)] shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Copy className="h-4 w-4" />
+                        Create
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             )}
@@ -1345,6 +1631,92 @@ export default function SchedulingPage() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Backout Confirm Modal */}
+      {backoutConfirmOpen && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setBackoutConfirmOpen(false)} />
+          <div className="relative z-10 w-full max-w-lg rounded-2xl border border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] p-6 shadow-2xl backdrop-blur-md">
+            <div className="mb-3 flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <h2 className="text-lg font-semibold text-foreground">Backout cloned schedule?</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  This will permanently delete the unapproved cloned schedule. You can’t undo this action.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setBackoutConfirmOpen(false)}
+                className="rounded-full p-1.5 text-muted-foreground hover:bg-[var(--brand-strong)]/50 hover:text-foreground"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {approvalActionError && (
+              <div className="mt-3 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-100">
+                {approvalActionError}
+              </div>
+            )}
+
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setBackoutConfirmOpen(false)}
+                disabled={backoutSaving}
+                className="rounded-xl border border-white/10 bg-black/20 px-4 py-2 text-sm text-foreground transition hover:bg-black/30 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleBackoutSchedule()}
+                disabled={backoutSaving}
+                className="btn-pill flex items-center gap-2 bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {backoutSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+                Backout
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Approval Blocked Popup */}
+      {approvalBlockedOpen && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={closeApprovalBlocked} />
+          <div className="relative z-10 w-full max-w-lg rounded-2xl border border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] p-6 shadow-2xl backdrop-blur-md">
+            <div className="mb-3 flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <h2 className="text-lg font-semibold text-foreground">Schedule pending approval</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  No changes are allowed at this time. You can view the schedule, but you can’t {approvalBlockedAction} until the schedule is approved.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeApprovalBlocked}
+                className="rounded-full p-1.5 text-muted-foreground hover:bg-[var(--brand-strong)]/50 hover:text-foreground"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                onClick={closeApprovalBlocked}
+                className="btn-pill bg-[var(--cta)] px-4 py-2 text-sm font-semibold text-[var(--cta-foreground)] shadow-sm transition hover:opacity-90"
+              >
+                OK
+              </button>
+            </div>
           </div>
         </div>
       )}

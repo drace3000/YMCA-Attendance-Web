@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
-import { POST } from "@/app/api/scheduling/clone/preflight/route";
+import { POST as APPROVE } from "@/app/api/scheduling/clone/approve/route";
+import { POST as BACKOUT } from "@/app/api/scheduling/clone/backout/route";
 
 type MockQueryState = {
   table: string;
@@ -64,7 +65,6 @@ function createMockSupabaseClient(handlers: Record<string, MockTableHandler>) {
         state.wantSingle = true;
         return builder;
       },
-      returns: () => builder,
       then: (resolve: any, reject: any) => {
         const handler = handlers[table];
         const result = handler ? handler(state) : { data: null, error: null };
@@ -88,12 +88,46 @@ vi.mock("@/lib/requireRecipientAccess", () => ({
   requireRecipientAccess: (...args: any[]) => mockRequireRecipientAccess(...args),
 }));
 
-describe("/api/scheduling/clone/preflight", () => {
+describe("/api/scheduling/clone approve/backout", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("selects the most recent schedule and reports missing headcounts", async () => {
+  it("approves an unapproved schedule", async () => {
+    mockRequireRecipientAccess.mockResolvedValueOnce({
+      ok: true,
+      access: { recipient_type: "Branch", branch_id: "br-1" },
+    });
+
+    let updatePayload: any = null;
+    mockCreateSupabaseServerClient.mockReturnValue(
+      createMockSupabaseClient({
+        schedules: async (state) => {
+          if (state.action === "select") {
+            return { data: { id: "sch-1", branch_id: "br-1", is_approved: false }, error: null };
+          }
+          if (state.action === "update") {
+            updatePayload = state.payload;
+            return { data: null, error: null };
+          }
+          return { data: null, error: null };
+        },
+      }),
+    );
+
+    const req = new NextRequest("http://localhost:3000/api/scheduling/clone/approve", {
+      method: "POST",
+      body: JSON.stringify({ branch_id: "br-1", schedule_id: "sch-1" }),
+    });
+
+    const res = await APPROVE(req);
+    const json = await res.json();
+    expect(res.status).toBe(200);
+    expect(json.ok).toBe(true);
+    expect(updatePayload).toMatchObject({ is_approved: true });
+  });
+
+  it("backs out (deletes) an unapproved cloned schedule and redirects to source", async () => {
     mockRequireRecipientAccess.mockResolvedValueOnce({
       ok: true,
       access: { recipient_type: "Branch", branch_id: "br-1" },
@@ -102,80 +136,52 @@ describe("/api/scheduling/clone/preflight", () => {
     mockCreateSupabaseServerClient.mockReturnValue(
       createMockSupabaseClient({
         schedules: async (state) => {
-          // Most recent comes first (we don't simulate ordering; API uses [0])
-          if (state.wantSingle) return { data: null, error: null };
-          return {
-            data: [
-              {
-                id: "sch-latest",
-                name: "December 2025",
-                month_start: "2025-12-01",
-                status: "final",
+          // Initial lookup of the schedule to backout
+          const idEq = state.filters.find((f) => f.op === "eq" && f.column === "id")?.value;
+
+          if (state.action === "select" && idEq === "sch-new") {
+            return {
+              data: {
+                id: "sch-new",
                 branch_id: "br-1",
                 program_group_id: "pg-1",
+                is_approved: false,
+                cloned_from_id: "sch-src",
               },
-            ],
-            error: null,
-          };
+              error: null,
+            };
+          }
+
+          // Source schedule exists
+          if (state.action === "select" && idEq === "sch-src") {
+            return { data: { id: "sch-src" }, error: null };
+          }
+
+          if (state.action === "delete") {
+            return { data: null, error: null };
+          }
+
+          // Fallback list (shouldn't be needed in this test)
+          if (state.action === "select") {
+            return { data: [{ id: "sch-fallback", month_start: "2025-12-01" }], error: null };
+          }
+
+          return { data: null, error: null };
         },
-        class_sessions: async () => ({
-          data: [
-            {
-              id: "sess-1",
-              class_id: "cls-1",
-              session_date: "2025-12-01",
-              day_of_week: "MONDAY",
-              start_time: "09:00",
-              end_time: "10:00",
-              headcount: null,
-              class: { name: "Yoga" },
-              location: { code: "STUDIO" },
-            },
-            {
-              id: "sess-2",
-              class_id: "cls-2",
-              session_date: "2025-12-02",
-              day_of_week: "TUESDAY",
-              start_time: "09:00",
-              end_time: "10:00",
-              headcount: 12,
-              class: { name: "Spin" },
-              location: { code: "CYCLE" },
-            },
-          ],
-          error: null,
-        }),
-        session_instructors: async () => ({
-          data: [
-            { session_id: "sess-1", instructor_id: "inst-1" },
-            { session_id: "sess-1", instructor_id: "inst-2" },
-            { session_id: "sess-2", instructor_id: "inst-2" },
-          ],
-          error: null,
-        }),
       }),
     );
 
-    const req = new NextRequest("http://localhost:3000/api/scheduling/clone/preflight", {
+    const req = new NextRequest("http://localhost:3000/api/scheduling/clone/backout", {
       method: "POST",
-      body: JSON.stringify({ branch_id: "br-1", program_group_id: "pg-1" }),
+      body: JSON.stringify({ branch_id: "br-1", program_group_id: "pg-1", schedule_id: "sch-new" }),
     });
 
-    const res = await POST(req);
+    const res = await BACKOUT(req);
     const json = await res.json();
-
     expect(res.status).toBe(200);
-    expect(json.source_schedule.id).toBe("sch-latest");
-    expect(json.target_month_start).toBe("2026-01-01");
-    expect(json.stats).toMatchObject({
-      total_sessions: 2,
-      unique_classes: 2,
-      unique_instructors: 2,
-    });
-    expect(json.headcount.total_sessions).toBe(2);
-    expect(json.headcount.missing_count).toBe(1);
-    expect(json.headcount.missing_sessions).toHaveLength(1);
-    expect(json.headcount.missing_sessions[0].id).toBe("sess-1");
+    expect(json.ok).toBe(true);
+    expect(json.deleted_schedule_id).toBe("sch-new");
+    expect(json.redirect_schedule_id).toBe("sch-src");
   });
 });
 
