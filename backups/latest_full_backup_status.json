@@ -1,0 +1,7 @@
+﻿{
+    "dump_name":  "supabase_backup_20260116_174156_full.dump",
+    "host_dump_path":  "C:\\Projects\\Cursor\\Projects\\YMCA\\YMCA-Attendance-Web\\backups\\supabase_backup_20260116_174156_full.dump",
+    "log_path":  "C:\\Projects\\Cursor\\Projects\\YMCA\\YMCA-Attendance-Web\\backups\\full_backup_20260116_174156.log.txt",
+    "container":  "supabase_db_YMCA-Attendance-Web-2",
+    "started_at":  "2026-01-16T17:41:56.6488216-05:00"
+}

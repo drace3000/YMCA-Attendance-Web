@@ -1,0 +1,105 @@
+{
+  "title": "U.S. Federal Holidays 2024–2027",
+  "note": "When a federal holiday falls on a Saturday, it is typically observed on the preceding Friday. When it falls on a Sunday, it is observed on the following Monday.",
+  "holidays": [
+    {
+      "name": "New Year's Day",
+      "dates": {
+        "2024": { "date": "2024-01-01", "day": "Monday" },
+        "2025": { "date": "2025-01-01", "day": "Wednesday" },
+        "2026": { "date": "2026-01-01", "day": "Thursday" },
+        "2027": { "date": "2027-01-01", "day": "Friday" }
+      }
+    },
+    {
+      "name": "Martin Luther King Jr. Day",
+      "dates": {
+        "2024": { "date": "2024-01-15", "day": "Monday" },
+        "2025": { "date": "2025-01-20", "day": "Monday" },
+        "2026": { "date": "2026-01-19", "day": "Monday" },
+        "2027": { "date": "2027-01-18", "day": "Monday" }
+      }
+    },
+    {
+      "name": "Presidents' Day",
+      "dates": {
+        "2024": { "date": "2024-02-19", "day": "Monday" },
+        "2025": { "date": "2025-02-17", "day": "Monday" },
+        "2026": { "date": "2026-02-16", "day": "Monday" },
+        "2027": { "date": "2027-02-15", "day": "Monday" }
+      }
+    },
+    {
+      "name": "Memorial Day",
+      "dates": {
+        "2024": { "date": "2024-05-27", "day": "Monday" },
+        "2025": { "date": "2025-05-26", "day": "Monday" },
+        "2026": { "date": "2026-05-25", "day": "Monday" },
+        "2027": { "date": "2027-05-31", "day": "Monday" }
+      }
+    },
+    {
+      "name": "Juneteenth",
+      "dates": {
+        "2024": { "date": "2024-06-19", "day": "Wednesday" },
+        "2025": { "date": "2025-06-19", "day": "Thursday" },
+        "2026": { "date": "2026-06-19", "day": "Friday" },
+        "2027": { "date": "2027-06-19", "day": "Saturday", "observed": "2027-06-18" }
+      }
+    },
+    {
+      "name": "Independence Day",
+      "dates": {
+        "2024": { "date": "2024-07-04", "day": "Thursday" },
+        "2025": { "date": "2025-07-04", "day": "Friday" },
+        "2026": { "date": "2026-07-04", "day": "Saturday", "observed": "2026-07-03" },
+        "2027": { "date": "2027-07-04", "day": "Sunday", "observed": "2027-07-05" }
+      }
+    },
+    {
+      "name": "Labor Day",
+      "dates": {
+        "2024": { "date": "2024-09-02", "day": "Monday" },
+        "2025": { "date": "2025-09-01", "day": "Monday" },
+        "2026": { "date": "2026-09-07", "day": "Monday" },
+        "2027": { "date": "2027-09-06", "day": "Monday" }
+      }
+    },
+    {
+      "name": "Columbus Day",
+      "dates": {
+        "2024": { "date": "2024-10-14", "day": "Monday" },
+        "2025": { "date": "2025-10-13", "day": "Monday" },
+        "2026": { "date": "2026-10-12", "day": "Monday" },
+        "2027": { "date": "2027-10-11", "day": "Monday" }
+      }
+    },
+    {
+      "name": "Veterans Day",
+      "dates": {
+        "2024": { "date": "2024-11-11", "day": "Monday" },
+        "2025": { "date": "2025-11-11", "day": "Tuesday" },
+        "2026": { "date": "2026-11-11", "day": "Wednesday" },
+        "2027": { "date": "2027-11-11", "day": "Thursday" }
+      }
+    },
+    {
+      "name": "Thanksgiving",
+      "dates": {
+        "2024": { "date": "2024-11-28", "day": "Thursday" },
+        "2025": { "date": "2025-11-27", "day": "Thursday" },
+        "2026": { "date": "2026-11-26", "day": "Thursday" },
+        "2027": { "date": "2027-11-25", "day": "Thursday" }
+      }
+    },
+    {
+      "name": "Christmas Day",
+      "dates": {
+        "2024": { "date": "2024-12-25", "day": "Wednesday" },
+        "2025": { "date": "2025-12-25", "day": "Thursday" },
+        "2026": { "date": "2026-12-25", "day": "Friday" },
+        "2027": { "date": "2027-12-25", "day": "Saturday", "observed": "2027-12-24" }
+      }
+    }
+  ]
+}
