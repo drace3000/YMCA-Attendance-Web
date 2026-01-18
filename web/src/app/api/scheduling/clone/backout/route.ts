@@ -61,6 +61,18 @@ export async function POST(req: NextRequest): Promise<Response> {
     );
   }
 
+  // Cleanup: schedule_clone_audit references schedules with RESTRICT; delete audit rows first.
+  {
+    const { error: auditError } = await supabase
+      .from("schedule_clone_audit")
+      .delete()
+      .eq("branch_id", branchId)
+      .eq("program_group_id", programGroupId)
+      .eq("target_schedule_id", scheduleId);
+
+    if (auditError) return NextResponse.json({ error: auditError.message }, { status: 500 });
+  }
+
   const { error: deleteError } = await supabase
     .from("schedules")
     .delete()

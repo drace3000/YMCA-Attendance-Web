@@ -35,6 +35,29 @@ type SourceSessionRow = {
   headcount: number | null;
 };
 
+type CloneConstraintEventType =
+  | "SKIPPED_MISSING_OCCURRENCE"
+  | "SKIPPED_OUTSIDE_TARGET_MONTH"
+  | "SKIPPED_DEDUPED"
+  | "SKIPPED_NO_INSTRUCTORS_AFTER_AVAILABILITY"
+  | "MODIFIED_DROPPED_INSTRUCTORS";
+
+type CloneConstraintEventInsert = {
+  branch_id: string;
+  program_group_id: string;
+  source_schedule_id: string | null;
+  target_schedule_id: string;
+  event_type: CloneConstraintEventType;
+  source_session_id: string | null;
+  class_id: string | null;
+  location_id: string | null;
+  target_session_date: string | null; // date column
+  target_day_of_week: string | null;
+  target_start_time: string | null; // time column
+  target_end_time: string | null; // time column
+  details: Record<string, unknown>;
+};
+
 function monthNameYearFromMonthStart(monthStartIsoDate: string): string {
   const d = new Date(`${monthStartIsoDate}T00:00:00Z`);
   return d.toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
@@ -202,7 +225,24 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   const doClone = async (onProgress?: (p: { done: number; total: number; percent: number }) => void) => {
-    // 4) Create target schedule (new schedule starts pending approval)
+    // 4) Clear prior clone exception events for this branch.
+    // The Exception Report should only reflect the newest clone attempt.
+    // Best-effort: ignore missing-table environments.
+    {
+      const { error: clearErr } = await supabase
+        .from("schedule_clone_constraint_events")
+        .delete()
+        .eq("branch_id", branchId);
+
+      if (clearErr) {
+        const msg = String(clearErr.message || "");
+        const missingTable =
+          (msg.includes("schedule_clone_constraint_events") && msg.includes("does not exist")) || msg.includes("42P01");
+        if (!missingTable) throw new Error(clearErr.message);
+      }
+    }
+
+    // 5) Create target schedule (new schedule starts pending approval)
     const targetName = monthNameYearFromMonthStart(targetMonthStart);
     const { data: targetSchedule, error: createScheduleError } = await supabase
       .from("schedules")
@@ -221,7 +261,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     if (createScheduleError) throw new Error(createScheduleError.message);
     const target = targetSchedule as ScheduleRow;
 
-    // 5) Load source sessions + instructor links
+    // 6) Load source sessions + instructor links
     const { data: sourceSessions, error: sourceSessionsError } = await supabase
       .from("class_sessions")
       .select("id, class_id, location_id, day_of_week, start_time, end_time, session_date, headcount")
@@ -259,6 +299,8 @@ export async function POST(req: NextRequest): Promise<Response> {
     const sourceMonthStart = source.month_start;
     const targetMonthPrefix = monthPrefixFromMonthStart(targetMonthStart);
 
+    const exceptionEvents: CloneConstraintEventInsert[] = [];
+
     const plan: Array<{
       source_session_id: string;
       target_session_date: string | null;
@@ -279,6 +321,31 @@ export async function POST(req: NextRequest): Promise<Response> {
 
       const targetDate = mapping.targetSessionDate;
       const targetDow = targetDate ? weekdayFromIsoDateUtc(targetDate) : mapping.weekday;
+      const startTime = String(s.start_time).slice(0, 5);
+      const endTime = String(s.end_time).slice(0, 5);
+
+      if (!targetDate) {
+        exceptionEvents.push({
+          branch_id: branchId,
+          program_group_id: programGroupId,
+          source_schedule_id: source.id,
+          target_schedule_id: target.id,
+          event_type: "SKIPPED_MISSING_OCCURRENCE",
+          source_session_id: s.id,
+          class_id: s.class_id ?? null,
+          location_id: s.location_id ?? null,
+          target_session_date: null,
+          target_day_of_week: targetDow ?? null,
+          target_start_time: startTime,
+          target_end_time: endTime,
+          details: {
+            reason: "Missing weekday occurrence in target month",
+            source_session_date: s.session_date,
+            source_month_start: sourceMonthStart,
+            target_month_start: targetMonthStart,
+          },
+        });
+      }
 
       plan.push({
         source_session_id: s.id,
@@ -286,8 +353,8 @@ export async function POST(req: NextRequest): Promise<Response> {
         target_day_of_week: targetDow,
         class_id: s.class_id,
         location_id: s.location_id,
-        start_time: String(s.start_time).slice(0, 5),
-        end_time: String(s.end_time).slice(0, 5),
+        start_time: startTime,
+        end_time: endTime,
         instructor_ids: instructorMap[s.id] ?? [],
       });
     }
@@ -312,6 +379,24 @@ export async function POST(req: NextRequest): Promise<Response> {
       ].join("|");
       if (seen.has(key)) {
         dedupedSkipped += 1;
+        exceptionEvents.push({
+          branch_id: branchId,
+          program_group_id: programGroupId,
+          source_schedule_id: source.id,
+          target_schedule_id: target.id,
+          event_type: "SKIPPED_DEDUPED",
+          source_session_id: p.source_session_id ?? null,
+          class_id: p.class_id ?? null,
+          location_id: p.location_id ?? null,
+          target_session_date: p.target_session_date ?? null,
+          target_day_of_week: p.target_day_of_week ?? null,
+          target_start_time: p.start_time ?? null,
+          target_end_time: p.end_time ?? null,
+          details: {
+            reason: "Deduped (duplicate target session key)",
+            dedupe_key: key,
+          },
+        });
         continue;
       }
       seen.add(key);
@@ -320,11 +405,33 @@ export async function POST(req: NextRequest): Promise<Response> {
 
     // 7) Insert sessions + instructor links (sequential to preserve mapping reliably)
     const createdSessionIds: string[] = [];
+    let skippedOutsideTargetMonth = 0;
     try {
       const totalToInsert = deduped.length;
       for (const p of deduped) {
         // safety: ensure target date is inside target month
-        if (!p.target_session_date.startsWith(targetMonthPrefix)) continue;
+        if (!p.target_session_date.startsWith(targetMonthPrefix)) {
+          skippedOutsideTargetMonth += 1;
+          exceptionEvents.push({
+            branch_id: branchId,
+            program_group_id: programGroupId,
+            source_schedule_id: source.id,
+            target_schedule_id: target.id,
+            event_type: "SKIPPED_OUTSIDE_TARGET_MONTH",
+            source_session_id: p.source_session_id ?? null,
+            class_id: p.class_id ?? null,
+            location_id: p.location_id ?? null,
+            target_session_date: p.target_session_date ?? null,
+            target_day_of_week: p.target_day_of_week ?? null,
+            target_start_time: p.start_time ?? null,
+            target_end_time: p.end_time ?? null,
+            details: {
+              reason: "Mapped date falls outside target month",
+              target_month_prefix: targetMonthPrefix,
+            },
+          });
+          continue;
+        }
 
         const { data: created, error: insertErr } = await supabase
           .from("class_sessions")
@@ -369,8 +476,13 @@ export async function POST(req: NextRequest): Promise<Response> {
       throw e;
     }
 
+    const modifiedSessionsTotal = 0;
+    const skippedTotal = skippable.length + dedupedSkipped + skippedOutsideTargetMonth;
+
     // 8) Audit log
-    await supabase.from("schedule_clone_audit").insert({
+    const { data: auditRow, error: auditErr } = await supabase
+      .from("schedule_clone_audit")
+      .insert({
       branch_id: branchId,
       program_group_id: programGroupId,
       source_schedule_id: source.id,
@@ -381,11 +493,31 @@ export async function POST(req: NextRequest): Promise<Response> {
       override_missing_headcounts: override,
       sessions_source_count: src.length,
       sessions_created_count: createdSessionIds.length,
-      sessions_skipped_count: skippable.length,
+      sessions_skipped_count: skippedTotal,
       deduped_skipped_count: dedupedSkipped,
       requested_by_email: access?.email ?? null,
       requested_by_recipient_type: access?.recipient_type ?? null,
-    });
+      })
+      .select("id")
+      .single<{ id: string }>();
+
+    if (auditErr) throw new Error(auditErr.message);
+
+    const auditId = String(auditRow?.id ?? "");
+    if (auditId && exceptionEvents.length > 0) {
+      const isMissingTable = (msg: string): boolean => {
+        const m = String(msg || "");
+        return (m.includes("schedule_clone_constraint_events") && m.includes("does not exist")) || m.includes("42P01");
+      };
+
+      for (const chunk of chunkArray(exceptionEvents, 500)) {
+        const payload = chunk.map((e) => ({ audit_id: auditId, ...e }));
+        const { error: eventsErr } = await supabase.from("schedule_clone_constraint_events").insert(payload);
+        // Backward-compatible dev fallback if the migration wasn't applied yet.
+        if (eventsErr && isMissingTable(eventsErr.message)) break;
+        if (eventsErr) throw new Error(eventsErr.message);
+      }
+    }
 
     return {
       branch_id: branchId,
@@ -397,6 +529,9 @@ export async function POST(req: NextRequest): Promise<Response> {
         created_sessions: createdSessionIds.length,
         skipped_missing_occurrence: skippable.length,
         deduped_skipped: dedupedSkipped,
+        skipped_outside_target_month: skippedOutsideTargetMonth,
+        skipped_sessions_total: skippedTotal,
+        modified_sessions_total: modifiedSessionsTotal,
         missing_headcount_count: missingHeadcountCount,
         override_missing_headcounts: override,
         prod_gate_active: prodGateActive,

@@ -133,8 +133,21 @@ describe("/api/scheduling/clone approve/backout", () => {
       access: { recipient_type: "Branch", branch_id: "br-1" },
     });
 
+    let deletedAudit = false;
+    let touchedConstraintEvents = false;
     mockCreateSupabaseServerClient.mockReturnValue(
       createMockSupabaseClient({
+        schedule_clone_constraint_events: async () => {
+          touchedConstraintEvents = true;
+          return { data: null, error: { message: "should not touch constraint events directly (cascade)" } };
+        },
+        schedule_clone_audit: async (state) => {
+          if (state.action === "delete") {
+            deletedAudit = true;
+            return { data: [], error: null };
+          }
+          return { data: null, error: null };
+        },
         schedules: async (state) => {
           // Initial lookup of the schedule to backout
           const idEq = state.filters.find((f) => f.op === "eq" && f.column === "id")?.value;
@@ -158,6 +171,12 @@ describe("/api/scheduling/clone approve/backout", () => {
           }
 
           if (state.action === "delete") {
+            if (!deletedAudit) {
+              return {
+                data: null,
+                error: { message: "update or delete on table \"schedules\" violates foreign key constraint" },
+              };
+            }
             return { data: null, error: null };
           }
 
@@ -182,6 +201,7 @@ describe("/api/scheduling/clone approve/backout", () => {
     expect(json.ok).toBe(true);
     expect(json.deleted_schedule_id).toBe("sch-new");
     expect(json.redirect_schedule_id).toBe("sch-src");
+    expect(touchedConstraintEvents).toBe(false);
   });
 });
 

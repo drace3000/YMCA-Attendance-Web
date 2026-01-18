@@ -6,6 +6,7 @@ import {
   Calendar,
   CheckCircle2,
   Copy,
+  FileText,
   HelpCircle,
   Loader2,
   RotateCcw,
@@ -15,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { GenerateScheduleModal } from "@/components/schedule-report";
+import { GenerateCloneExceptionReportModal } from "@/components/schedule-clone-constraints-report";
 import { logError } from "@/lib/error-logger";
 import {
   Popover,
@@ -99,6 +101,7 @@ export default function SchedulingPage() {
   const [gridCriteria, setGridCriteria] = useState<string[]>([]);
   const [gridConflictSummary, setGridConflictSummary] = useState<{ high: number; medium: number; low: number; total: number } | null>(null);
   const [generateModalOpen, setGenerateModalOpen] = useState(false);
+  const [exceptionReportOpen, setExceptionReportOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string>("");
   const [dateDropdownOpen, setDateDropdownOpen] = useState(false);
   const [selectedDay, setSelectedDay] = useState<string>("");
@@ -752,6 +755,16 @@ export default function SchedulingPage() {
               </span>
               <button
                 type="button"
+                onClick={() => setExceptionReportOpen(true)}
+                disabled={!selectedProgramGroupId || !branch?.id}
+                className="btn-pill flex items-center gap-2 border border-white/10 bg-card/60 px-4 py-2 text-sm font-medium shadow-sm ring-1 ring-white/5 transition hover:bg-card hover:ring-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                title="Generate the cloning schedule exception report (PDF/email)"
+              >
+                <FileText className="h-4 w-4 text-muted-foreground" />
+                Exception Report
+              </button>
+              <button
+                type="button"
                 onClick={() => void handleApproveSchedule()}
                 disabled={approveSaving || backoutSaving}
                 className="btn-pill flex items-center gap-2 border border-[var(--brand-strong)] bg-[var(--cta)] px-4 py-2 text-sm font-medium text-[var(--cta-foreground)] shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
@@ -1170,6 +1183,14 @@ export default function SchedulingPage() {
         associationName={branchAssociationName || undefined}
       />
 
+      <GenerateCloneExceptionReportModal
+        isOpen={exceptionReportOpen}
+        onClose={() => setExceptionReportOpen(false)}
+        branchId={branch?.id ?? null}
+        programGroupId={selectedProgramGroupId || null}
+        targetScheduleId={selectedScheduleId || null}
+      />
+
       {/* Clone Modal */}
       {cloneOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center">
@@ -1191,7 +1212,11 @@ export default function SchedulingPage() {
                     : "Clone Schedule"}
                 </h2>
                 <p className="text-sm text-muted-foreground">
-                  Creates the next month from the <span className="font-semibold">most recent</span> schedule for the selected Branch/Group.
+                  Creates the next month from the <span className="font-semibold">most recent</span> schedule for the selected{" "}
+                  <span className="font-semibold">
+                    {branchAssociationName || "Association"} - {selectedBranch?.name || branch?.name || "Branch"}
+                  </span>
+                  .
                   The new schedule will be <span className="font-semibold">locked pending approval</span> until you approve it.
                 </p>
               </div>
@@ -1237,13 +1262,13 @@ export default function SchedulingPage() {
               <div className="space-y-4">
                 <div className="grid gap-3 md:grid-cols-2">
                   <div className="rounded-2xl border border-[var(--brand-strong)] bg-[var(--brand-strong)]/15 p-4">
-                    <div className="text-xs font-semibold uppercase tracking-wide text-[var(--brand-ink)]/80">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-foreground/80">
                       Source (most recent)
                     </div>
-                    <div className="mt-1 text-sm text-[var(--brand-ink)]">
+                    <div className="mt-1 text-sm text-foreground">
                       <span className="font-semibold">{clonePreflight.source_schedule?.name ?? "—"}</span>
                     </div>
-                    <div className="mt-1 text-xs text-[var(--brand-ink)]/70">
+                    <div className="mt-1 text-xs text-foreground/80">
                       Month start: <span className="font-mono">{clonePreflight.source_schedule?.month_start ?? "—"}</span>
                       {" · "}
                       Status: <span className="font-mono">{clonePreflight.source_schedule?.status ?? "—"}</span>
@@ -1251,10 +1276,10 @@ export default function SchedulingPage() {
                   </div>
 
                   <div className="rounded-2xl border border-[var(--brand-strong)] bg-[var(--brand-strong)]/15 p-4">
-                    <div className="text-xs font-semibold uppercase tracking-wide text-[var(--brand-ink)]/80">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-foreground/80">
                       Target (next month)
                     </div>
-                    <div className="mt-1 text-sm text-[var(--brand-ink)]">
+                    <div className="mt-1 text-sm text-foreground">
                       Month start:{" "}
                       <span className="font-mono font-semibold">
                         {clonePreflight.target_month_start ?? "—"}
