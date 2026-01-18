@@ -8,7 +8,6 @@ import {
   FileText,
   Hash,
   PieChart,
-  RotateCcw,
   Square,
   SquareCheck,
 } from "lucide-react";
@@ -118,6 +117,23 @@ const days = [
   { value: "SUNDAY", label: "Sunday" },
 ];
 
+function toTitleCaseWithYmcaAndOf(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const lowerWords = new Set(["of"]);
+  return value
+    .split(" ")
+    .filter(Boolean)
+    .map((word, idx) => {
+      const upper = word.toUpperCase();
+      if (upper === "YMCA") return "YMCA";
+      if (upper === "YMCAS") return "YMCAs";
+      const lower = word.toLowerCase();
+      if (idx !== 0 && lowerWords.has(lower)) return lower;
+      return lower.charAt(0).toUpperCase() + lower.slice(1);
+    })
+    .join(" ");
+}
+
 type ReportsData = {
   monthTotals: {
     totalAttendance: number;
@@ -157,7 +173,12 @@ const ALL_REPORT_SECTIONS: ReportSection[] = [
 
 export default function ReportsPage() {
   const { branch } = useThemeSettings();
-  const [resetPopoverOpen, setResetPopoverOpen] = useState(false);
+  const [branchDetails, setBranchDetails] = useState<{
+    alliance_name?: string | null;
+    association_name?: string | null;
+    name?: string | null;
+  } | null>(null);
+  const [exportPopoverOpen, setExportPopoverOpen] = useState(false);
   const monthComboRef = useRef<IgrComboElement | null>(null);
   const instructorComboRef = useRef<IgrComboElement | null>(null);
   const [filters, setFilters] = useState<FilterState>({
@@ -174,6 +195,25 @@ export default function ReportsPage() {
     new Set(ALL_REPORT_SECTIONS)
   );
   const [exportModalOpen, setExportModalOpen] = useState(false);
+
+  // Fetch branch details for hierarchy display in export modal
+  useEffect(() => {
+    const fetchBranchDetails = async () => {
+      try {
+        const res = await fetch(`/api/branches/${encodeURIComponent(branch.id)}`);
+        if (!res.ok) return;
+        const details = (await res.json()) as {
+          alliance_name?: string | null;
+          association_name?: string | null;
+          name?: string | null;
+        };
+        setBranchDetails(details);
+      } catch {
+        // ignore
+      }
+    };
+    void fetchBranchDetails();
+  }, [branch.id]);
 
   const toggleSection = (section: ReportSection) => {
     setSelectedSections((prev) => {
@@ -417,64 +457,50 @@ export default function ReportsPage() {
             <h1 className="text-3xl font-bold tracking-tight text-foreground">
               Attendance Insights
             </h1>
-            <span className="rounded-full bg-[var(--brand-soft)]/30 px-3 py-1 text-xs font-semibold text-[var(--brand-strong)]">
-              Live
-            </span>
             
             {/* Export PDF Button */}
-            <button
-              onClick={() => setExportModalOpen(true)}
-              disabled={selectedSections.size === 0}
-              className="btn-pill flex items-center gap-2 bg-[var(--cta)] px-4 py-2 text-sm font-medium text-[var(--cta-foreground)] shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            <Popover
+              open={selectedSections.size > 0 && exportPopoverOpen}
+              onOpenChange={() => {}}
             >
-              <FileText className="h-4 w-4" />
-              Export PDF
-              {selectedSections.size > 0 && (
-                <span className="rounded-full bg-white/20 px-1.5 py-0.5 text-xs">
-                  {selectedSections.size}
-                </span>
-              )}
-            </button>
-            
-            <Popover open={resetPopoverOpen} onOpenChange={setResetPopoverOpen}>
               <PopoverTrigger asChild>
                 <button
-                  type="button"
-                  aria-label="Reset filters to all"
-                  className="btn-pill inline-flex h-8 w-8 items-center justify-center bg-[var(--cta)] text-[var(--cta-foreground)] shadow-sm ring-1 ring-black/10 transition hover:-translate-y-0.5 hover:shadow-md active:translate-y-px active:scale-[0.98]"
-                  onMouseEnter={() => setResetPopoverOpen(true)}
-                  onMouseLeave={() => setResetPopoverOpen(false)}
-                  onFocus={() => setResetPopoverOpen(true)}
-                  onBlur={() => setResetPopoverOpen(false)}
-                  onClick={() => {
-                    setFilters((f) => ({
-                      ...f,
-                      quarter: "all",
-                      month: "all",
-                      week: "all",
-                      day: "all",
-                      instructor: "all",
-                    }));
-                    setResetPopoverOpen(false);
-                  }}
+                  onClick={() => setExportModalOpen(true)}
+                  disabled={selectedSections.size === 0}
+                  onMouseEnter={() =>
+                    selectedSections.size > 0 && setExportPopoverOpen(true)
+                  }
+                  onMouseLeave={() => setExportPopoverOpen(false)}
+                  onFocus={() =>
+                    selectedSections.size > 0 && setExportPopoverOpen(true)
+                  }
+                  onBlur={() => setExportPopoverOpen(false)}
+                  className="btn-pill flex items-center gap-2 bg-[var(--cta)] px-4 py-2 text-sm font-medium text-[var(--cta-foreground)] shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  <RotateCcw className="h-4 w-4" />
+                  <FileText className="h-4 w-4" />
+                  Export PDF
+                  {selectedSections.size > 0 && (
+                    <span className="rounded-full bg-white/60 px-1.5 py-0.5 text-xs font-semibold text-[var(--cta-foreground)] shadow-sm ring-1 ring-white/50">
+                      {selectedSections.size}
+                    </span>
+                  )}
                 </button>
               </PopoverTrigger>
               <PopoverContent
                 side="right"
                 align="center"
                 sideOffset={8}
-                className="w-auto rounded-2xl border-[var(--brand-strong)] bg-[rgb(var(--brand-soft-rgb)/0.35)] px-3 py-2 text-xs text-foreground shadow-lg backdrop-blur-md"
-                onMouseEnter={() => setResetPopoverOpen(true)}
-                onMouseLeave={() => setResetPopoverOpen(false)}
+                className="pointer-events-none w-auto rounded-2xl border-[var(--brand-strong)] bg-[rgb(var(--brand-soft-rgb)/0.35)] px-3 py-2 text-xs text-foreground shadow-lg backdrop-blur-md"
+                onMouseEnter={() => setExportPopoverOpen(true)}
+                onMouseLeave={() => setExportPopoverOpen(false)}
               >
                 <PopoverArrow
                   width={12}
                   height={8}
                   className="fill-[rgb(var(--brand-soft-rgb)/0.35)] stroke-[var(--brand-strong)] stroke-1"
                 />
-                Reset filters to all
+                {selectedSections.size} report group
+                {selectedSections.size !== 1 ? "s" : ""} selected
               </PopoverContent>
             </Popover>
           </div>
@@ -796,6 +822,9 @@ export default function ReportsPage() {
         filters={filters}
         selectedSections={Array.from(selectedSections)}
         branchId={branch?.id}
+        allianceName={toTitleCaseWithYmcaAndOf(branchDetails?.alliance_name) ?? undefined}
+        associationName={toTitleCaseWithYmcaAndOf(branchDetails?.association_name) ?? undefined}
+        branchName={toTitleCaseWithYmcaAndOf(branchDetails?.name) ?? branch?.name ?? undefined}
       />
     </div>
   );

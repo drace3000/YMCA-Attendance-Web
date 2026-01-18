@@ -113,6 +113,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const year = Number(searchParams.get("year") ?? "2025");
   const quarterParam = searchParams.get("quarter");
   const monthParam = searchParams.get("month");
+  const requestedBranchId = searchParams.get("branch_id");
 
   const quarter = quarterParam ? Number(quarterParam) : undefined;
   const month = monthParam ? Number(monthParam) : undefined;
@@ -128,6 +129,10 @@ export async function GET(req: NextRequest): Promise<Response> {
   if (month !== undefined && (month < 1 || month > 12)) {
     return NextResponse.json({ error: "Invalid month (must be 1-12)" }, { status: 400 });
   }
+
+  const access = required.access;
+  const effectiveBranchId =
+    access?.recipient_type === "Branch" && access ? access.branch_id : requestedBranchId;
 
   // This endpoint aggregates across all sessions and is expected to bypass RLS.
   // If you don't configure the service role key, PostgREST will likely return 0 rows.
@@ -183,8 +188,8 @@ export async function GET(req: NextRequest): Promise<Response> {
     .gte("session_date", toIsoDate(start))
     .lt("session_date", toIsoDate(end));
 
-  if (required.access?.recipient_type === "Branch") {
-    countQuery = countQuery.eq("branch_id", required.access.branch_id);
+  if (effectiveBranchId) {
+    countQuery = countQuery.eq("branch_id", effectiveBranchId);
   }
 
   const { count: totalCount } = await countQuery;
@@ -211,8 +216,8 @@ export async function GET(req: NextRequest): Promise<Response> {
       .gte("session_date", toIsoDate(start))
       .lt("session_date", toIsoDate(end));
 
-    if (required.access?.recipient_type === "Branch") {
-      pageQuery = pageQuery.eq("branch_id", required.access.branch_id);
+    if (effectiveBranchId) {
+      pageQuery = pageQuery.eq("branch_id", effectiveBranchId);
     }
 
     const { data: pageData, error: pageError } = await pageQuery.range(from, to);

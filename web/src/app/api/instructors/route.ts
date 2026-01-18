@@ -29,8 +29,9 @@ export async function GET(req: NextRequest): Promise<Response> {
     .select("id,raw_name,first_name,last_name,nickname")
     .order("raw_name", { ascending: true });
 
-  if (required.access?.recipient_type === "Branch") {
-    query = query.eq("branch_id", required.access.branch_id);
+  const access = required.access;
+  if (access?.recipient_type === "Branch") {
+    query = query.eq("branch_id", access.branch_id);
   }
 
   const { data, error } = await query;

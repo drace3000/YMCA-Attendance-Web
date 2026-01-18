@@ -37,6 +37,8 @@ export interface TrendsReportData {
   topUp: TrendItem[];
   topDown: TrendItem[];
   computedAt: string;
+  allianceName?: string;
+  associationName?: string;
   branchName?: string;
   branchManager?: string;
 }
@@ -114,6 +116,12 @@ const styles = StyleSheet.create({
   contextItem: {
     flexDirection: "row",
     marginRight: 20,
+    marginBottom: 2,
+  },
+  contextItemFull: {
+    flexDirection: "row",
+    width: "100%",
+    marginRight: 0,
     marginBottom: 2,
   },
   contextLabel: {
@@ -383,8 +391,14 @@ export function TrendsReportPDFDocument({
 }: TrendsReportPDFProps) {
   const printDateTime = formatPrintDateTime();
 
+  const hierarchy =
+    data.allianceName || data.associationName || data.branchName
+      ? `${data.allianceName ?? "—"} -> ${data.associationName ?? "—"} -> ${data.branchName ?? "—"}`
+      : null;
+
   const contextItems = [
-    ...(data.branchName ? [{ label: "Branch:", value: data.branchName }] : []),
+    ...(hierarchy ? [{ label: "", value: hierarchy, fullWidth: true as const }] : []),
+    ...(hierarchy ? [] : data.branchName ? [{ label: "Branch:", value: data.branchName }] : []),
     ...(data.branchManager ? [{ label: "Manager:", value: data.branchManager }] : []),
     { label: "Year:", value: String(data.year) },
     ...(data.quarter ? [{ label: "Quarter:", value: `Q${data.quarter}` }] : []),
@@ -414,7 +428,10 @@ export function TrendsReportPDFDocument({
         {/* Context Bar */}
         <View style={styles.contextBar}>
           {contextItems.map((item, idx) => (
-            <View key={idx} style={styles.contextItem}>
+            <View
+              key={idx}
+              style={item.fullWidth ? styles.contextItemFull : styles.contextItem}
+            >
               <Text style={styles.contextLabel}>{item.label}</Text>
               <Text style={styles.contextValue}>{item.value}</Text>
             </View>

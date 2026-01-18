@@ -25,6 +25,8 @@ type Branch = {
   branch_manager_name?: string | null;
   branch_manager_email?: string | null;
   branch_manager_phone?: string | null;
+  availability_time_start?: string | null; // "HH:mm" (or null in fallback)
+  availability_time_end?: string | null; // "HH:mm" (or null in fallback)
 };
 
 interface RawBranchData {
@@ -44,6 +46,21 @@ interface RawBranchData {
   branch_manager_name?: string | null;
   branch_manager_email?: string | null;
   branch_manager_phone?: string | null;
+  availability_time_start?: string | null;
+  availability_time_end?: string | null;
+}
+
+function normalizeTimeToHm(value: unknown): string | null {
+  const raw = typeof value === "string" ? value.trim() : "";
+  if (!raw) return null;
+  // Accept HH:mm or HH:mm:ss (as returned by Postgres)
+  const m = raw.match(/^(\d{2}):(\d{2})(?::\d{2})?$/);
+  if (!m) return null;
+  const hh = Number(m[1]);
+  const mm = Number(m[2]);
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+  if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
+  return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
 }
 
 export async function GET(): Promise<NextResponse> {
@@ -53,7 +70,7 @@ export async function GET(): Promise<NextResponse> {
   const { data, error } = await supabase
     .from("ymca_branches")
     .select(
-      "id, code, short_code, name, address, city, state, phone, website_url, schedule_email_from, schedule_email_reply_to, theme_color, branch_manager_name, branch_manager_email, branch_manager_phone, association:association_id (id, code)",
+      "id, code, short_code, name, address, city, state, phone, website_url, schedule_email_from, schedule_email_reply_to, theme_color, branch_manager_name, branch_manager_email, branch_manager_phone, availability_time_start, availability_time_end, association:association_id (id, code)",
     )
     .order("name", { ascending: true });
 
@@ -78,6 +95,8 @@ export async function GET(): Promise<NextResponse> {
       branch_manager_name: null,
       branch_manager_email: null,
       branch_manager_phone: null,
+      availability_time_start: "06:00",
+      availability_time_end: "23:00",
     };
     return NextResponse.json([fallback], { status: 200 });
   }
@@ -87,6 +106,8 @@ export async function GET(): Promise<NextResponse> {
   const branches: Branch[] = rawData.map((b) => ({
     ...b,
     association: Array.isArray(b.association) ? b.association[0] ?? null : b.association ?? null,
+    availability_time_start: normalizeTimeToHm(b.availability_time_start),
+    availability_time_end: normalizeTimeToHm(b.availability_time_end),
   }));
   
   return NextResponse.json(branches);

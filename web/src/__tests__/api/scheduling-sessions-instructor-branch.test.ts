@@ -3,9 +3,93 @@ import { NextRequest } from "next/server";
 
 import { POST, PUT } from "@/app/api/scheduling/sessions/route";
 
-let mockSupabaseClient: any;
+type MockQueryState = {
+  table: string;
+  action: "select" | "insert" | "update" | "delete";
+  payload?: unknown;
+  filters: Array<{ op: "eq" | "ilike" | "neq" | "in" | "is" | "gt"; column: string; value: unknown }>;
+  wantSingle: boolean;
+};
+
+type MockHandlerResult = { data: any; error: any };
+type MockTableHandler = (state: MockQueryState) => Promise<MockHandlerResult> | MockHandlerResult;
+
+function createMockSupabaseClient(handlers: Record<string, MockTableHandler>) {
+  function makeBuilder(table: string) {
+    const state: MockQueryState = {
+      table,
+      action: "select",
+      filters: [],
+      wantSingle: false,
+    };
+
+    const builder: any = {
+      select: () => builder,
+      insert: (payload: unknown) => {
+        state.action = "insert";
+        state.payload = payload;
+        return builder;
+      },
+      update: (payload: unknown) => {
+        state.action = "update";
+        state.payload = payload;
+        return builder;
+      },
+      delete: () => {
+        state.action = "delete";
+        return builder;
+      },
+      eq: (column: string, value: unknown) => {
+        state.filters.push({ op: "eq", column, value });
+        return builder;
+      },
+      ilike: (column: string, value: unknown) => {
+        state.filters.push({ op: "ilike", column, value });
+        return builder;
+      },
+      neq: (column: string, value: unknown) => {
+        state.filters.push({ op: "neq", column, value });
+        return builder;
+      },
+      in: (column: string, value: unknown) => {
+        state.filters.push({ op: "in", column, value });
+        return builder;
+      },
+      is: (column: string, value: unknown) => {
+        state.filters.push({ op: "is", column, value });
+        return builder;
+      },
+      gt: (column: string, value: unknown) => {
+        state.filters.push({ op: "gt", column, value });
+        return builder;
+      },
+      order: () => builder,
+      single: () => {
+        state.wantSingle = true;
+        return builder;
+      },
+      maybeSingle: () => {
+        state.wantSingle = true;
+        return builder;
+      },
+      then: (resolve: any, reject: any) => {
+        const handler = handlers[table];
+        const result = handler ? handler(state) : { data: null, error: null };
+        return Promise.resolve(result).then(resolve, reject);
+      },
+    };
+
+    return builder;
+  }
+
+  return {
+    from: (table: string) => makeBuilder(table),
+  };
+}
+
+const mockCreateSupabaseServerClient = vi.fn();
 vi.mock("@/lib/supabaseServer", () => ({
-  createSupabaseServerClient: () => mockSupabaseClient,
+  createSupabaseServerClient: () => mockCreateSupabaseServerClient(),
 }));
 
 const mockRequireRecipientAccess = vi.fn();
@@ -29,63 +113,22 @@ describe("Phase X - /api/scheduling/sessions instructor-branch validation", () =
   });
 
   it("POST returns 409 when an instructor is not available for the branch", async () => {
-    mockSupabaseClient = {
-      from: vi.fn((table: string) => {
-        if (table === "locations") {
-          return {
-            select: vi.fn().mockReturnValue({
-              eq: vi.fn().mockReturnValue({
-                eq: vi.fn().mockReturnValue({
-                  maybeSingle: vi.fn().mockResolvedValue({ data: { id: "loc-1" }, error: null }),
-                }),
-              }),
-            }),
-          };
-        }
-
-        if (table === "instructors") {
-          return {
-            select: vi.fn().mockReturnValue({
-              in: vi.fn().mockResolvedValue({
-                data: [{ id: "inst-ok", branch_id: "br-1" }], // owned to different branch
-                error: null,
-              }),
-            }),
-          };
-        }
-
-        if (table === "instructor_branches") {
-          return {
-            select: vi.fn().mockReturnValue({
-              eq: vi.fn().mockReturnValue({
-                in: vi.fn().mockResolvedValue({
-                  data: [], // not linked
-                  error: null,
-                }),
-              }),
-            }),
-          };
-        }
-
-        if (table === "class_sessions") {
-          return {
-            insert: vi.fn().mockReturnValue({
-              select: vi.fn().mockReturnValue({
-                single: vi.fn().mockResolvedValue({ data: { id: "sess-1" }, error: null }),
-              }),
-            }),
-          };
-        }
-
-        if (table === "session_instructors") {
-          return {
-            insert: vi.fn().mockResolvedValue({ data: null, error: null }),
-          };
-        }
-
-        return {};
+    mockCreateSupabaseServerClient.mockReturnValue(
+      createMockSupabaseClient({
+        schedules: async () => ({ data: { id: "sch-1", month_start: "2026-01-01" }, error: null }),
+        classes: async () => ({ data: { id: "cls-1" }, error: null }),
+        locations: async () => ({ data: { id: "loc-1" }, error: null }),
+        instructors: async () => ({
+          // Instructor exists but is owned by a different branch
+          data: [{ id: "inst-ok", branch_id: "br-999" }],
+          error: null,
+        }),
+        instructor_branches: async () => ({ data: [], error: null }),
+        class_sessions: async () => {
+          throw new Error("should not insert session when instructor validation fails");
+        },
       }),
-    };
+    );
 
     const req = new NextRequest("http://localhost:3000/api/scheduling/sessions", {
       method: "POST",
@@ -109,57 +152,46 @@ describe("Phase X - /api/scheduling/sessions instructor-branch validation", () =
   });
 
   it("PUT returns 409 when updated instructor list includes out-of-scope instructor", async () => {
-    mockSupabaseClient = {
-      from: vi.fn((table: string) => {
-        if (table === "class_sessions") {
-          return {
-            select: vi.fn().mockReturnValue({
-              eq: vi.fn().mockReturnValue({
-                single: vi.fn().mockResolvedValue({ data: { branch_id: "br-1" }, error: null }),
-              }),
-            }),
-            update: vi.fn().mockReturnValue({
-              eq: vi.fn().mockResolvedValue({ data: null, error: null }),
-            }),
-          };
-        }
-
-        if (table === "instructors") {
-          return {
-            select: vi.fn().mockReturnValue({
-              in: vi.fn().mockResolvedValue({
-                data: [],
-                error: null,
-              }),
-            }),
-          };
-        }
-
-        if (table === "instructor_branches") {
-          return {
-            select: vi.fn().mockReturnValue({
-              eq: vi.fn().mockReturnValue({
-                in: vi.fn().mockResolvedValue({
-                  data: [],
-                  error: null,
-                }),
-              }),
-            }),
-          };
-        }
-
-        if (table === "session_instructors") {
-          return {
-            delete: vi.fn().mockReturnValue({
-              eq: vi.fn().mockResolvedValue({ data: null, error: null }),
-            }),
-            insert: vi.fn().mockResolvedValue({ data: null, error: null }),
-          };
-        }
-
-        return {};
+    mockCreateSupabaseServerClient.mockReturnValue(
+      createMockSupabaseClient({
+        // Current session prefetch (single)
+        class_sessions: async (state) => {
+          if (state.action === "select" && state.wantSingle) {
+            return {
+              data: {
+                id: "sess-1",
+                branch_id: "br-1",
+                schedule_id: "sch-1",
+                day_of_week: "THURSDAY",
+                start_time: "08:00",
+                end_time: "09:00",
+                session_date: "2026-01-01",
+                location_id: "loc-1",
+              },
+              error: null,
+            };
+          }
+          if (state.action === "select") {
+            // "other sessions on date" for conflict preflight
+            return { data: [], error: null };
+          }
+          if (state.action === "update") {
+            // No field updates are expected for instructor-only PUT
+            return { data: null, error: null };
+          }
+          return { data: null, error: null };
+        },
+        schedules: async () => ({ data: { id: "sch-1", month_start: "2026-01-01" }, error: null }),
+        instructors: async () => ({ data: [], error: null }),
+        instructor_branches: async () => ({ data: [], error: null }),
+        session_instructors: async (state) => {
+          if (state.action === "delete" || state.action === "insert") {
+            throw new Error("should not modify instructor links when validation fails");
+          }
+          return { data: [], error: null };
+        },
       }),
-    };
+    );
 
     const req = new NextRequest("http://localhost:3000/api/scheduling/sessions", {
       method: "PUT",

@@ -61,6 +61,12 @@ export interface FilterInfo {
   instructor: string;
 }
 
+export interface AttendanceReportContext {
+  allianceName?: string;
+  associationName?: string;
+  branchName?: string;
+}
+
 export type ReportSection =
   | "saturdayAverages"
   | "dayTotals"
@@ -74,6 +80,7 @@ interface AttendanceReportPDFProps {
   data: ReportData;
   filters: FilterInfo;
   selectedSections: ReportSection[];
+  context?: AttendanceReportContext;
 }
 
 const styles = StyleSheet.create({
@@ -114,6 +121,11 @@ const styles = StyleSheet.create({
   headerSubtitle: {
     fontSize: 8,
     color: "#666666",
+  },
+  hierarchyLine: {
+    fontSize: 7,
+    color: "#666666",
+    marginTop: 2,
   },
   headerRight: {
     flexDirection: "column",
@@ -471,26 +483,20 @@ function ReportTable({
 
   return (
     <View style={styles.section}>
-      {/* Section title - shows (continued) if not first occurrence on page */}
-      <Text 
-        style={styles.sectionTitle}
-        render={({ subPageNumber }) => 
-          subPageNumber && subPageNumber > 1 
-            ? `${title} (continued)` 
-            : title
-        }
-      />
       <View style={styles.table}>
-        {/* Table header - repeats on each page */}
-        <View style={styles.tableHeader} fixed>
-          {columns.map((col, i) => (
-            <Text 
-              key={i} 
-              style={getHeaderStyle(i)}
-            >
-              {col}
-            </Text>
-          ))}
+        {/* Title + Table header (repeats only on pages where this table renders) */}
+        <View fixed>
+          <Text
+            style={styles.sectionTitle}
+            render={() => title}
+          />
+          <View style={styles.tableHeader}>
+            {columns.map((col, i) => (
+              <Text key={i} style={getHeaderStyle(i)}>
+                {col}
+              </Text>
+            ))}
+          </View>
         </View>
         {/* Table rows */}
         {rows.map((row, idx) => (
@@ -515,7 +521,11 @@ function ReportTable({
 }
 
 // Report section components using the ReportTable
-function SaturdayAveragesSection({ data }: { data: ReportData }) {
+function SaturdayAveragesSection({
+  data,
+}: {
+  data: ReportData;
+}) {
   const rows = [
     ...data.saturdayAverages.locations.map((r) => [r.location, NUMBER_FORMAT.format(r.avg)]),
     ["Total Class Avg", NUMBER_FORMAT.format(data.saturdayAverages.totalClassAvg)],
@@ -530,7 +540,11 @@ function SaturdayAveragesSection({ data }: { data: ReportData }) {
   );
 }
 
-function SundayAveragesSection({ data }: { data: ReportData }) {
+function SundayAveragesSection({
+  data,
+}: {
+  data: ReportData;
+}) {
   const rows = [
     ...data.sundayAverages.locations.map((r) => [r.location, NUMBER_FORMAT.format(r.avg)]),
     ["Total Class Avg", NUMBER_FORMAT.format(data.sundayAverages.totalClassAvg)],
@@ -560,24 +574,22 @@ function DayTotalsSection({ data }: { data: ReportData }) {
 
   return (
     <View style={styles.section}>
-      <Text 
-        style={styles.sectionTitle}
-        render={({ subPageNumber }) => 
-          subPageNumber && subPageNumber > 1 
-            ? "Day Totals / Day Average (continued)" 
-            : "Day Totals / Day Average"
-        }
-      />
       <View style={styles.table}>
-        <View style={styles.matrixHeader} fixed>
-          <Text style={styles.matrixLabelCell}></Text>
-          {days.map((d) => (
-            <Text key={d.day} style={styles.matrixCellHeader}>
-              {d.day.slice(0, 3)}
-            </Text>
-          ))}
-          <Text style={styles.matrixCellHeader}>Total</Text>
-          <Text style={styles.matrixCellHeader}>Avg</Text>
+        <View fixed>
+          <Text
+            style={styles.sectionTitle}
+            render={() => "Day Totals / Day Average"}
+          />
+          <View style={styles.matrixHeader}>
+            <Text style={styles.matrixLabelCell}></Text>
+            {days.map((d) => (
+              <Text key={d.day} style={styles.matrixCellHeader}>
+                {d.day.slice(0, 3)}
+              </Text>
+            ))}
+            <Text style={styles.matrixCellHeader}>Total</Text>
+            <Text style={styles.matrixCellHeader}>Avg</Text>
+          </View>
         </View>
         <View style={styles.tableRow} wrap={false}>
           <Text style={styles.matrixLabelCell}>Day Totals</Text>
@@ -604,7 +616,11 @@ function DayTotalsSection({ data }: { data: ReportData }) {
   );
 }
 
-function MonthTotalsSection({ data }: { data: ReportData }) {
+function MonthTotalsSection({
+  data,
+}: {
+  data: ReportData;
+}) {
   const rows = [
     ["All Classes", NUMBER_FORMAT.format(data.monthTotals.totalAttendance)],
     ...data.monthTotals.locationAverages.map((r) => [`${r.location} Avg`, NUMBER_FORMAT.format(r.avg)]),
@@ -620,7 +636,11 @@ function MonthTotalsSection({ data }: { data: ReportData }) {
   );
 }
 
-function MonthClassTypeAverageSection({ data }: { data: ReportData }) {
+function MonthClassTypeAverageSection({
+  data,
+}: {
+  data: ReportData;
+}) {
   const rows = data.monthClassTypeAverage.map((r) => [r.name, NUMBER_FORMAT.format(r.avg)]);
   
   return (
@@ -632,7 +652,11 @@ function MonthClassTypeAverageSection({ data }: { data: ReportData }) {
   );
 }
 
-function MonthClassGroupAverageSection({ data }: { data: ReportData }) {
+function MonthClassGroupAverageSection({
+  data,
+}: {
+  data: ReportData;
+}) {
   const rows = data.monthClassGroupAverage.map((r) => [r.group, NUMBER_FORMAT.format(r.avg)]);
   
   return (
@@ -644,7 +668,11 @@ function MonthClassGroupAverageSection({ data }: { data: ReportData }) {
   );
 }
 
-function WeekTotalsSection({ data }: { data: ReportData }) {
+function WeekTotalsSection({
+  data,
+}: {
+  data: ReportData;
+}) {
   const rows = data.weekTotals.map((r) => [r.label, NUMBER_FORMAT.format(r.total)]);
   
   return (
@@ -660,6 +688,7 @@ export function AttendanceReportPDFDocument({
   data,
   filters,
   selectedSections,
+  context,
 }: AttendanceReportPDFProps) {
   const printDateTime = formatPrintDateTime();
   const filterItems = formatFilterDisplay(filters);
@@ -686,12 +715,22 @@ export function AttendanceReportPDFDocument({
     
     // Saturday Averages
     if (has("saturdayAverages")) {
-      elements.push(<SaturdayAveragesSection key="saturdayAverages" data={data} />);
+      elements.push(
+        <SaturdayAveragesSection
+          key="saturdayAverages"
+          data={data}
+        />
+      );
     }
     
     // Sunday Averages
     if (has("sundayAverages")) {
-      elements.push(<SundayAveragesSection key="sundayAverages" data={data} />);
+      elements.push(
+        <SundayAveragesSection
+          key="sundayAverages"
+          data={data}
+        />
+      );
     }
     
     // Day Totals (full width matrix)
@@ -701,22 +740,42 @@ export function AttendanceReportPDFDocument({
     
     // Month Totals
     if (has("monthTotals")) {
-      elements.push(<MonthTotalsSection key="monthTotals" data={data} />);
+      elements.push(
+        <MonthTotalsSection
+          key="monthTotals"
+          data={data}
+        />
+      );
     }
     
     // Month Class Group Average
     if (has("monthClassGroupAverage")) {
-      elements.push(<MonthClassGroupAverageSection key="monthClassGroupAverage" data={data} />);
+      elements.push(
+        <MonthClassGroupAverageSection
+          key="monthClassGroupAverage"
+          data={data}
+        />
+      );
     }
     
     // Week Totals
     if (has("weekTotals")) {
-      elements.push(<WeekTotalsSection key="weekTotals" data={data} />);
+      elements.push(
+        <WeekTotalsSection
+          key="weekTotals"
+          data={data}
+        />
+      );
     }
     
     // Month Class Type Average (potentially many rows)
     if (has("monthClassTypeAverage")) {
-      elements.push(<MonthClassTypeAverageSection key="monthClassTypeAverage" data={data} />);
+      elements.push(
+        <MonthClassTypeAverageSection
+          key="monthClassTypeAverage"
+          data={data}
+        />
+      );
     }
     
     return elements;
@@ -725,19 +784,38 @@ export function AttendanceReportPDFDocument({
   return (
     <Document>
       <Page size="LETTER" orientation="portrait" style={styles.page}>
-        {/* Page Header - on first page only */}
-        <View style={styles.pageHeader}>
+        {/* Page Header (repeats on each page) */}
+        <View style={styles.pageHeader} fixed>
           <View style={styles.pageHeaderLeft}>
             <Image style={styles.logo} src="/assets/images/ymca-logo.v2.png" />
             <View style={styles.headerTitleBlock}>
               <Text style={styles.headerTitle}>Attendance Insights Report</Text>
               <Text style={styles.headerSubtitle}>YMCA Scheduling & Attendance System</Text>
+              {(context?.branchName || context?.allianceName || context?.associationName) && (
+                <Text
+                  style={styles.hierarchyLine}
+                  render={({ pageNumber }: { pageNumber: number }) => {
+                    const branchLine = context?.branchName
+                      ? `Branch: ${context.branchName}`
+                      : "";
+                    if (pageNumber === 1) {
+                      const lines = [
+                        context?.allianceName ? `Alliance: ${context.allianceName}` : null,
+                        context?.associationName ? `Association: ${context.associationName}` : null,
+                        branchLine || null,
+                      ].filter(Boolean) as string[];
+                      return lines.join("\n");
+                    }
+                    return branchLine;
+                  }}
+                />
+              )}
               <Text style={styles.printedOn}>Printed on: {printDateTime.replace(" at ", " @ ")}</Text>
             </View>
           </View>
           <View style={styles.headerRight}>
             <Text style={styles.reportType}>
-              {isFullReport ? "Full Report" : "Partial Report"}
+              {isFullReport ? "Full Report" : "Partial Report"} ({selectedSections.length})
             </Text>
             <Text style={styles.reportPeriod}>{reportPeriod}</Text>
           </View>
@@ -753,26 +831,6 @@ export function AttendanceReportPDFDocument({
                 <Text style={styles.filterValue}>{item.value}</Text>
               </View>
             ))}
-          </View>
-
-          {/* Report Summary */}
-          <View style={styles.reportSummary}>
-            <View style={styles.summaryLeft}>
-              <Text style={styles.summaryTitle}>
-                {isFullReport ? "Complete Attendance Report" : "Filtered Report Summary"}
-              </Text>
-              <Text style={styles.summaryDetail}>
-                {selectedSections.length} report section{selectedSections.length !== 1 ? "s" : ""} included
-                {hasFiltersApplied ? " • Filters applied" : ""}
-              </Text>
-            </View>
-            {selectedSections.length < ALL_SECTION_COUNT && (
-              <View style={styles.summaryRight}>
-                <Text style={styles.sectionsList}>
-                  Includes: {includedSectionNames}
-                </Text>
-              </View>
-            )}
           </View>
 
           {/* Report Sections - organized in two-column layout */}

@@ -297,7 +297,7 @@ export function LocationsTab() {
 
         {/* Search and Filter Options */}
         <div className="flex flex-1 items-center justify-center gap-3">
-          <div className="relative z-10">
+          <div className="relative z-10 flex items-center">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <input
               ref={searchInputRef}
@@ -306,8 +306,22 @@ export function LocationsTab() {
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Search..."
               autoComplete="off"
-              className="w-40 rounded-xl border border-white/15 bg-black/20 py-1.5 pl-9 pr-3 text-sm text-foreground placeholder:text-foreground/50 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/50"
+              className="w-40 rounded-xl border border-white/15 bg-black/20 py-1.5 pl-9 pr-8 text-sm text-foreground placeholder:text-foreground/50 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/50"
             />
+            {searchTerm && (
+              <button
+                type="button"
+                aria-label="Clear search"
+                onClick={() => {
+                  setSearchTerm("");
+                  searchInputRef.current?.focus();
+                }}
+                className="absolute right-2 rounded p-0.5 text-muted-foreground transition hover:bg-white/10 hover:text-foreground"
+                title="Clear search"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
           </div>
 
           <div className="flex items-center gap-1">

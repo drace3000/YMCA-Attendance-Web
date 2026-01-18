@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import { Mail, Lock, KeyRound, UserPlus, Loader2, CheckCircle, AlertCircle, Eye, EyeOff, X, Building2, ChevronDown, User, Phone } from "lucide-react";
@@ -38,7 +38,7 @@ function formatPhoneInput(value: string): string {
   return out.trim();
 }
 
-export default function Home() {
+function HomeInner() {
   const { user, loading: authLoading, devSignIn, isDevMode, setRecipientContext, signOut } = useAuth();
   const { setBranch } = useThemeSettings();
   const searchParams = useSearchParams();
@@ -1132,7 +1132,7 @@ export default function Home() {
 
       {/* OTP Modal */}
       {showOtpModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="relative mx-4 w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl">
             <button
               type="button"
@@ -1204,7 +1204,7 @@ export default function Home() {
 
       {/* Create New Password Modal (forced for first-time login) */}
       {showCreatePasswordModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm">
           <div className="relative mx-4 w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl">
             <div className="text-center">
               <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-[var(--brand)]/20">
@@ -1343,7 +1343,7 @@ export default function Home() {
 
       {/* First-time Branch Manager Welcome Modal (after password setup) */}
       {showFirstTimeWelcomeModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="relative mx-4 w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl">
             <div className="text-center">
               <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-500/20">
@@ -1388,7 +1388,7 @@ export default function Home() {
 
       {/* Dev Login Success Modal */}
       {showDevLoginSuccess && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="relative mx-4 w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl">
             <div className="text-center">
               <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-500/20">
@@ -1417,7 +1417,7 @@ export default function Home() {
       {/* Forgot Password Modal (Phase 6) */}
       {showForgotPasswordModal && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm"
           onMouseDown={(e) => {
             if (e.target === e.currentTarget) setShowForgotPasswordModal(false);
           }}
@@ -1736,5 +1736,19 @@ export default function Home() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-[60vh] items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-[var(--brand)]" />
+        </div>
+      }
+    >
+      <HomeInner />
+    </Suspense>
   );
 }

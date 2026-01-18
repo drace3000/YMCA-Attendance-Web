@@ -7,7 +7,7 @@ type MockQueryState = {
   table: string
   action: "select" | "insert" | "update" | "delete"
   payload?: unknown
-  filters: Array<{ op: "eq" | "ilike" | "neq" | "in"; column: string; value: unknown }>
+  filters: Array<{ op: "eq" | "ilike" | "neq" | "in" | "is" | "gt"; column: string; value: unknown }>
   wantSingle: boolean
 }
 
@@ -53,6 +53,14 @@ function createMockSupabaseClient(handlers: Record<string, MockTableHandler>) {
       },
       in: (column: string, value: unknown) => {
         state.filters.push({ op: "in", column, value })
+        return builder
+      },
+      is: (column: string, value: unknown) => {
+        state.filters.push({ op: "is", column, value })
+        return builder
+      },
+      gt: (column: string, value: unknown) => {
+        state.filters.push({ op: "gt", column, value })
         return builder
       },
       order: () => builder,
@@ -102,6 +110,8 @@ describe("API - /api/scheduling/sessions location branch validation", () => {
 
     mockCreateSupabaseServerClient.mockReturnValue(
       createMockSupabaseClient({
+        schedules: async () => ({ data: { id: "sch-1" }, error: null }),
+        classes: async () => ({ data: { id: "c-1" }, error: null }),
         locations: async (state) => {
           // location validation query
           expect(state.action).toBe("select")
@@ -137,6 +147,61 @@ describe("API - /api/scheduling/sessions location branch validation", () => {
     expect(json).toEqual({ error: "Selected location is not available for this branch" })
   })
 
+  it("PUT: rejects when updating class_id to one not available for the branch", async () => {
+    mockRequireRecipientAccess.mockResolvedValueOnce({
+      ok: true,
+      access: { recipient_type: "Branch", branch_id: "br-1" },
+    })
+
+    mockCreateSupabaseServerClient.mockReturnValue(
+      createMockSupabaseClient({
+        classes: async (state) => {
+          // class validation query
+          expect(state.action).toBe("select")
+          const branchFilter = state.filters.find((f) => f.op === "eq" && f.column === "branch_id")
+          expect(branchFilter?.value).toBe("br-1")
+          return { data: null, error: null }
+        },
+        class_sessions: async (state) => {
+          if (state.action === "select" && state.wantSingle) {
+            // Current session prefetch
+            return {
+              data: {
+                id: "sess-1",
+                branch_id: "br-1",
+                schedule_id: "sch-1",
+                day_of_week: "THURSDAY",
+                start_time: "08:00",
+                end_time: "09:00",
+                session_date: "2026-01-01",
+                location_id: "loc-1",
+              },
+              error: null,
+            }
+          }
+          if (state.action === "update") {
+            throw new Error("should not update session when class validation fails")
+          }
+          return { data: null, error: null }
+        },
+      })
+    )
+
+    const req = new NextRequest("http://localhost:3000/api/scheduling/sessions", {
+      method: "PUT",
+      body: JSON.stringify({
+        id: "sess-1",
+        class_id: "cls-999",
+      }),
+    })
+
+    const res = await PUT(req)
+    const json = await res.json()
+
+    expect(res.status).toBe(409)
+    expect(json).toEqual({ error: "Selected class is not available for this branch" })
+  })
+
   it("PUT: rejects when updating location_id to one not available for the branch", async () => {
     mockRequireRecipientAccess.mockResolvedValueOnce({
       ok: true,
@@ -146,8 +211,33 @@ describe("API - /api/scheduling/sessions location branch validation", () => {
     mockCreateSupabaseServerClient.mockReturnValue(
       createMockSupabaseClient({
         locations: async () => ({ data: null, error: null }),
-        class_sessions: async () => {
-          throw new Error("should not update session when location validation fails")
+        schedules: async () => ({ data: { id: "sch-1", month_start: "2026-01-01" }, error: null }),
+        session_instructors: async () => ({ data: [], error: null }),
+        class_sessions: async (state) => {
+          if (state.action === "select" && state.wantSingle) {
+            // Current session prefetch
+            return {
+              data: {
+                id: "sess-1",
+                branch_id: "br-1",
+                schedule_id: "sch-1",
+                day_of_week: "THURSDAY",
+                start_time: "08:00",
+                end_time: "09:00",
+                session_date: "2026-01-01",
+                location_id: "loc-1",
+              },
+              error: null,
+            }
+          }
+          if (state.action === "select" && !state.wantSingle) {
+            // Conflict preflight: other sessions on the date
+            return { data: [], error: null }
+          }
+          if (state.action === "update") {
+            throw new Error("should not update session when location validation fails")
+          }
+          return { data: null, error: null }
         },
       })
     )

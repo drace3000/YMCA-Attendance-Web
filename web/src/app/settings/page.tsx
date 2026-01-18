@@ -5,6 +5,7 @@ import { ChevronDown } from "lucide-react";
 import { BranchOption, useThemeSettings } from "@/components/theme-settings-provider";
 import { ThemeColorOption, YMCA_THEME_COLORS, normalizeHex } from "@/lib/ymca-theme";
 import { useBranchAccess } from "@/hooks/useBranchAccess";
+import { TimePicker } from "@/components/ui/time-picker";
 
 type BranchResponse = (BranchOption & { 
   theme_color?: string | null;
@@ -12,6 +13,8 @@ type BranchResponse = (BranchOption & {
   branch_manager_name?: string | null;
   branch_manager_email?: string | null;
   branch_manager_phone?: string | null;
+  availability_time_start?: string | null;
+  availability_time_end?: string | null;
 })[];
 
 type BranchManagerData = {
@@ -71,6 +74,28 @@ function formatNameWithYMCA(name: string): string {
     .join(" ");
 }
 
+function normalizeHm(value: unknown, fallback: string): string {
+  const raw = typeof value === "string" ? value.trim() : "";
+  if (!raw) return fallback;
+  const m = raw.match(/^(\d{2}):(\d{2})(?::\d{2})?$/);
+  if (!m) return fallback;
+  const hh = Number(m[1]);
+  const mm = Number(m[2]);
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return fallback;
+  if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return fallback;
+  return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+}
+
+function parseHmToMinutes(value: string): number | null {
+  const m = (value ?? "").trim().match(/^(\d{2}):(\d{2})$/);
+  if (!m) return null;
+  const hh = Number(m[1]);
+  const mm = Number(m[2]);
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+  if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
+  return hh * 60 + mm;
+}
+
 export default function SettingsPage() {
   const {
     branch,
@@ -91,6 +116,12 @@ export default function SettingsPage() {
   const [loadingBranches, setLoadingBranches] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [colorMenuOpen, setColorMenuOpen] = useState(false);
+
+  // Availability time range (per-branch)
+  const [availabilityTimeStart, setAvailabilityTimeStart] = useState("06:00");
+  const [availabilityTimeEnd, setAvailabilityTimeEnd] = useState("23:00");
+  const [savingAvailabilityRange, setSavingAvailabilityRange] = useState(false);
+  const [availabilitySaveStatus, setAvailabilitySaveStatus] = useState<"idle" | "success" | "error">("idle");
   
   // Branch manager state
   const [branchManagerData, setBranchManagerData] = useState<Record<string, BranchManagerData>>({});
@@ -160,6 +191,9 @@ export default function SettingsPage() {
         setAllianceName(data.alliance_name ?? null);
         setAssociationName(data.association_name ?? null);
         if (data.association_code) setAssociationCode(data.association_code);
+        setAvailabilityTimeStart(normalizeHm(data.availability_time_start, "06:00"));
+        setAvailabilityTimeEnd(normalizeHm(data.availability_time_end, "23:00"));
+        setAvailabilitySaveStatus("idle");
       } catch {
         // ignore; keep names null on error
       }
@@ -284,21 +318,53 @@ export default function SettingsPage() {
     }
   };
 
+  const handleSaveAvailabilityRange = async () => {
+    setDialogError(null);
+    setSavingAvailabilityRange(true);
+    setAvailabilitySaveStatus("idle");
+    try {
+      const startMin = parseHmToMinutes(availabilityTimeStart);
+      const endMin = parseHmToMinutes(availabilityTimeEnd);
+      if (startMin === null || endMin === null) {
+        throw new Error("Please select valid times for both From and To.");
+      }
+      if (endMin <= startMin) {
+        throw new Error("To time must be greater than From time.");
+      }
+
+      const res = await fetch(`/api/branches/${branch.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          availability_time_start: availabilityTimeStart,
+          availability_time_end: availabilityTimeEnd,
+        }),
+      });
+
+      const details = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(details.error ?? "Failed to save availability time range");
+      }
+
+      setAvailabilitySaveStatus("success");
+      setTimeout(() => setAvailabilitySaveStatus("idle"), 3000);
+    } catch (e) {
+      setAvailabilitySaveStatus("error");
+      setDialogError(
+        e instanceof Error
+          ? `Could not save availability time range: ${e.message}`
+          : "Could not save availability time range. Please try again.",
+      );
+    } finally {
+      setSavingAvailabilityRange(false);
+    }
+  };
+
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
       <header className="rounded-3xl border border-border bg-panel-gradient p-6 shadow-sm ring-1 ring-white/10">
-        <p className="text-sm font-semibold uppercase tracking-wide text-foreground/80 flex items-center gap-2 flex-wrap">
+        <p className="flex flex-wrap items-center gap-2 text-sm font-semibold uppercase tracking-wide text-foreground/80">
           <span>Settings</span>
-          {(allianceName || associationName) && (
-            <>
-              <span className="text-foreground/50">-</span>
-              <span className="text-yellow-300 font-semibold normal-case">
-                {allianceName ? <span>{formatNameWithYMCA(allianceName)}</span> : null}
-                {allianceName && associationName ? " - " : null}
-                {associationName ? <span>{associationName}</span> : null}
-              </span>
-            </>
-          )}
         </p>
         <h1 className="mt-1 text-3xl font-bold tracking-tight text-foreground">
           Customization
@@ -309,7 +375,12 @@ export default function SettingsPage() {
       </header>
 
       <section className="grid gap-4 md:grid-cols-2">
-        <Card title="Sidebar position" description="Show the menu on the left or right.">
+        <Card
+          title="Sidebar position"
+          description="Show the menu on the left or right."
+          collapsible
+          defaultOpen={false}
+        >
           <div className="flex gap-3">
             <ToggleButton
               active={sidebarPosition === "left"}
@@ -331,6 +402,8 @@ export default function SettingsPage() {
         <Card
           title={isBranch ? "Your Branch" : "Branch selection"}
           description={isBranch ? "Your branch is locked to your account." : "Pick your assigned branch."}
+          collapsible
+          defaultOpen={false}
         >
           {loadingBranches ? (
             <div className="text-sm text-muted-foreground">Loading branches…</div>
@@ -361,7 +434,12 @@ export default function SettingsPage() {
           )}
         </Card>
 
-        <Card title="Color theme" description="Pick a YMCA brand color (hex is fixed).">
+        <Card
+          title="Color theme"
+          description="Pick a YMCA brand color (hex is fixed)."
+          collapsible
+          defaultOpen={false}
+        >
           <ColorDropdown
             value={brandColor}
             onChange={(hex) => setBrandColor(hex)}
@@ -380,7 +458,7 @@ export default function SettingsPage() {
           title="Program Groups"
           description={`Enable program groups for ${branch.name}. GroupX is the default for Eastside.`}
           collapsible
-          defaultOpen
+          defaultOpen={false}
         >
           {loadingGroups ? (
             <div className="text-sm text-muted-foreground">Loading program groups…</div>
@@ -441,9 +519,69 @@ export default function SettingsPage() {
         </Card>
       </section>
 
+      {/* Availability Time Range Section */}
+      <section>
+        <Card
+          title="Availability time range"
+          description={`Controls the time options shown in Instructor Availability for ${branch.name}. Default is 06:00 AM–11:00 PM.`}
+          collapsible
+          defaultOpen={false}
+        >
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-foreground/90">From</label>
+                <TimePicker
+                  value={availabilityTimeStart}
+                  onChange={(next) => {
+                    setAvailabilityTimeStart(next);
+                    setAvailabilitySaveStatus("idle");
+                  }}
+                  ariaLabel="Availability time start"
+                  stepMinutes={15}
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-foreground/90">To</label>
+                <TimePicker
+                  value={availabilityTimeEnd}
+                  onChange={(next) => {
+                    setAvailabilityTimeEnd(next);
+                    setAvailabilitySaveStatus("idle");
+                  }}
+                  ariaLabel="Availability time end"
+                  stepMinutes={15}
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleSaveAvailabilityRange}
+                disabled={savingAvailabilityRange}
+                className="btn-pill bg-[var(--cta)] px-4 py-2 text-sm font-semibold text-[var(--cta-foreground)] shadow-sm transition hover:opacity-90 disabled:opacity-50"
+              >
+                {savingAvailabilityRange ? "Saving..." : "Save Availability Range"}
+              </button>
+              {availabilitySaveStatus === "success" && (
+                <span className="text-sm text-green-400">✓ Saved</span>
+              )}
+              {availabilitySaveStatus === "error" && (
+                <span className="text-sm text-red-400">Failed to save</span>
+              )}
+            </div>
+          </div>
+        </Card>
+      </section>
+
       {/* Branch Manager Section */}
       <section>
-        <Card title="Branch Manager" description={`Contact information for ${branch.name}`} collapsible defaultOpen>
+        <Card
+          title="Branch Manager"
+          description={`Contact information for ${branch.name}`}
+          collapsible
+          defaultOpen={false}
+        >
           <div className="space-y-4">
             <div>
               <label className="mb-1 block text-sm font-medium text-foreground/90">Name</label>
@@ -559,6 +697,7 @@ function Card({
             onClick={() => setOpen((v) => !v)}
             className="btn-pill inline-flex items-center gap-2 border border-white/12 bg-black/15 px-3 py-2 text-xs font-semibold text-foreground/90 shadow-sm transition hover:bg-black/25"
             aria-expanded={open}
+            aria-label={`${open ? "Collapse" : "Expand"} ${title}`}
           >
             <span>{open ? "Collapse" : "Expand"}</span>
             <ChevronDown className={`h-4 w-4 transition ${open ? "rotate-180" : ""}`} />

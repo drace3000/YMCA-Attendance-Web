@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDownRight, ArrowUpRight, FileText, Loader2, RefreshCcw, TrendingDown, TrendingUp } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, FileText, Loader2, TrendingDown, TrendingUp, X } from "lucide-react";
 import dynamic from "next/dynamic";
 import { TrendsLineChart, type TrendSeries } from "@/components/trends-line-chart";
 import type { TrendsReportData } from "@/components/trends-report-pdf";
@@ -11,6 +11,15 @@ type Branch = {
   id: string;
   name: string;
   branch_manager_name?: string | null;
+  // Flat fields (current API response)
+  alliance_name?: string | null;
+  association_name?: string | null;
+  association?: {
+    name?: string | null;
+    alliance?: {
+      name?: string | null;
+    } | null;
+  } | null;
 };
 
 const GenerateTrendsReportModal = dynamic(
@@ -59,6 +68,9 @@ export default function TrendsPage() {
   const [exportModalOpen, setExportModalOpen] = useState(false);
   const [chartImages, setChartImages] = useState<{ trendingUp?: string; trendingDown?: string }>({});
   const [capturingCharts, setCapturingCharts] = useState(false);
+  const [chartsReady, setChartsReady] = useState(false);
+  const [cancelCaptureRequested, setCancelCaptureRequested] = useState(false);
+  const cancelCaptureRef = useRef(false);
   const chartUpRef = useRef<HTMLDivElement>(null);
   const chartDownRef = useRef<HTMLDivElement>(null);
 
@@ -66,17 +78,35 @@ export default function TrendsPage() {
   const { branch } = useThemeSettings();
   const [branchDetails, setBranchDetails] = useState<Branch | null>(null);
 
+  const toTitleCase = useCallback((value: string | null | undefined): string | null => {
+    if (!value) return null;
+    const lowerWords = new Set([
+      "of",
+      // (we can add more later if desired)
+    ]);
+    return value
+      .split(" ")
+      .filter(Boolean)
+      .map((word, idx) => {
+        const upper = word.toUpperCase();
+        // Preserve YMCA acronym (and plural with lowercase s)
+        if (upper === "YMCA") return "YMCA";
+        if (upper === "YMCAS") return "YMCAs";
+        const lower = word.toLowerCase();
+        if (idx !== 0 && lowerWords.has(lower)) return lower;
+        return lower.charAt(0).toUpperCase() + lower.slice(1);
+      })
+      .join(" ");
+  }, []);
+
   // Fetch branch details including manager name
   useEffect(() => {
     const fetchBranchDetails = async () => {
       try {
-        const res = await fetch("/api/branches");
+        const res = await fetch(`/api/branches/${encodeURIComponent(branch.id)}`);
         if (res.ok) {
-          const branches: Branch[] = await res.json();
-          const found = branches.find((b) => b.id === branch.id);
-          if (found) {
-            setBranchDetails(found);
-          }
+          const details: Branch = await res.json();
+          setBranchDetails(details);
         }
       } catch (err) {
         console.error("Error fetching branch details:", err);
@@ -92,6 +122,7 @@ export default function TrendsPage() {
       try {
         const params = new URLSearchParams({ year });
         if (quarter) params.set("quarter", quarter);
+        params.set("branch_id", branch.id);
         const res = await fetch(`/api/trends?${params.toString()}`, { signal });
         if (!res.ok) throw new Error(`Failed to load trends (${res.status})`);
         const payload: TrendsPayload = await res.json();
@@ -105,7 +136,7 @@ export default function TrendsPage() {
         setLoading(false);
       }
     },
-    [year, quarter]
+    [year, quarter, branch.id]
   );
 
   useEffect(() => {
@@ -125,6 +156,52 @@ export default function TrendsPage() {
   // Show all months on x-axis for full year view (no quarter selected)
   const isFullYear = !quarter;
 
+  // Only enable Export PDF when BOTH charts have actually rendered (Recharts mounted)
+  useEffect(() => {
+    setChartsReady(false);
+
+    if (!data || loading) return;
+
+    let cancelled = false;
+    let readyTimeout: ReturnType<typeof setTimeout> | null = null;
+    let tries = 0;
+    const maxTries = 60; // ~3 seconds at 50ms intervals
+
+    const hasRenderedChart = (el: HTMLDivElement | null): boolean => {
+      if (!el) return false;
+      const wrapper = el.querySelector<HTMLElement>(".recharts-wrapper");
+      if (!wrapper) return false;
+      const rect = wrapper.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    };
+
+    const tick = () => {
+      if (cancelled) return;
+      tries += 1;
+
+      const upOk = hasRenderedChart(chartUpRef.current);
+      const downOk = hasRenderedChart(chartDownRef.current);
+
+      if (upOk && downOk) {
+        // Extra delay to ensure charts fully finish rendering/animating before capture.
+        readyTimeout = setTimeout(() => {
+          if (cancelled) return;
+          setChartsReady(true);
+        }, 3000);
+        return;
+      }
+
+      if (tries >= maxTries) return;
+      setTimeout(tick, 50);
+    };
+
+    tick();
+    return () => {
+      cancelled = true;
+      if (readyTimeout) clearTimeout(readyTimeout);
+    };
+  }, [data, loading]);
+
   // Calculate which months have data across ALL series (both topUp and topDown)
   // This ensures both charts use the same x-axis
   const monthsWithDataMask = useMemo(() => {
@@ -137,10 +214,19 @@ export default function TrendsPage() {
 
   // Capture charts as images for PDF export
   const captureChartsAndOpenModal = useCallback(async () => {
-    if (!data) return;
+    if (!data || !chartsReady) return;
     setCapturingCharts(true);
+    setCancelCaptureRequested(false);
+    cancelCaptureRef.current = false;
 
     try {
+      // Let React paint the "Preparing PDF..." UI before starting heavy work (html2canvas can take 5–10s).
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => setTimeout(resolve, 0));
+      });
+
+      if (cancelCaptureRef.current) return;
+
       // Dynamically import html2canvas
       const html2canvas = (await import("html2canvas")).default;
 
@@ -151,6 +237,7 @@ export default function TrendsPage() {
           backgroundColor: "#FFFFFF",
           scale: 2,
         });
+        if (cancelCaptureRef.current) return;
         images.trendingUp = canvas.toDataURL("image/png");
       }
 
@@ -159,19 +246,24 @@ export default function TrendsPage() {
           backgroundColor: "#FFFFFF",
           scale: 2,
         });
+        if (cancelCaptureRef.current) return;
         images.trendingDown = canvas.toDataURL("image/png");
       }
 
+      if (cancelCaptureRef.current) return;
       setChartImages(images);
       setExportModalOpen(true);
     } catch (err) {
+      if (cancelCaptureRef.current) return;
       console.error("Failed to capture charts:", err);
       // Open modal anyway, will show placeholder for charts
       setExportModalOpen(true);
     } finally {
       setCapturingCharts(false);
+      setCancelCaptureRequested(false);
+      cancelCaptureRef.current = false;
     }
-  }, [data]);
+  }, [data, chartsReady]);
 
   // Prepare data for PDF export
   const pdfData: TrendsReportData | null = useMemo(() => {
@@ -185,10 +277,14 @@ export default function TrendsPage() {
       topUp: data.topUp,
       topDown: data.topDown,
       computedAt: data.computedAt,
-      branchName: branchDetails?.name || branch.name,
+      allianceName:
+        toTitleCase(branchDetails?.association?.alliance?.name ?? branchDetails?.alliance_name) ?? undefined,
+      associationName:
+        toTitleCase(branchDetails?.association?.name ?? branchDetails?.association_name) ?? undefined,
+      branchName: toTitleCase(branchDetails?.name) || branch.name,
       branchManager: branchDetails?.branch_manager_name || undefined,
     };
-  }, [data, branchDetails, branch.name]);
+  }, [data, branchDetails, branch.name, toTitleCase]);
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
@@ -205,16 +301,38 @@ export default function TrendsPage() {
               {/* Export PDF Button */}
               <button
                 onClick={captureChartsAndOpenModal}
-                disabled={!data || capturingCharts}
+                disabled={!data || loading || capturingCharts || !chartsReady}
                 className="btn-pill flex items-center gap-2 bg-[var(--cta)] px-4 py-2 text-sm font-medium text-[var(--cta-foreground)] shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {capturingCharts ? (
+                {capturingCharts || (!chartsReady && !!data && !loading) ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <FileText className="h-4 w-4" />
                 )}
-                {capturingCharts ? "Preparing PDF..." : "Export PDF"}
+                {capturingCharts
+                  ? "Preparing PDF..."
+                  : !data || loading
+                    ? "Loading..."
+                    : !chartsReady
+                      ? "Loading charts..."
+                      : "Export PDF"}
               </button>
+
+              {/* Cancel option while preparing (best-effort; html2canvas cannot be forcibly aborted mid-render) */}
+              {capturingCharts && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCancelCaptureRequested(true);
+                    cancelCaptureRef.current = true;
+                  }}
+                  disabled={cancelCaptureRequested}
+                  className="btn-pill flex cursor-pointer items-center gap-2 border border-border bg-card px-4 py-2 text-sm font-medium text-foreground shadow-sm transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <X className="h-4 w-4" />
+                  {cancelCaptureRequested ? "Cancelling..." : "Cancel"}
+                </button>
+              )}
             </div>
             <p className="mt-1 text-sm text-foreground/80">
               <span className="font-semibold">{periodLabel}</span> — Metric is{" "}
@@ -254,18 +372,6 @@ export default function TrendsPage() {
               </select>
             </label>
 
-            <button
-              type="button"
-              className="btn-pill inline-flex items-center gap-2 border border-white/15 bg-black/20 px-4 py-2 text-sm font-semibold text-foreground shadow-sm hover:bg-black/30 disabled:opacity-60"
-              onClick={() => {
-                const controller = new AbortController();
-                void load(controller.signal);
-              }}
-              disabled={loading}
-            >
-              <RefreshCcw className="h-4 w-4" />
-              Refresh
-            </button>
           </div>
         </div>
       </header>

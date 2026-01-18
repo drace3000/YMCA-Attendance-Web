@@ -194,8 +194,8 @@ export async function GET(req: NextRequest): Promise<Response> {
   const { searchParams } = new URL(req.url);
   const branchId = searchParams.get("branch_id");
 
-  const effectiveBranchId =
-    required.access?.recipient_type === "Branch" ? required.access.branch_id : branchId;
+  const access = required.access;
+  const effectiveBranchId = access?.recipient_type === "Branch" ? access.branch_id : branchId;
 
   if (!effectiveBranchId && !("devPassthrough" in required)) {
     return NextResponse.json({ error: "branch_id is required" }, { status: 400 });
@@ -207,7 +207,7 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   const supabase = createSupabaseServerClient();
 
-  const isBranchUser = required.access?.recipient_type === "Branch";
+  const isBranchUser = access?.recipient_type === "Branch";
   const selectColumns = isBranchUser
     ? "id, branch_id, email, first_name, last_name, on_hold, recipient_type, receives_reports, created_at"
     : "id, branch_id, email, first_name, last_name, phone, address, city, state, zip_code, on_hold, recipient_type, receives_reports, created_at, auth_user_id, is_active, needs_password_setup, last_login_at";

@@ -6,6 +6,7 @@
 import { pdf } from "@react-pdf/renderer";
 import {
   AttendanceReportPDFDocument,
+  type AttendanceReportContext,
   type ReportData,
   type FilterInfo,
   type ReportSection,
@@ -45,13 +46,15 @@ function generateFilename(filters: FilterInfo): string {
 export async function generateAttendanceReportPDFBlob(
   data: ReportData,
   filters: FilterInfo,
-  selectedSections: ReportSection[]
+  selectedSections: ReportSection[],
+  context?: AttendanceReportContext
 ): Promise<Blob> {
   const doc = (
     <AttendanceReportPDFDocument
       data={data}
       filters={filters}
       selectedSections={selectedSections}
+      context={context}
     />
   );
 
@@ -65,9 +68,10 @@ export async function generateAttendanceReportPDFBlob(
 export async function downloadAttendanceReportPDF(
   data: ReportData,
   filters: FilterInfo,
-  selectedSections: ReportSection[]
+  selectedSections: ReportSection[],
+  context?: AttendanceReportContext
 ): Promise<void> {
-  const blob = await generateAttendanceReportPDFBlob(data, filters, selectedSections);
+  const blob = await generateAttendanceReportPDFBlob(data, filters, selectedSections, context);
   const filename = generateFilename(filters);
   downloadPDFBlob(blob, filename);
 }
@@ -78,9 +82,10 @@ export async function downloadAttendanceReportPDF(
 export async function previewAttendanceReportPDF(
   data: ReportData,
   filters: FilterInfo,
-  selectedSections: ReportSection[]
+  selectedSections: ReportSection[],
+  context?: AttendanceReportContext
 ): Promise<void> {
-  const blob = await generateAttendanceReportPDFBlob(data, filters, selectedSections);
+  const blob = await generateAttendanceReportPDFBlob(data, filters, selectedSections, context);
   previewPDFBlob(blob);
 }
 
@@ -90,9 +95,10 @@ export async function previewAttendanceReportPDF(
 export async function printAttendanceReportPDF(
   data: ReportData,
   filters: FilterInfo,
-  selectedSections: ReportSection[]
+  selectedSections: ReportSection[],
+  context?: AttendanceReportContext
 ): Promise<void> {
-  const blob = await generateAttendanceReportPDFBlob(data, filters, selectedSections);
+  const blob = await generateAttendanceReportPDFBlob(data, filters, selectedSections, context);
   printPDFBlob(blob);
 }
 

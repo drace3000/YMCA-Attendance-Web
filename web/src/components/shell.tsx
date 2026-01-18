@@ -18,8 +18,28 @@ import {
   Wrench,
 } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { useThemeSettings } from "./theme-settings-provider";
-import { useAuth } from "./auth-provider";
+import { useThemeSettings } from "@/components/theme-settings-provider";
+import { useAuth } from "@/components/auth-provider";
+import { useBranchAccess } from "@/hooks/useBranchAccess";
+import { Popover, PopoverArrow, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { useAdminHierarchySelection } from "@/hooks/useAdminHierarchySelection";
+
+function toTitleCaseWithYmcaAndOf(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const lowerWords = new Set(["of"]);
+  return value
+    .split(" ")
+    .filter(Boolean)
+    .map((word, idx) => {
+      const upper = word.toUpperCase();
+      if (upper === "YMCA") return "YMCA";
+      if (upper === "YMCAS") return "YMCAs";
+      const lower = word.toLowerCase();
+      if (idx !== 0 && lowerWords.has(lower)) return lower;
+      return lower.charAt(0).toUpperCase() + lower.slice(1);
+    })
+    .join(" ");
+}
 
 type NavItem = {
   label: string;
@@ -48,18 +68,119 @@ export function Shell({ children }: { children: React.ReactNode }) {
     setSidebarPosition,
   } = useThemeSettings();
   const { user, signOut } = useAuth();
+  const { isAdmin, isBranch } = useBranchAccess();
+  const { hasSelection: adminHasSelection, selection: adminSelection, isComplete: adminSelectionComplete } =
+    useAdminHierarchySelection();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mounted, setMounted] = useState(false);
+  const [hierarchyLabel, setHierarchyLabel] = useState<{
+    allianceName: string | null;
+    associationName: string | null;
+    branchName: string;
+  }>({ allianceName: null, associationName: null, branchName: branch.name });
 
   const handleLogout = async (): Promise<void> => {
     await signOut();
     router.push("/");
   };
 
+  const [roleTooltipOpen, setRoleTooltipOpen] = useState(false);
+  const roleLabel = isAdmin ? "Administrator" : isBranch ? "Branch Manager" : null;
+  const roleAriaLabel = isAdmin ? "Administrator" : isBranch ? "Branch manager" : "User";
+  const roleIconFill = isAdmin ? "currentColor" : "none";
+  const roleIconStroke = isAdmin ? "none" : "currentColor";
+
   // Avoid hydration mismatch between server (default light) and client (stored theme)
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Resolve Alliance → Association → Branch for the current branch context.
+  useEffect(() => {
+    if (!user) return;
+    // If admin is mid-selection in Maintenance (Alliance/Association selected but Branch not),
+    // reflect that in the global header and avoid showing stale branch context.
+    if (isAdmin && !adminSelectionComplete) {
+      setHierarchyLabel({
+        allianceName: toTitleCaseWithYmcaAndOf(adminSelection.allianceName),
+        associationName: toTitleCaseWithYmcaAndOf(adminSelection.associationName),
+        branchName: toTitleCaseWithYmcaAndOf(adminSelection.branchName) ?? "",
+      });
+      return;
+    }
+    if (!branch?.id) {
+      setHierarchyLabel({ allianceName: null, associationName: null, branchName: branch?.name ?? "" });
+      return;
+    }
+
+    const controller = new AbortController();
+
+    const load = async () => {
+      try {
+        const res = await fetch(`/api/branches/${branch.id}`, { signal: controller.signal });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok || controller.signal.aborted) {
+          setHierarchyLabel({
+            allianceName: null,
+            associationName: null,
+            branchName: branch.name,
+          });
+          return;
+        }
+
+        const associationRaw =
+          typeof json?.association?.name === "string" && json.association.name.trim()
+            ? json.association.name.trim()
+            : typeof json?.association_name === "string" && json.association_name.trim()
+              ? json.association_name.trim()
+              : null;
+
+        const allianceRaw =
+          typeof json?.association?.alliance?.name === "string" && json.association.alliance.name.trim()
+            ? json.association.alliance.name.trim()
+            : typeof json?.alliance_name === "string" && json.alliance_name.trim()
+              ? json.alliance_name.trim()
+              : null;
+
+        const branchRaw = typeof json?.name === "string" && json.name.trim() ? json.name.trim() : branch.name;
+
+        setHierarchyLabel({
+          allianceName: toTitleCaseWithYmcaAndOf(allianceRaw),
+          associationName: toTitleCaseWithYmcaAndOf(associationRaw),
+          branchName: toTitleCaseWithYmcaAndOf(branchRaw) ?? branch.name,
+        });
+      } catch {
+        if (controller.signal.aborted) return;
+        setHierarchyLabel({
+          allianceName: null,
+          associationName: null,
+          branchName: branch.name,
+        });
+      }
+    };
+
+    void load();
+    return () => controller.abort();
+  }, [
+    branch.id,
+    branch.name,
+    user,
+    isAdmin,
+    adminHasSelection,
+    adminSelection.allianceName,
+    adminSelection.associationName,
+    adminSelection.branchName,
+  ]);
+
+  const adminSelectionIncomplete = isAdmin && !adminSelectionComplete;
+
+  // If admin selection is incomplete, keep the user on Maintenance until a Branch is chosen.
+  useEffect(() => {
+    if (!mounted) return;
+    if (!adminSelectionIncomplete) return;
+    if (pathname === "/maintenance") return;
+    router.push("/maintenance");
+  }, [adminSelectionIncomplete, mounted, pathname, router]);
 
   const displayMode = mounted ? mode : "light";
 
@@ -86,11 +207,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </div>
           <div className="h-10 w-px bg-white/20" />
           <div className="flex flex-col leading-tight">
-            <p className="w-full pt-0.5 text-center text-[10px] font-bold uppercase tracking-[0.25em] text-foreground/85">
-              Manager
-            </p>
-            <p className="pt-0.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Attendance Tracker
+            <p className="pt-0.5 text-xs font-bold uppercase tracking-[0.22em] text-foreground/85">
+              EZ-ATTENDANCE
             </p>
           </div>
         </div>
@@ -98,14 +216,21 @@ export function Shell({ children }: { children: React.ReactNode }) {
           {navItems.map((item) => {
             const active = pathname === item.href;
             const isWelcome = item.href === "/";
-            const isDisabled = !user && !isWelcome;
+            const isDisabled =
+              (!user && !isWelcome) || (adminSelectionIncomplete && item.href !== "/maintenance");
             
             if (isDisabled) {
+              const disabledTitle =
+                !user && !isWelcome
+                  ? "Sign in to access this feature"
+                  : adminSelectionIncomplete
+                    ? "Select Alliance, Association, and Branch in Maintenance to enable navigation"
+                    : undefined;
               return (
                 <span
                   key={item.href}
                   className="btn-pill flex items-center gap-2 px-3 py-2 text-sm font-medium cursor-not-allowed opacity-40 text-foreground/50"
-                  title="Sign in to access this feature"
+                  title={disabledTitle}
                 >
                   {item.icon}
                   {item.label}
@@ -165,17 +290,36 @@ export function Shell({ children }: { children: React.ReactNode }) {
                 <Menu className="h-5 w-5" />
               </button>
               {user && (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <span className="hidden sm:inline">Branch:</span>
-                  <span className="btn-pill border border-white/10 bg-black/20 px-3 py-1 text-foreground">
-                    {branch.name}
-                  </span>
-                </div>
-              )}
-              {user && (
                 <>
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <User className="hidden h-4 w-4 sm:block" />
+                    <Popover open={!!roleLabel && roleTooltipOpen} onOpenChange={() => {}}>
+                      <PopoverTrigger asChild>
+                        <button
+                          type="button"
+                          aria-label={roleAriaLabel}
+                          onMouseEnter={() => !!roleLabel && setRoleTooltipOpen(true)}
+                          onMouseLeave={() => setRoleTooltipOpen(false)}
+                          onFocus={() => !!roleLabel && setRoleTooltipOpen(true)}
+                          onBlur={() => setRoleTooltipOpen(false)}
+                          className="btn-pill hidden h-8 w-8 items-center justify-center border border-white/10 bg-black/20 text-[var(--cta)] shadow-sm ring-1 ring-white/10 transition hover:bg-black/30 sm:inline-flex"
+                        >
+                          <User className="h-4 w-4" fill={roleIconFill} stroke={roleIconStroke} />
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent
+                        side="bottom"
+                        align="start"
+                        sideOffset={8}
+                        className="pointer-events-none w-auto rounded-2xl border-[var(--brand-strong)] bg-[rgb(var(--brand-soft-rgb)/0.35)] px-3 py-2 text-xs text-foreground shadow-lg backdrop-blur-md"
+                      >
+                        <PopoverArrow
+                          width={12}
+                          height={8}
+                          className="fill-[rgb(var(--brand-soft-rgb)/0.35)] stroke-[var(--brand-strong)] stroke-1"
+                        />
+                        {roleLabel}
+                      </PopoverContent>
+                    </Popover>
                     <span className="btn-pill border border-white/10 bg-black/20 px-3 py-1 text-foreground">
                       {user.email}
                     </span>
@@ -213,8 +357,24 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <main className="flex-1 px-4 pb-10 pt-6 sm:px-8">
-          <div className="bg-app-gradient px-4 pt-6 sm:px-8">
+        {user ? (
+          <div className="border-b border-border bg-black/10">
+            <div className="px-4 py-2 text-sm font-semibold text-[var(--cta)] sm:px-8">
+              <span className="inline-flex flex-wrap items-center">
+                {[
+                  hierarchyLabel.allianceName,
+                  hierarchyLabel.associationName,
+                  hierarchyLabel.branchName,
+                ]
+                  .filter((part): part is string => typeof part === "string" && part.trim().length > 0)
+                  .join(" -> ")}
+              </span>
+            </div>
+          </div>
+        ) : null}
+
+        <main className="flex-1 px-4 pb-10 pt-0 sm:px-8">
+          <div className="bg-app-gradient px-4 pt-0 sm:px-8">
             {children}
           </div>
         </main>

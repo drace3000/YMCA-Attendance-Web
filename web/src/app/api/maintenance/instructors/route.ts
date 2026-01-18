@@ -14,6 +14,12 @@ type InstructorRow = {
   created_at: string;
 };
 
+type InstructorBranchLink = {
+  instructor_id: string;
+  branch_id: string;
+  is_primary: boolean | null;
+};
+
 type CreateInstructorPayload = {
   first_name: string;
   last_name: string;
@@ -125,8 +131,10 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   const supabase = createSupabaseServerClient();
 
-  const isBranchUser = required.access?.recipient_type === "Branch";
-  const branchId = isBranchUser ? required.access.branch_id : requestedBranchId;
+  const access = required.access;
+  const isBranchUser = access?.recipient_type === "Branch";
+  const branchId =
+    isBranchUser && access ? access.branch_id : requestedBranchId ?? access?.branch_id ?? null;
   if (!branchId) {
     return NextResponse.json({ error: "branch_id is required" }, { status: 400 });
   }
@@ -273,7 +281,53 @@ export async function GET(req: NextRequest): Promise<Response> {
     (a.nickname ?? "").localeCompare(b.nickname ?? "", undefined, { sensitivity: "base" })
   );
 
-  return NextResponse.json(merged);
+  const mergedIds = merged.map((r) => r.id).filter(Boolean);
+  if (mergedIds.length === 0) return NextResponse.json(merged);
+
+  const { data: branchLinks, error: branchLinksError } = await supabase
+    .from("instructor_branches")
+    .select("instructor_id, branch_id, is_primary")
+    .in("instructor_id", mergedIds)
+    .returns<InstructorBranchLink[]>();
+
+  if (branchLinksError) {
+    return NextResponse.json({ error: branchLinksError.message }, { status: 500 });
+  }
+
+  const linksByInstructorId = new Map<string, InstructorBranchLink[]>();
+  for (const row of branchLinks ?? []) {
+    if (!row?.instructor_id || !row?.branch_id) continue;
+    const arr = linksByInstructorId.get(row.instructor_id) ?? [];
+    arr.push(row);
+    linksByInstructorId.set(row.instructor_id, arr);
+  }
+
+  const output = merged.map((inst) => {
+    const links = linksByInstructorId.get(inst.id) ?? [];
+    const unique = new Map<string, InstructorBranchLink>();
+    for (const link of links) {
+      unique.set(link.branch_id, link);
+    }
+    // Ensure home branch appears even if legacy data is missing instructor_branches rows.
+    if (inst.branch_id && !unique.has(inst.branch_id)) {
+      unique.set(inst.branch_id, {
+        instructor_id: inst.id,
+        branch_id: inst.branch_id,
+        is_primary: true,
+      });
+    }
+
+    const available_branches = Array.from(unique.values()).sort((a, b) => {
+      const aPrimary = a.is_primary ? 1 : 0;
+      const bPrimary = b.is_primary ? 1 : 0;
+      if (aPrimary !== bPrimary) return bPrimary - aPrimary;
+      return a.branch_id.localeCompare(b.branch_id);
+    });
+
+    return { ...inst, available_branches };
+  });
+
+  return NextResponse.json(output);
 }
 
 // POST - Create a new instructor
@@ -291,8 +345,8 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   const requestedBranchId = body.branch_id;
-  const branch_id =
-    required.access?.recipient_type === "Branch" ? required.access.branch_id : requestedBranchId;
+  const access = required.access;
+  const branch_id = access?.recipient_type === "Branch" && access ? access.branch_id : requestedBranchId;
   const { first_name, last_name, nickname } = body;
 
   if (!first_name?.trim() || !last_name?.trim()) {
@@ -423,8 +477,9 @@ export async function PUT(req: NextRequest): Promise<Response> {
   }
 
   // Branch users may only update instructors that are in-scope (owned OR linked).
-  if (required.access?.recipient_type === "Branch") {
-    const branchId = required.access.branch_id;
+  const access = required.access;
+  if (access?.recipient_type === "Branch") {
+    const branchId = access.branch_id;
     const isOwned = current.branch_id === branchId;
     if (!isOwned) {
       const { data: link } = await supabase
@@ -511,8 +566,9 @@ export async function PATCH(req: NextRequest): Promise<Response> {
     );
   }
 
-  if (required.access?.recipient_type === "Branch") {
-    const branchId = required.access.branch_id;
+  const access = required.access;
+  if (access?.recipient_type === "Branch") {
+    const branchId = access.branch_id;
     const { data: current } = await supabase
       .from("instructors")
       .select("id, branch_id")

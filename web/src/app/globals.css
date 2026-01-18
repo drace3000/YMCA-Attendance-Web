@@ -260,6 +260,20 @@
   box-shadow: 0 1px 0 rgb(0 0 0 / 0.12);
 }
 
+/* Theme the native date/time picker icons (Chrome/Edge) */
+.ymca-picker::-webkit-calendar-picker-indicator {
+  /* Approximate the brand CTA yellow */
+  filter: invert(82%) sepia(87%) saturate(1540%) hue-rotate(358deg) brightness(103%) contrast(102%);
+  opacity: 0.95;
+  cursor: pointer;
+}
+
+/* Force wait cursor during short-lived blocking UI transitions (e.g., opening Edit Session modal) */
+body[data-ymca-wait-cursor="edit-open"],
+body[data-ymca-wait-cursor="edit-open"] * {
+  cursor: wait !important;
+}
+
 .ymca-select:focus {
   outline: none;
   box-shadow:

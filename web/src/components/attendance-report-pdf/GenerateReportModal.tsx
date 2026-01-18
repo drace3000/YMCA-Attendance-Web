@@ -28,6 +28,9 @@ interface GenerateReportModalProps {
   filters: FilterInfo;
   selectedSections: ReportSection[];
   branchId?: string;
+  allianceName?: string;
+  associationName?: string;
+  branchName?: string;
 }
 
 type ActionType = "preview" | "download" | "print" | "email" | null;
@@ -65,6 +68,9 @@ export function GenerateReportModal({
   filters,
   selectedSections,
   branchId,
+  allianceName,
+  associationName,
+  branchName,
 }: GenerateReportModalProps) {
   const [loading, setLoading] = useState<ActionType>(null);
   const [error, setError] = useState<string | null>(null);
@@ -116,18 +122,28 @@ ${selectedSections.map(s => `• ${REPORT_SECTION_LABELS[s]}`).join("\n")}`;
     setError(null);
 
     try {
+      const context = {
+        allianceName,
+        associationName,
+        branchName,
+      };
       switch (action) {
         case "preview":
-          await previewAttendanceReportPDF(data, filters, selectedSections);
+          await previewAttendanceReportPDF(data, filters, selectedSections, context);
           break;
         case "download":
-          await downloadAttendanceReportPDF(data, filters, selectedSections);
+          await downloadAttendanceReportPDF(data, filters, selectedSections, context);
           break;
         case "print":
-          await printAttendanceReportPDF(data, filters, selectedSections);
+          await printAttendanceReportPDF(data, filters, selectedSections, context);
           break;
         case "email":
-          const blob = await generateAttendanceReportPDFBlob(data, filters, selectedSections);
+          const blob = await generateAttendanceReportPDFBlob(
+            data,
+            filters,
+            selectedSections,
+            context
+          );
           setPdfBlob(blob);
           setEmailModalOpen(true);
           break;
@@ -141,7 +157,7 @@ ${selectedSections.map(s => `• ${REPORT_SECTION_LABELS[s]}`).join("\n")}`;
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/60 backdrop-blur-sm"
@@ -176,13 +192,35 @@ ${selectedSections.map(s => `• ${REPORT_SECTION_LABELS[s]}`).join("\n")}`;
         {/* Report Info */}
         <div className="mb-6 rounded-xl border border-[var(--brand-strong)] bg-[var(--brand-strong)]/20 p-4">
           <div className="space-y-2 text-sm">
-            <div className="flex justify-between">
+            {(allianceName || associationName || branchName) && (
+              <div className="space-y-1 border-b border-[var(--brand-strong)]/50 pb-3">
+                <div className="grid grid-cols-[110px_1fr] gap-x-3">
+                  <span className="text-[var(--brand-ink)]/70">Alliance:</span>
+                  <span className="font-medium text-[var(--brand-ink)] break-words">
+                    {allianceName ?? "—"}
+                  </span>
+                </div>
+                <div className="grid grid-cols-[110px_1fr] gap-x-3">
+                  <span className="text-[var(--brand-ink)]/70">Association:</span>
+                  <span className="font-medium text-[var(--brand-ink)] break-words">
+                    {associationName ?? "—"}
+                  </span>
+                </div>
+                <div className="grid grid-cols-[110px_1fr] gap-x-3">
+                  <span className="text-[var(--brand-ink)]/70">Branch:</span>
+                  <span className="font-medium text-[var(--brand-ink)] break-words">
+                    {branchName ?? "—"}
+                  </span>
+                </div>
+              </div>
+            )}
+            <div className="grid grid-cols-[110px_1fr] gap-x-3">
               <span className="text-[var(--brand-ink)]/70">Filters:</span>
-              <span className="font-medium text-[var(--brand-ink)]">
+              <span className="font-medium text-[var(--brand-ink)] break-words">
                 {formatFilterSummary(filters)}
               </span>
             </div>
-            <div className="flex justify-between">
+            <div className="grid grid-cols-[110px_1fr] gap-x-3">
               <span className="text-[var(--brand-ink)]/70">Reports:</span>
               <span className="font-medium text-[var(--brand-ink)]">
                 {selectedSections.length} selected

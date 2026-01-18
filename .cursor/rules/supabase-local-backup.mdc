@@ -27,6 +27,14 @@ Notes:
 - The container is commonly named `supabase_db_<project_id>`.
 - In this repo, `supabase/config.toml` contains `project_id`, which often appears in the container name.
 
+## Quick “is it running?” status check (recommended before backup)
+
+```powershell
+$dbContainer = docker ps --filter "name=supabase_db_" --format "{{.Names}}" | Select-Object -First 1
+if (-not $dbContainer) { throw "Supabase DB container not found (start local Supabase first)" }
+docker ps --filter "name=$dbContainer" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+```
+
 ## Preferred workflow (PowerShell, Windows)
 
 ### 1) Create the archive inside the container, copy to `backups/`, then cleanup
@@ -75,6 +83,65 @@ docker exec -i $dbContainer rm -f "/tmp/$dumpName" | Out-Null
 ```powershell
 $hash = Get-FileHash $hostDumpPath -Algorithm SHA256
 $hash.Hash | Out-File "$hostDumpPath.sha256.txt" -Encoding ascii
+```
+
+## Long-running / “status file + log” workflow (recommended when dumps take a while)
+
+This variant mimics the project’s proven process: write a small status JSON and a log file under `backups/` so you can confirm progress/completion even if the terminal session is interrupted.
+
+```powershell
+# From repo root
+New-Item -ItemType Directory -Force -Path .\backups | Out-Null
+
+$dbContainer = docker ps --filter "name=supabase_db_" --format "{{.Names}}" | Select-Object -First 1
+if (-not $dbContainer) { throw "Supabase DB container not found (start local Supabase first)" }
+
+$ts = Get-Date -Format "yyyyMMdd_HHmmss"
+$dumpName = "supabase_backup_${ts}_full.dump"
+$hostDumpPath = Join-Path (Resolve-Path .\backups) $dumpName
+$logPath = Join-Path (Resolve-Path .\backups) ("full_backup_${ts}.log.txt")
+$statusPath = Join-Path (Resolve-Path .\backups) "latest_full_backup_status.json"
+
+@{
+  started_at = (Get-Date).ToString('o')
+  container = $dbContainer
+  dump_name = $dumpName
+  host_dump_path = $hostDumpPath
+  log_path = $logPath
+} | ConvertTo-Json | Out-File $statusPath -Encoding utf8
+
+"[START] $(Get-Date -Format 'o')" | Out-File $logPath -Encoding utf8
+"container=$dbContainer" | Out-File $logPath -Append
+"dump=$hostDumpPath" | Out-File $logPath -Append
+
+# 1) Create dump in container
+"[STEP] pg_dump" | Out-File $logPath -Append
+docker exec -i $dbContainer pg_dump -U postgres -d postgres -Fc --verbose --no-owner --no-acl -f "/tmp/$dumpName" *>> $logPath
+if ($LASTEXITCODE -ne 0) { throw "pg_dump failed" }
+
+# 2) Copy to host
+"[STEP] docker cp container->host" | Out-File $logPath -Append
+docker cp "$dbContainer`:/tmp/$dumpName" "$hostDumpPath" *>> $logPath
+if ($LASTEXITCODE -ne 0) { throw "docker cp failed" }
+
+docker exec -i $dbContainer rm -f "/tmp/$dumpName" | Out-Null
+
+# 3) Validate archive (NO restore)
+"[STEP] validate pg_restore --list" | Out-File $logPath -Append
+docker cp "$hostDumpPath" "$dbContainer`:/tmp/$dumpName" *>> $logPath
+if ($LASTEXITCODE -ne 0) { throw "docker cp failed" }
+
+# Consume output fully so exit code is meaningful
+docker exec -i $dbContainer pg_restore --list "/tmp/$dumpName" | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "pg_restore --list failed (dump may be invalid)" }
+
+docker exec -i $dbContainer rm -f "/tmp/$dumpName" | Out-Null
+
+# 4) SHA256 sidecar
+$hash = Get-FileHash $hostDumpPath -Algorithm SHA256
+$hash.Hash | Out-File "$hostDumpPath.sha256.txt" -Encoding ascii
+
+"[DONE] $(Get-Date -Format 'o')" | Out-File $logPath -Append
 ```
 
 ## Acceptance criteria (Step 0 gate)

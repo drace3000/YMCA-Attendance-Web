@@ -12,17 +12,22 @@ export async function GET(req: NextRequest): Promise<Response> {
   const programGroupId = searchParams.get("program_group_id");
   const supabase = createSupabaseServerClient();
 
+  const access = required.access;
   const branchId =
-    required.access?.recipient_type === "Branch"
-      ? required.access.branch_id
-      : requestedBranchId;
+    access?.recipient_type === "Branch" && access
+      ? access.branch_id
+      : requestedBranchId ?? access?.branch_id ?? null;
+
+  if (!branchId) {
+    return NextResponse.json({ error: "branch_id is required" }, { status: 400 });
+  }
 
   let query = supabase
     .from("schedules")
     .select("id, name, month_start, status, published_at, created_at, branch_id, program_group_id")
     .order("month_start", { ascending: false });
 
-  if (branchId) query = query.eq("branch_id", branchId);
+  query = query.eq("branch_id", branchId);
   if (programGroupId) query = query.eq("program_group_id", programGroupId);
 
   const { data: schedules, error } = await query;

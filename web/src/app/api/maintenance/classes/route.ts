@@ -43,10 +43,15 @@ export async function GET(req: NextRequest): Promise<Response> {
   const requestedBranchId = searchParams.get("branch_id");
   const programGroupId = searchParams.get("program_group_id");
 
+  const access = required.access;
   const branchId =
-    required.access?.recipient_type === "Branch"
-      ? required.access.branch_id
-      : requestedBranchId;
+    access?.recipient_type === "Branch" && access
+      ? access.branch_id
+      : requestedBranchId ?? access?.branch_id ?? null;
+
+  if (!branchId) {
+    return NextResponse.json({ error: "branch_id is required" }, { status: 400 });
+  }
 
   const supabase = createSupabaseServerClient();
 
@@ -57,7 +62,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       .select("id, name")
       .ilike("name", checkName.trim());
 
-    if (branchId) query = query.eq("branch_id", branchId);
+    query = query.eq("branch_id", branchId);
     if (programGroupId) query = query.eq("program_group_id", programGroupId);
 
     if (excludeId) {
@@ -80,7 +85,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     .select("id, name, description, category, is_active, branch_id, program_group_id, created_at")
     .order("name", { ascending: true });
 
-  if (branchId) query = query.eq("branch_id", branchId);
+  query = query.eq("branch_id", branchId);
   if (programGroupId) query = query.eq("program_group_id", programGroupId);
 
   if (!includeInactive) {
@@ -111,10 +116,8 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   const requestedBranchId = body.branch_id;
-  const branch_id =
-    required.access?.recipient_type === "Branch"
-      ? required.access.branch_id
-      : requestedBranchId;
+  const access = required.access;
+  const branch_id = access?.recipient_type === "Branch" && access ? access.branch_id : requestedBranchId;
   const { name, description, category, program_group_id } = body;
 
   if (!name?.trim()) {
@@ -167,6 +170,7 @@ export async function PUT(req: NextRequest): Promise<Response> {
   const required = await requireRecipientAccess(req, { allowDevPassthrough: true });
   if (!required.ok) return required.response;
 
+  const access = required.access;
   const supabase = createSupabaseServerClient();
 
   let body: UpdateClassPayload;
@@ -196,8 +200,8 @@ export async function PUT(req: NextRequest): Promise<Response> {
   // Check name uniqueness if changing
   if (name !== undefined && name.trim().toLowerCase() !== current.name.toLowerCase()) {
     const nextBranchId =
-      required.access?.recipient_type === "Branch"
-        ? required.access.branch_id
+      access?.recipient_type === "Branch" && access
+        ? access.branch_id
         : branch_id ?? current.branch_id;
     const nextProgramGroupId = program_group_id ?? current.program_group_id;
 
@@ -222,8 +226,8 @@ export async function PUT(req: NextRequest): Promise<Response> {
   if (description !== undefined) updates.description = description?.trim() || null;
   if (category !== undefined) updates.category = category?.trim() || null;
   if (is_active !== undefined) updates.is_active = is_active;
-  if (required.access?.recipient_type === "Branch") {
-    updates.branch_id = required.access.branch_id;
+  if (access?.recipient_type === "Branch") {
+    updates.branch_id = access.branch_id;
   } else if (branch_id !== undefined) {
     updates.branch_id = branch_id;
   }
@@ -231,8 +235,8 @@ export async function PUT(req: NextRequest): Promise<Response> {
 
   let query = supabase.from("classes").update(updates).eq("id", id);
 
-  if (required.access?.recipient_type === "Branch") {
-    query = query.eq("branch_id", required.access.branch_id);
+  if (access?.recipient_type === "Branch") {
+    query = query.eq("branch_id", access.branch_id);
   }
 
   const { data, error } = await query.select().single();
@@ -269,8 +273,9 @@ export async function PATCH(req: NextRequest): Promise<Response> {
 
   let query = supabase.from("classes").update({ is_active }).eq("id", id);
 
-  if (required.access?.recipient_type === "Branch") {
-    query = query.eq("branch_id", required.access.branch_id);
+  const access = required.access;
+  if (access?.recipient_type === "Branch") {
+    query = query.eq("branch_id", access.branch_id);
   }
 
   const { data, error } = await query.select().single();

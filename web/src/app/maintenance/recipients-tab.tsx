@@ -507,7 +507,7 @@ export function RecipientsTab() {
       } else {
         // Branch/Admin recipients get a login (OTP onboarding). Members are email-only.
         if (formData.recipient_type !== "Member") {
-          payload.create_auth_user = true;
+        payload.create_auth_user = true;
         }
       }
 
@@ -1087,7 +1087,7 @@ export function RecipientsTab() {
       <div className="p-5">
         {/* Reset password modal */}
         {resettingRecipient && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
             <div className="w-full max-w-md rounded-2xl border border-border bg-card p-5 shadow-2xl">
               <div className="flex items-center justify-between gap-3">
                 <div>
@@ -1209,9 +1209,9 @@ export function RecipientsTab() {
                               recipient.recipient_type === "Normal" ? "Branch" : recipient.recipient_type;
                             if (type === "Administrator") {
                               return (
-                                <span className="rounded-full bg-purple-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-purple-300">
-                                  Admin
-                                </span>
+                            <span className="rounded-full bg-purple-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-purple-300">
+                              Admin
+                            </span>
                               );
                             }
                             if (type === "Member") {

@@ -8,6 +8,11 @@ alwaysApply: false
 
 Use consistent, accessible selection components across the app.
 
+## Global styling source of truth (required)
+
+For **any** popup/dropdown/picker request, follow:
+- `.cursor/rules/popup-dropdown-styling.mdc` (theme-first Shadcn-like standards, always applied)
+
 ## Standard dropdown (Smart Scheduler style)
 
 When you need a dropdown selection list like the Smart Scheduler grid (teal popover with a scrollable list and **yellow** selected option), use a Radix `Popover` dropdown and these styling conventions.

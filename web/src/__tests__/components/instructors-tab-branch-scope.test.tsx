@@ -8,6 +8,10 @@ vi.mock("@/components/theme-settings-provider", () => ({
   useThemeSettings: () => mockUseThemeSettings(),
 }));
 
+vi.mock("@/hooks/useBranchAccess", () => ({
+  useBranchAccess: () => ({ isAdmin: false }),
+}));
+
 describe("InstructorsTab branch scoping", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -43,4 +47,5 @@ describe("InstructorsTab branch scoping", () => {
     });
   });
 });
+
 

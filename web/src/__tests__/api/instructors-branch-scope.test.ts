@@ -16,6 +16,7 @@ vi.mock("@/lib/supabaseServer", () => ({
 function createThenableQuery(result: { data: any; error: any }) {
   const q: any = {
     select: () => q,
+    returns: () => q,
     eq: () => q,
     ilike: () => q,
     in: () => q,
@@ -59,6 +60,14 @@ describe("Phase X - /api/maintenance/instructors branch scoping", () => {
           data: [{ instructor_id: "inst-linked" }],
           error: null,
         }),
+        createThenableQuery({
+          data: [
+            { instructor_id: "inst-owned", branch_id: "br-user", is_primary: true },
+            { instructor_id: "inst-linked", branch_id: "br-other", is_primary: true },
+            { instructor_id: "inst-linked", branch_id: "br-user", is_primary: false },
+          ],
+          error: null,
+        }),
       ],
       instructors: [
         createThenableQuery({
@@ -82,6 +91,9 @@ describe("Phase X - /api/maintenance/instructors branch scoping", () => {
     expect(Array.isArray(data)).toBe(true);
     // Should contain both owned + linked
     expect(data.map((r: any) => r.id).sort()).toEqual(["inst-linked", "inst-owned"].sort());
+    // Should also include available_branches for each instructor
+    const owned = data.find((r: any) => r.id === "inst-owned");
+    expect(Array.isArray(owned?.available_branches)).toBe(true);
   });
 
   it("GET: Admin must provide branch_id", async () => {
@@ -96,6 +108,34 @@ describe("Phase X - /api/maintenance/instructors branch scoping", () => {
       },
     });
 
+    mockSupabaseClient = createSupabaseMock({
+      instructor_branches: [
+        createThenableQuery({ data: [], error: null }), // linkedRows (no linked ids)
+        createThenableQuery({ data: [], error: null }), // branchLinks for merged ids
+      ],
+      instructors: [createThenableQuery({ data: [], error: null })],
+    });
+
+    const req = new NextRequest("http://localhost:3000/api/maintenance/instructors");
+    const res = await GET(req);
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(Array.isArray(json)).toBe(true);
+  });
+
+  it("GET: returns 400 when branch_id is missing and no fallback branch exists", async () => {
+    mockRequireRecipientAccess.mockResolvedValueOnce({
+      ok: true,
+      response: null,
+      access: {
+        recipient_type: "Administrator",
+        branch_id: null,
+        association_id: "as-admin",
+        alliance_id: "al-admin",
+      },
+    });
+
     mockSupabaseClient = createSupabaseMock({});
 
     const req = new NextRequest("http://localhost:3000/api/maintenance/instructors");
@@ -103,7 +143,7 @@ describe("Phase X - /api/maintenance/instructors branch scoping", () => {
     const json = await res.json();
 
     expect(res.status).toBe(400);
-    expect(json.error).toContain("branch_id");
+    expect(String(json.error)).toContain("branch_id");
   });
 
   it("PUT: Branch user cannot update an instructor that is neither owned nor linked", async () => {
@@ -157,4 +197,5 @@ describe("Phase X - /api/maintenance/instructors branch scoping", () => {
     expect(json.error).toContain("Forbidden");
   });
 });
+
 

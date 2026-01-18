@@ -1,7 +1,19 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Building2, Calendar, HelpCircle, RotateCcw, ChevronDown, Printer, Layers3, X } from "lucide-react";
+import {
+  AlertTriangle,
+  Calendar,
+  CheckCircle2,
+  Copy,
+  HelpCircle,
+  Loader2,
+  RotateCcw,
+  ChevronDown,
+  Printer,
+  Layers3,
+  X,
+} from "lucide-react";
 import { GenerateScheduleModal } from "@/components/schedule-report";
 import { logError } from "@/lib/error-logger";
 import {
@@ -11,6 +23,19 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { SessionsTab, Session } from "./sessions-tab";
+import { useThemeSettings } from "@/components/theme-settings-provider";
+
+function normalizeHm(value: unknown, fallback: string): string {
+  const raw = typeof value === "string" ? value.trim() : "";
+  if (!raw) return fallback;
+  const m = raw.match(/^(\d{2}):(\d{2})(?::\d{2})?$/);
+  if (!m) return fallback;
+  const hh = Number(m[1]);
+  const mm = Number(m[2]);
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return fallback;
+  if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return fallback;
+  return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+}
 
 type Schedule = {
   id: string;
@@ -33,6 +58,8 @@ type Branch = {
   branch_manager_name?: string;
   branch_manager_email?: string;
   branch_manager_phone?: string;
+  availability_time_start?: string | null;
+  availability_time_end?: string | null;
 };
 
 type ProgramGroup = {
@@ -45,6 +72,8 @@ type ProgramGroup = {
 };
 
 export default function SchedulingPage() {
+  const { branch } = useThemeSettings();
+
   const [refreshKey, setRefreshKey] = useState(0);
   const [refreshPopoverOpen, setRefreshPopoverOpen] = useState(false);
   const [helperOpen, setHelperOpen] = useState(false);
@@ -52,9 +81,6 @@ export default function SchedulingPage() {
   const [selectedScheduleId, setSelectedScheduleId] = useState<string>("");
   const [scheduleDropdownOpen, setScheduleDropdownOpen] = useState(false);
   const [loadingSchedules, setLoadingSchedules] = useState(true);
-  const [branches, setBranches] = useState<Branch[]>([]);
-  const [selectedBranchId, setSelectedBranchId] = useState<string>("");
-  const [branchDropdownOpen, setBranchDropdownOpen] = useState(false);
   const [programGroups, setProgramGroups] = useState<ProgramGroup[]>([]);
   const [selectedProgramGroupId, setSelectedProgramGroupId] = useState<string>("");
   const [groupDropdownOpen, setGroupDropdownOpen] = useState(false);
@@ -62,6 +88,7 @@ export default function SchedulingPage() {
   const [sessionsForPrint, setSessionsForPrint] = useState<Session[]>([]);
   const [gridSessions, setGridSessions] = useState<Session[]>([]);
   const [gridCriteria, setGridCriteria] = useState<string[]>([]);
+  const [gridConflictSummary, setGridConflictSummary] = useState<{ high: number; medium: number; low: number; total: number } | null>(null);
   const [generateModalOpen, setGenerateModalOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string>("");
   const [dateDropdownOpen, setDateDropdownOpen] = useState(false);
@@ -69,58 +96,60 @@ export default function SchedulingPage() {
   const [dayDropdownOpen, setDayDropdownOpen] = useState(false);
   const [selectedWeekStart, setSelectedWeekStart] = useState<string>("");
   const [weekDropdownOpen, setWeekDropdownOpen] = useState(false);
-  const [branchOrgLabel, setBranchOrgLabel] = useState<string>("");
   const [branchAllianceName, setBranchAllianceName] = useState<string>("");
   const [branchAssociationName, setBranchAssociationName] = useState<string>("");
+  const [availabilityTimeStart, setAvailabilityTimeStart] = useState<string>("06:00");
+  const [availabilityTimeEnd, setAvailabilityTimeEnd] = useState<string>("23:00");
 
-  const toTitleCase = (value: string | null | undefined): string | null => {
+  // Phase 6: Clone most recent schedule → next month
+  const [cloneOpen, setCloneOpen] = useState(false);
+  const [cloneLoading, setCloneLoading] = useState(false);
+  const [cloneError, setCloneError] = useState<string | null>(null);
+  const [clonePreflight, setClonePreflight] = useState<any>(null);
+  const [cloneOverride, setCloneOverride] = useState(false);
+  const [cloneShowMissing, setCloneShowMissing] = useState(false);
+  const [cloneSaving, setCloneSaving] = useState(false);
+  const [cloneResult, setCloneResult] = useState<any>(null);
+
+  // Phase 7: Verify → Publish + Email
+  const [publishOpen, setPublishOpen] = useState(false);
+  const [publishLoading, setPublishLoading] = useState(false);
+  const [publishPreflightLoading, setPublishPreflightLoading] = useState(false);
+  const [publishPreflightError, setPublishPreflightError] = useState<string | null>(null);
+  const [publishPreflightSummary, setPublishPreflightSummary] = useState<any>(null);
+  const [publishPreflightConflicts, setPublishPreflightConflicts] = useState<any[] | null>(null);
+  const [publishMediumConfirmOpen, setPublishMediumConfirmOpen] = useState(false);
+  const [publishError, setPublishError] = useState<string | null>(null);
+  const [publishConflicts, setPublishConflicts] = useState<any[] | null>(null);
+  const [publishSummary, setPublishSummary] = useState<any>(null);
+  const [publishResult, setPublishResult] = useState<any>(null);
+
+  const toTitleCaseWithYmcaAndOf = (value: string | null | undefined): string | null => {
     if (!value) return null;
+    const lowerWords = new Set(["of"]);
     return value
       .split(" ")
       .filter(Boolean)
-      .map((word) => {
+      .map((word, idx) => {
         const upper = word.toUpperCase();
         // Preserve YMCA acronym (and plural with lowercase s)
         if (upper === "YMCA") return "YMCA";
         if (upper === "YMCAS") return "YMCAs";
-        return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+        const lower = word.toLowerCase();
+        if (idx !== 0 && lowerWords.has(lower)) return lower;
+        return lower.charAt(0).toUpperCase() + lower.slice(1);
       })
       .join(" ");
   };
 
   const selectedProgramGroup = programGroups.find((g) => g.id === selectedProgramGroupId);
 
-  // Fetch branches
-  const fetchBranches = useCallback(async () => {
-    try {
-      const res = await fetch("/api/branches");
-      if (res.ok) {
-        const data = await res.json();
-        // API returns array directly, not { branches: [...] }
-        const branchList = Array.isArray(data) ? data : (data.branches || []);
-        setBranches(branchList);
-        // Default to "Eastside Family YMCA" if available, otherwise first branch
-        if (branchList.length > 0 && !selectedBranchId) {
-          const eastside = branchList.find((b: Branch) => b.name === "Eastside Family YMCA");
-          setSelectedBranchId(eastside?.id || branchList[0].id);
-        }
-      }
-    } catch (err) {
-      // PRODUCTION ERROR HANDLING - Do not remove
-      await logError(
-        err instanceof Error ? err : new Error(String(err)),
-        "API_ERROR",
-        { page: "scheduling", action: "fetchBranches" }
-      );
-    }
-  }, [selectedBranchId]);
-
   // Fetch enabled program groups for selected branch
   const fetchProgramGroups = useCallback(async () => {
-    if (!selectedBranchId) return;
+    if (!branch?.id) return;
     setLoadingGroups(true);
     try {
-      const res = await fetch(`/api/branches/${selectedBranchId}/program-groups`);
+      const res = await fetch(`/api/branches/${branch.id}/program-groups`);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? "Failed to load program groups");
       const allGroups: ProgramGroup[] = Array.isArray(data.groups) ? data.groups : [];
@@ -140,21 +169,21 @@ export default function SchedulingPage() {
       await logError(
         err instanceof Error ? err : new Error(String(err)),
         "API_ERROR",
-        { page: "scheduling", action: "fetchProgramGroups", branchId: selectedBranchId }
+        { page: "scheduling", action: "fetchProgramGroups", branchId: branch.id }
       );
       setProgramGroups([]);
       setSelectedProgramGroupId("");
     } finally {
       setLoadingGroups(false);
     }
-  }, [selectedBranchId]);
+  }, [branch.id]);
 
   // Fetch schedules
   const fetchSchedules = useCallback(async () => {
     setLoadingSchedules(true);
     try {
       const params = new URLSearchParams();
-      if (selectedBranchId) params.set("branch_id", selectedBranchId);
+      if (branch?.id) params.set("branch_id", branch.id);
       if (selectedProgramGroupId) params.set("program_group_id", selectedProgramGroupId);
       const res = await fetch(`/api/scheduling/schedules?${params}`);
       if (res.ok) {
@@ -170,58 +199,53 @@ export default function SchedulingPage() {
       await logError(
         err instanceof Error ? err : new Error(String(err)),
         "API_ERROR",
-        { page: "scheduling", action: "fetchSchedules", branchId: selectedBranchId, params: { programGroupId: selectedProgramGroupId } }
+        { page: "scheduling", action: "fetchSchedules", branchId: branch.id, params: { programGroupId: selectedProgramGroupId } }
       );
     } finally {
       setLoadingSchedules(false);
     }
-  }, [selectedScheduleId, selectedBranchId, selectedProgramGroupId]);
-
-  useEffect(() => {
-    fetchBranches();
-  }, [fetchBranches]);
+  }, [selectedScheduleId, branch.id, selectedProgramGroupId]);
 
   // Fetch Alliance + Association for the selected branch
   useEffect(() => {
-    if (!selectedBranchId) {
-      setBranchOrgLabel("");
+    if (!branch?.id) {
       setBranchAllianceName("");
       setBranchAssociationName("");
+      setAvailabilityTimeStart("06:00");
+      setAvailabilityTimeEnd("23:00");
       return;
     }
 
     const loadOrg = async () => {
       try {
-        const res = await fetch(`/api/branches/${selectedBranchId}`);
+        const res = await fetch(`/api/branches/${branch.id}`);
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || "Failed to load branch org info");
 
         const alliance =
-          toTitleCase(data.alliance_name) || (data.alliance_code ? String(data.alliance_code).toUpperCase() : null);
+          toTitleCaseWithYmcaAndOf(data.alliance_name) || (data.alliance_code ? String(data.alliance_code).toUpperCase() : null);
         const association =
-          toTitleCase(data.association_name) || (data.association_code ? String(data.association_code).toUpperCase() : null);
+          toTitleCaseWithYmcaAndOf(data.association_name) || (data.association_code ? String(data.association_code).toUpperCase() : null);
 
-        if (alliance || association) {
-          setBranchOrgLabel(`${alliance ?? "Alliance"} - ${association ?? "Association"}`);
-        } else {
-          setBranchOrgLabel("");
-        }
         setBranchAllianceName(alliance ?? "");
         setBranchAssociationName(association ?? "");
+        setAvailabilityTimeStart(normalizeHm(data.availability_time_start, "06:00"));
+        setAvailabilityTimeEnd(normalizeHm(data.availability_time_end, "23:00"));
       } catch (err) {
         await logError(
           err instanceof Error ? err : new Error(String(err)),
           "API_ERROR",
-          { page: "scheduling", action: "fetchBranchOrg", branchId: selectedBranchId, criticality: "Low" }
+          { page: "scheduling", action: "fetchBranchOrg", branchId: branch.id, criticality: "Low" }
         );
-        setBranchOrgLabel("");
         setBranchAllianceName("");
         setBranchAssociationName("");
+        setAvailabilityTimeStart("06:00");
+        setAvailabilityTimeEnd("23:00");
       }
     };
 
     void loadOrg();
-  }, [selectedBranchId]);
+  }, [branch.id]);
 
   useEffect(() => {
     void fetchProgramGroups();
@@ -245,7 +269,7 @@ export default function SchedulingPage() {
   const isRefreshDisabled = false;
 
   const selectedSchedule = schedules.find((s) => s.id === selectedScheduleId);
-  const selectedBranch = branches.find((b) => b.id === selectedBranchId);
+  const selectedBranch = branch as unknown as Branch;
 
   // Compute unique dates from sessions (sorted ascending)
   const uniqueDates = useMemo(() => {
@@ -329,18 +353,18 @@ export default function SchedulingPage() {
     setSelectedWeekStart("");
     // Clear print sessions so print actions are disabled until current selection loads
     setSessionsForPrint([]);
-  }, [selectedBranchId, selectedScheduleId, selectedProgramGroupId]);
+  }, [branch.id, selectedScheduleId, selectedProgramGroupId]);
 
   // Always load sessions for print/reporting (even if grid tab isn't active)
   useEffect(() => {
     const load = async () => {
-      if (!selectedBranchId || !selectedScheduleId) return;
+      if (!branch?.id || !selectedScheduleId) return;
       try {
         const url =
           "/api/scheduling/sessions?schedule_id=" +
           selectedScheduleId +
           "&branch_id=" +
-          selectedBranchId;
+          branch.id;
         const res = await fetch(url);
         if (!res.ok) throw new Error("Failed to fetch sessions for print");
         const data = await res.json();
@@ -350,16 +374,202 @@ export default function SchedulingPage() {
         await logError(
           err instanceof Error ? err : new Error(String(err)),
           "API_ERROR",
-          { page: "scheduling", action: "fetchSessionsForPrint", branchId: selectedBranchId, params: { scheduleId: selectedScheduleId } }
+          { page: "scheduling", action: "fetchSessionsForPrint", branchId: branch.id, params: { scheduleId: selectedScheduleId } }
         );
         setSessionsForPrint([]);
       }
     };
     void load();
-  }, [selectedBranchId, selectedScheduleId, refreshKey]);
+  }, [branch.id, selectedScheduleId, refreshKey]);
+
+  const fetchClonePreflight = useCallback(async () => {
+    if (!branch?.id || !selectedProgramGroupId) return;
+    setCloneLoading(true);
+    setCloneError(null);
+    setClonePreflight(null);
+    setCloneResult(null);
+    try {
+      const res = await fetch("/api/scheduling/clone/preflight", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ branch_id: branch.id, program_group_id: selectedProgramGroupId }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.error || "Failed to load clone preflight");
+      setClonePreflight(json);
+    } catch (err) {
+      await logError(err instanceof Error ? err : new Error(String(err)), "API_ERROR", {
+        page: "scheduling",
+        action: "clonePreflight",
+        branchId: branch.id,
+        params: { programGroupId: selectedProgramGroupId },
+      });
+      setCloneError(err instanceof Error ? err.message : "Failed to load clone preflight");
+    } finally {
+      setCloneLoading(false);
+    }
+  }, [branch.id, selectedProgramGroupId]);
+
+  const openClone = async () => {
+    setCloneOverride(false);
+    setCloneShowMissing(false);
+    setCloneError(null);
+    setCloneResult(null);
+    setCloneOpen(true);
+    await fetchClonePreflight();
+  };
+
+  const closeClone = () => {
+    setCloneOpen(false);
+    setCloneOverride(false);
+    setCloneShowMissing(false);
+    setCloneError(null);
+    setClonePreflight(null);
+    setCloneResult(null);
+    setCloneSaving(false);
+  };
+
+  const handleClone = async () => {
+    if (!branch?.id || !selectedProgramGroupId) return;
+    setCloneSaving(true);
+    setCloneError(null);
+    setCloneResult(null);
+    try {
+      const res = await fetch("/api/scheduling/clone", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          branch_id: branch.id,
+          program_group_id: selectedProgramGroupId,
+          override_missing_headcounts: cloneOverride,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.error || "Failed to clone schedule");
+      setCloneResult(json);
+
+      const newId = json?.target_schedule?.id as string | undefined;
+      if (newId) {
+        setSelectedScheduleId(newId);
+        // Refresh schedules list + sessions so UI reflects the new month immediately.
+        await fetchSchedules();
+        handleRefresh();
+      }
+    } catch (err) {
+      await logError(err instanceof Error ? err : new Error(String(err)), "API_ERROR", {
+        page: "scheduling",
+        action: "cloneSchedule",
+        branchId: branch.id,
+        params: { programGroupId: selectedProgramGroupId, override_missing_headcounts: cloneOverride },
+      });
+      setCloneError(err instanceof Error ? err.message : "Failed to clone schedule");
+    } finally {
+      setCloneSaving(false);
+    }
+  };
+
+  const runPublishPreflight = useCallback(async () => {
+    if (!branch?.id || !selectedScheduleId) return;
+    setPublishPreflightLoading(true);
+    setPublishPreflightError(null);
+    setPublishPreflightSummary(null);
+    setPublishPreflightConflicts(null);
+    try {
+      const res = await fetch("/api/scheduling/conflicts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ branch_id: branch.id, schedule_id: selectedScheduleId }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.error || "Failed to verify conflicts");
+      setPublishPreflightSummary(json?.summary ?? null);
+      setPublishPreflightConflicts(Array.isArray(json?.conflicts) ? json.conflicts : []);
+    } catch (err) {
+      await logError(err instanceof Error ? err : new Error(String(err)), "API_ERROR", {
+        page: "scheduling",
+        action: "publishPreflightVerify",
+        branchId: branch.id,
+        params: { scheduleId: selectedScheduleId },
+      });
+      setPublishPreflightError(err instanceof Error ? err.message : "Failed to verify conflicts");
+    } finally {
+      setPublishPreflightLoading(false);
+    }
+  }, [branch?.id, selectedScheduleId]);
+
+  const openPublish = () => {
+    setPublishError(null);
+    setPublishConflicts(null);
+    setPublishSummary(null);
+    setPublishResult(null);
+    setPublishPreflightError(null);
+    setPublishPreflightSummary(null);
+    setPublishPreflightConflicts(null);
+    setPublishMediumConfirmOpen(false);
+    setPublishOpen(true);
+    void runPublishPreflight();
+  };
+
+  const closePublish = () => {
+    setPublishOpen(false);
+    setPublishLoading(false);
+    setPublishError(null);
+    setPublishConflicts(null);
+    setPublishSummary(null);
+    setPublishResult(null);
+    setPublishPreflightLoading(false);
+    setPublishPreflightError(null);
+    setPublishPreflightSummary(null);
+    setPublishPreflightConflicts(null);
+    setPublishMediumConfirmOpen(false);
+  };
+
+  const handlePublish = async () => {
+    if (!branch?.id || !selectedScheduleId) return;
+    setPublishLoading(true);
+    setPublishError(null);
+    setPublishConflicts(null);
+    setPublishSummary(null);
+    setPublishResult(null);
+    try {
+      const res = await fetch("/api/scheduling/publish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ branch_id: branch.id, schedule_id: selectedScheduleId }),
+      });
+      const json = await res.json().catch(() => ({}));
+
+      if (res.status === 409) {
+        setPublishError(json?.error || "Cannot publish");
+        setPublishSummary(json?.summary ?? null);
+        setPublishConflicts(Array.isArray(json?.conflicts) ? json.conflicts : null);
+        return;
+      }
+
+      if (!res.ok) throw new Error(json?.error || "Failed to publish schedule");
+
+      setPublishResult(json);
+      await fetchSchedules();
+      handleRefresh();
+    } catch (err) {
+      await logError(err instanceof Error ? err : new Error(String(err)), "API_ERROR", {
+        page: "scheduling",
+        action: "publishSchedule",
+        branchId: branch.id,
+        params: { scheduleId: selectedScheduleId },
+      });
+      setPublishError(err instanceof Error ? err.message : "Failed to publish schedule");
+    } finally {
+      setPublishLoading(false);
+    }
+  };
+
+  const hasPreflightHigh = (publishPreflightSummary?.high ?? 0) > 0;
+  const hasPreflightMedium = (publishPreflightSummary?.medium ?? 0) > 0;
+  const hasGridHighConflicts = (gridConflictSummary?.high ?? 0) > 0;
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6 pt-2.5">
       {/* Page Header */}
       <div className="flex flex-col gap-1">
         <div className="flex items-center gap-3">
@@ -367,45 +577,34 @@ export default function SchedulingPage() {
           {/* Print Schedule Button */}
           <button
             onClick={() => setGenerateModalOpen(true)}
-            disabled={!selectedBranch || !selectedSchedule}
+            disabled={!branch?.id || !selectedSchedule}
             className="btn-pill flex items-center gap-2 bg-[var(--cta)] px-4 py-2 text-sm font-medium text-[var(--cta-foreground)] shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Printer className="h-4 w-4" />
             Print Schedule
           </button>
-          {/* Refresh Button */}
-          <Popover open={!isRefreshDisabled && refreshPopoverOpen} onOpenChange={() => {}}>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                onClick={handleRefresh}
-                onMouseEnter={() => !isRefreshDisabled && setRefreshPopoverOpen(true)}
-                onMouseLeave={() => setRefreshPopoverOpen(false)}
-                disabled={isRefreshDisabled}
-                aria-label="Refresh data"
-                className={`btn-pill inline-flex h-8 w-8 items-center justify-center shadow-sm ring-1 ring-black/10 transition ${
-                  isRefreshDisabled
-                    ? "cursor-not-allowed bg-gray-400/50 text-gray-500"
-                    : "bg-[var(--cta)] text-[var(--cta-foreground)] hover:-translate-y-0.5 hover:shadow-md active:translate-y-px active:scale-[0.98]"
-                }`}
-              >
-                <RotateCcw className="h-4 w-4" />
-              </button>
-            </PopoverTrigger>
-            <PopoverContent
-              side="right"
-              align="center"
-              sideOffset={8}
-              className="pointer-events-none w-auto rounded-2xl border-[var(--brand-strong)] bg-[rgb(var(--brand-soft-rgb)/0.35)] px-3 py-2 text-xs text-foreground shadow-lg backdrop-blur-md"
-            >
-              <PopoverArrow
-                width={12}
-                height={8}
-                className="fill-[rgb(var(--brand-soft-rgb)/0.35)] stroke-[var(--brand-strong)] stroke-1"
-              />
-              {getRefreshMessage()}
-            </PopoverContent>
-          </Popover>
+          {/* Clone Next Month Button */}
+          <button
+            type="button"
+            onClick={() => void openClone()}
+            disabled={!branch?.id || !selectedProgramGroupId || hasGridHighConflicts}
+            className="btn-pill flex items-center gap-2 border border-white/10 bg-card/60 px-4 py-2 text-sm font-medium shadow-sm ring-1 ring-white/5 transition hover:bg-card hover:ring-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+            title="Clone the most recent schedule for this Branch/Group into the next month"
+          >
+            <Copy className="h-4 w-4 text-muted-foreground" />
+            Clone Next Month
+          </button>
+          {/* Publish Button */}
+          <button
+            type="button"
+            onClick={openPublish}
+            disabled={!branch?.id || !selectedScheduleId || hasGridHighConflicts}
+            className="btn-pill flex items-center gap-2 border border-white/10 bg-card/60 px-4 py-2 text-sm font-medium shadow-sm ring-1 ring-white/5 transition hover:bg-card hover:ring-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+            title="Verify the full schedule for conflicts, then publish and email instructors"
+          >
+            <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+            Publish
+          </button>
           {/* Helper Button (Popup) */}
           <button
             type="button"
@@ -419,61 +618,10 @@ export default function SchedulingPage() {
         <p className="text-sm text-muted-foreground">
           Manage class schedules, sessions, and generate printable schedules
         </p>
-        {branchOrgLabel && (
-          <p className="text-sm text-muted-foreground">{branchOrgLabel}</p>
-        )}
       </div>
 
       {/* Schedule and Branch Selectors */}
       <div className="flex flex-wrap items-center gap-4">
-        {/* Branch Selector */}
-        <div className="flex items-center gap-2">
-          <label className="text-sm font-medium">Branch:</label>
-          <Popover open={branchDropdownOpen} onOpenChange={setBranchDropdownOpen}>
-            <PopoverTrigger asChild>
-              <button
-                className="btn-pill flex min-w-[220px] items-center justify-between gap-2 border border-white/10 bg-card/60 px-4 py-2 text-sm shadow-sm ring-1 ring-white/5 transition hover:bg-card hover:ring-white/10"
-              >
-                <span className="flex items-center gap-2">
-                  <Building2 className="h-4 w-4 text-muted-foreground" />
-                  {selectedBranch?.name || "Select a branch"}
-                </span>
-                <ChevronDown className="h-4 w-4 text-muted-foreground" />
-              </button>
-            </PopoverTrigger>
-            <PopoverContent
-              align="start"
-              sideOffset={4}
-              className="w-[280px] rounded-xl border border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] p-1 shadow-xl backdrop-blur-md"
-            >
-              <div className="max-h-[300px] overflow-y-auto">
-                {branches.map((branch) => (
-                  <button
-                    key={branch.id}
-                    onClick={() => {
-                      setSelectedBranchId(branch.id);
-                      setBranchDropdownOpen(false);
-                    }}
-                    className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition ${
-                      branch.id === selectedBranchId
-                        ? "bg-[var(--cta)] text-[var(--cta-foreground)]"
-                        : "text-[var(--brand-ink)] hover:bg-[var(--brand-strong)] hover:text-white"
-                    }`}
-                  >
-                    <Building2 className="h-4 w-4" />
-                    <span>{branch.name}</span>
-                  </button>
-                ))}
-                {branches.length === 0 && (
-                  <div className="px-3 py-2 text-sm text-[var(--brand-ink)]/70">
-                    No branches found
-                  </div>
-                )}
-              </div>
-            </PopoverContent>
-          </Popover>
-        </div>
-
         {/* Group Selector */}
         <div className="flex items-center gap-2">
           <label className="text-sm font-medium">Group:</label>
@@ -780,13 +928,14 @@ export default function SchedulingPage() {
       <div className="rounded-2xl border border-white/10 bg-card/40 p-6 shadow-lg ring-1 ring-white/5 backdrop-blur-sm">
         <SessionsTab
           scheduleId={selectedScheduleId}
-          branchId={selectedBranchId}
+          branchId={branch.id}
           programGroupId={selectedProgramGroupId}
           refreshKey={refreshKey}
           onSessionsLoaded={setSessionsForPrint}
           onGridChange={(payload) => {
             setGridSessions(payload.sessions);
             setGridCriteria(payload.criteria);
+            setGridConflictSummary(payload.conflictSummary);
           }}
           filterDate={selectedDate}
           filterDay={selectedDay}
@@ -794,6 +943,8 @@ export default function SchedulingPage() {
           scheduleMonthYear={scheduleMonthYear}
           branchName={selectedBranch?.name}
           scheduleName={selectedSchedule?.name}
+          availabilityTimeStart={availabilityTimeStart}
+          availabilityTimeEnd={availabilityTimeEnd}
         />
       </div>
 
@@ -810,9 +961,414 @@ export default function SchedulingPage() {
         associationName={branchAssociationName || undefined}
       />
 
+      {/* Clone Modal */}
+      {cloneOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={closeClone} />
+          <div className="relative z-10 w-full max-w-3xl rounded-2xl border border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] p-6 shadow-2xl backdrop-blur-md">
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <h2 className="text-lg font-semibold text-[var(--brand-ink)]">Clone Next Month</h2>
+                <p className="text-sm text-[var(--brand-ink)]/70">
+                  This clones the <span className="font-semibold">most recent</span> schedule for the selected Branch/Group (not the month currently selected in the dropdown).
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeClone}
+                className="rounded-full p-1.5 text-[var(--brand-ink)]/70 hover:bg-[var(--brand-strong)] hover:text-white"
+                aria-label="Close clone modal"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {(cloneLoading || cloneSaving) && (
+              <div className="mb-4 flex items-center gap-2 rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-foreground/80">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                {cloneSaving ? "Cloning schedule..." : "Loading preflight..."}
+              </div>
+            )}
+
+            {cloneError && (
+              <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                Error: {cloneError}
+              </div>
+            )}
+
+            {clonePreflight && (
+              <div className="space-y-4">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="rounded-2xl border border-[var(--brand-strong)] bg-[var(--brand-strong)]/15 p-4">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-[var(--brand-ink)]/80">
+                      Source (most recent)
+                    </div>
+                    <div className="mt-1 text-sm text-[var(--brand-ink)]">
+                      <span className="font-semibold">{clonePreflight.source_schedule?.name ?? "—"}</span>
+                    </div>
+                    <div className="mt-1 text-xs text-[var(--brand-ink)]/70">
+                      Month start: <span className="font-mono">{clonePreflight.source_schedule?.month_start ?? "—"}</span>
+                      {" · "}
+                      Status: <span className="font-mono">{clonePreflight.source_schedule?.status ?? "—"}</span>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-[var(--brand-strong)] bg-[var(--brand-strong)]/15 p-4">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-[var(--brand-ink)]/80">
+                      Target (next month)
+                    </div>
+                    <div className="mt-1 text-sm text-[var(--brand-ink)]">
+                      Month start:{" "}
+                      <span className="font-mono font-semibold">
+                        {clonePreflight.target_month_start ?? "—"}
+                      </span>
+                    </div>
+                    {clonePreflight.target_exists && (
+                      <div className="mt-2 flex items-start gap-2 rounded-xl border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-xs text-yellow-200">
+                        <AlertTriangle className="mt-0.5 h-4 w-4" />
+                        <div className="min-w-0">
+                          A schedule already exists for this month.
+                          <div className="mt-1">
+                            <button
+                              type="button"
+                              className="underline underline-offset-2"
+                              onClick={() => {
+                                const existingId = clonePreflight.existing_target_schedule?.id;
+                                if (existingId) setSelectedScheduleId(existingId);
+                                closeClone();
+                              }}
+                            >
+                              Open existing schedule
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Headcount gate */}
+                <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-foreground">
+                        Headcount completeness (source schedule)
+                      </div>
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        Missing headcounts prevent cloning unless you explicitly override.
+                      </div>
+                    </div>
+
+                    <div className="text-sm text-foreground/90">
+                      Missing:{" "}
+                      <span className="font-semibold">
+                        {clonePreflight.headcount?.missing_count ?? 0}
+                      </span>
+                      {" / "}
+                      {clonePreflight.headcount?.total_sessions ?? 0}
+                    </div>
+                  </div>
+
+                  {(clonePreflight.headcount?.missing_count ?? 0) > 0 && (
+                    <div className="mt-3 space-y-2">
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={cloneOverride}
+                          onChange={(e) => setCloneOverride(e.target.checked)}
+                          className="h-4 w-4 accent-[var(--cta)]"
+                        />
+                        Override and clone anyway
+                      </label>
+
+                      <button
+                        type="button"
+                        onClick={() => setCloneShowMissing((v) => !v)}
+                        className="text-sm underline underline-offset-2 text-foreground/80 hover:text-foreground"
+                      >
+                        {cloneShowMissing ? "Hide" : "Show"} sessions missing headcount
+                      </button>
+
+                      {cloneShowMissing && (
+                        <div className="mt-2 max-h-[220px] overflow-auto rounded-xl border border-white/10">
+                          <table className="w-full text-xs">
+                            <thead className="bg-black/30 text-muted-foreground">
+                              <tr>
+                                <th className="px-3 py-2 text-left font-medium">Date</th>
+                                <th className="px-3 py-2 text-left font-medium">Day</th>
+                                <th className="px-3 py-2 text-left font-medium">Time</th>
+                                <th className="px-3 py-2 text-left font-medium">Class</th>
+                                <th className="px-3 py-2 text-left font-medium">Loc</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {(clonePreflight.headcount?.missing_sessions ?? []).map((s: any) => (
+                                <tr key={s.id} className="border-t border-white/5">
+                                  <td className="px-3 py-2 font-mono">{s.session_date}</td>
+                                  <td className="px-3 py-2">{s.day_of_week}</td>
+                                  <td className="px-3 py-2 font-mono">
+                                    {s.start_time}–{s.end_time}
+                                  </td>
+                                  <td className="px-3 py-2">{s.class_name ?? "—"}</td>
+                                  <td className="px-3 py-2">{s.location_code ?? "—"}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {cloneResult?.summary && (
+                  <div className="rounded-2xl border border-green-500/30 bg-green-500/10 p-4 text-sm text-green-100">
+                    <div className="font-semibold">Clone completed.</div>
+                    <div className="mt-1 text-xs text-green-100/90">
+                      Created {cloneResult.summary.created_sessions} sessions. Skipped{" "}
+                      {cloneResult.summary.skipped_missing_occurrence} (no matching weekday occurrence). Dedup skipped{" "}
+                      {cloneResult.summary.deduped_skipped}.
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                  <button
+                    type="button"
+                    onClick={closeClone}
+                    className="rounded-xl border border-white/10 bg-black/20 px-4 py-2 text-sm text-foreground transition hover:bg-black/30"
+                  >
+                    Close
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void fetchClonePreflight()}
+                    disabled={cloneLoading || cloneSaving}
+                    className="rounded-xl border border-white/10 bg-black/20 px-4 py-2 text-sm text-foreground transition hover:bg-black/30 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Refresh Preflight
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleClone()}
+                    disabled={
+                      cloneLoading ||
+                      cloneSaving ||
+                      !!clonePreflight.target_exists ||
+                      ((clonePreflight.headcount?.missing_count ?? 0) > 0 && !cloneOverride)
+                    }
+                    className="btn-pill flex items-center justify-center gap-2 bg-[var(--cta)] px-4 py-2 text-sm font-medium text-[var(--cta-foreground)] shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {cloneSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Copy className="h-4 w-4" />}
+                    Clone
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Publish Modal */}
+      {publishOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={closePublish} />
+          <div className="relative z-10 w-full max-w-3xl rounded-2xl border border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] p-6 shadow-2xl backdrop-blur-md">
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <h2 className="text-lg font-semibold text-[var(--brand-ink)]">Publish Schedule</h2>
+                <p className="text-sm text-[var(--brand-ink)]/70">
+                  Publishes the schedule and emails the PDF to instructors who have a valid login/email on file.
+                  Publishing is blocked if the schedule has any <span className="font-semibold">HIGH</span> conflicts.
+                  If there are <span className="font-semibold">MEDIUM</span> conflicts, you must confirm to proceed.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closePublish}
+                className="rounded-full p-1.5 text-[var(--brand-ink)]/70 hover:bg-[var(--brand-strong)] hover:text-white"
+                aria-label="Close publish modal"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="mb-4 rounded-2xl border border-[var(--brand-strong)] bg-[var(--brand-strong)]/15 p-4">
+              <div className="text-xs font-semibold uppercase tracking-wide text-[var(--brand-ink)]/80">Target</div>
+              <div className="mt-1 text-sm text-[var(--brand-ink)]">
+                <span className="font-semibold">{selectedSchedule?.name ?? "—"}</span>
+              </div>
+              <div className="mt-1 text-xs text-[var(--brand-ink)]/70">
+                Schedule ID: <span className="font-mono">{selectedScheduleId || "—"}</span>
+              </div>
+            </div>
+
+            {publishPreflightLoading && (
+              <div className="mb-4 flex items-center gap-2 rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-foreground/80">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Verifying conflicts...
+              </div>
+            )}
+
+            {publishPreflightError && (
+              <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                Error: {publishPreflightError}
+              </div>
+            )}
+
+            {publishPreflightSummary && (
+              <div className="mb-4 rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-foreground/80">
+                Conflicts summary:{" "}
+                <span className="font-semibold text-red-300">{publishPreflightSummary.high ?? 0} HIGH</span>,{" "}
+                <span className="font-semibold text-yellow-300">{publishPreflightSummary.medium ?? 0} MEDIUM</span>,{" "}
+                <span className="font-semibold">{publishPreflightSummary.low ?? 0} LOW</span>
+              </div>
+            )}
+
+            {publishPreflightConflicts && publishPreflightConflicts.length > 0 && (
+              <div className="mb-4 max-h-[240px] overflow-auto rounded-xl border border-white/10 bg-black/20">
+                <table className="w-full text-xs">
+                  <thead className="bg-black/30 text-muted-foreground">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-medium">Severity</th>
+                      <th className="px-3 py-2 text-left font-medium">Type</th>
+                      <th className="px-3 py-2 text-left font-medium">Message</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {publishPreflightConflicts.map((c, idx) => (
+                      <tr key={idx} className="border-t border-white/5">
+                        <td className={`px-3 py-2 font-semibold ${c.severity === "HIGH" ? "text-red-300" : c.severity === "MEDIUM" ? "text-yellow-300" : "text-foreground/80"}`}>
+                          {c.severity}
+                        </td>
+                        <td className="px-3 py-2 font-mono text-foreground/80">{c.type}</td>
+                        <td className="px-3 py-2 text-foreground/80">{c.message}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {publishLoading && (
+              <div className="mb-4 flex items-center gap-2 rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-foreground/80">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Verifying conflicts, generating PDF, and sending emails...
+              </div>
+            )}
+
+            {publishError && (
+              <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                Error: {publishError}
+              </div>
+            )}
+
+            {publishSummary && (
+              <div className="mb-4 rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-foreground/80">
+                Conflicts summary:{" "}
+                <span className="font-semibold text-red-300">{publishSummary.high ?? 0} HIGH</span>,{" "}
+                <span className="font-semibold text-yellow-300">{publishSummary.medium ?? 0} MEDIUM</span>,{" "}
+                <span className="font-semibold">{publishSummary.low ?? 0} LOW</span>
+              </div>
+            )}
+
+            {publishConflicts && publishConflicts.length > 0 && (
+              <div className="mb-4 max-h-[240px] overflow-auto rounded-xl border border-white/10 bg-black/20">
+                <table className="w-full text-xs">
+                  <thead className="bg-black/30 text-muted-foreground">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-medium">Severity</th>
+                      <th className="px-3 py-2 text-left font-medium">Type</th>
+                      <th className="px-3 py-2 text-left font-medium">Message</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {publishConflicts.map((c, idx) => (
+                      <tr key={idx} className="border-t border-white/5">
+                        <td className={`px-3 py-2 font-semibold ${c.severity === "HIGH" ? "text-red-300" : c.severity === "MEDIUM" ? "text-yellow-300" : "text-foreground/80"}`}>
+                          {c.severity}
+                        </td>
+                        <td className="px-3 py-2 font-mono text-foreground/80">{c.type}</td>
+                        <td className="px-3 py-2 text-foreground/80">{c.message}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {publishResult?.success && (
+              <div className="mb-4 rounded-2xl border border-green-500/30 bg-green-500/10 p-4 text-sm text-green-100">
+                <div className="font-semibold">Published successfully.</div>
+                <div className="mt-1 text-xs text-green-100/90">
+                  Emails attempted: {publishResult.email?.attempted ?? 0}.{" "}
+                  {Array.isArray(publishResult.warnings) && publishResult.warnings.length > 0
+                    ? `Warning: ${publishResult.warnings.join(" ")}`
+                    : ""}
+                </div>
+              </div>
+            )}
+
+            <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={closePublish}
+                className="rounded-xl border border-white/10 bg-black/20 px-4 py-2 text-sm text-foreground transition hover:bg-black/30"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (publishLoading || publishPreflightLoading) return;
+                  if (hasPreflightHigh) return;
+                  if (hasPreflightMedium && !publishMediumConfirmOpen) {
+                    setPublishMediumConfirmOpen(true);
+                    return;
+                  }
+                  void handlePublish();
+                }}
+                disabled={publishLoading || publishPreflightLoading || !selectedScheduleId || hasPreflightHigh}
+                className="btn-pill flex items-center justify-center gap-2 bg-[var(--cta)] px-4 py-2 text-sm font-medium text-[var(--cta-foreground)] shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {publishLoading || publishPreflightLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                Publish Now
+              </button>
+            </div>
+
+            {/* MEDIUM confirm inline */}
+            {publishMediumConfirmOpen && (
+              <div className="mt-4 rounded-2xl border border-yellow-500/30 bg-yellow-500/10 p-4 text-sm text-yellow-100">
+                <div className="font-semibold">MEDIUM conflicts detected.</div>
+                <div className="mt-1 text-xs text-yellow-100/90">
+                  Click <span className="font-semibold">Confirm Publish</span> to proceed anyway, or Close to cancel.
+                </div>
+                <div className="mt-3 flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPublishMediumConfirmOpen(false)}
+                    className="rounded-xl border border-white/10 bg-black/20 px-4 py-2 text-sm text-foreground transition hover:bg-black/30"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handlePublish()}
+                    disabled={publishLoading || publishPreflightLoading || hasPreflightHigh}
+                    className="btn-pill flex items-center justify-center gap-2 bg-[var(--cta)] px-4 py-2 text-sm font-medium text-[var(--cta-foreground)] shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Confirm Publish
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Helper Popup */}
       {helperOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center">
           <div
             className="absolute inset-0 bg-black/60 backdrop-blur-sm"
             onClick={() => setHelperOpen(false)}
@@ -839,7 +1395,6 @@ export default function SchedulingPage() {
               <div className="rounded-2xl border border-[var(--brand-strong)] bg-[var(--brand-strong)]/20 p-4">
                 <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--brand-ink)]/90">1) Select your data</h3>
                 <ul className="mt-3 space-y-2 text-sm text-[var(--brand-ink)]/90">
-                  <li>- Branch: choose a YMCA branch.</li>
                   <li>- Group: defaults to <span className="font-semibold">GroupX</span> when enabled.</li>
                   <li>- Schedule: month schedule for the selected branch + group.</li>
                 </ul>

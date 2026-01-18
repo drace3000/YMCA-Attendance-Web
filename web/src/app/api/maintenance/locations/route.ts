@@ -37,8 +37,10 @@ export async function GET(req: NextRequest): Promise<Response> {
   const includeInactive = searchParams.get("include_inactive") === "true";
   const requestedBranchId = searchParams.get("branch_id");
 
-  const isBranchUser = required.access?.recipient_type === "Branch";
-  const branchId = isBranchUser ? required.access.branch_id : requestedBranchId;
+  const access = required.access;
+  const isBranchUser = access?.recipient_type === "Branch";
+  const branchId =
+    isBranchUser && access ? access.branch_id : requestedBranchId ?? access?.branch_id ?? null;
   if (!branchId) {
     return NextResponse.json({ error: "branch_id is required" }, { status: 400 });
   }
@@ -128,8 +130,9 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const { code, name } = body;
   const requestedBranchId = body.branch_id;
-  const isBranchUser = required.access?.recipient_type === "Branch";
-  const branch_id = isBranchUser ? required.access.branch_id : requestedBranchId;
+  const access = required.access;
+  const isBranchUser = access?.recipient_type === "Branch";
+  const branch_id = isBranchUser && access ? access.branch_id : requestedBranchId;
 
   if (!code?.trim() || !name?.trim()) {
     return NextResponse.json(
@@ -218,8 +221,9 @@ export async function PUT(req: NextRequest): Promise<Response> {
     return NextResponse.json({ error: "Location not found" }, { status: 404 });
   }
 
-  const isBranchUser = required.access?.recipient_type === "Branch";
-  if (isBranchUser && current.branch_id !== required.access.branch_id) {
+  const access = required.access;
+  const isBranchUser = access?.recipient_type === "Branch";
+  if (isBranchUser && access && current.branch_id !== access.branch_id) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -311,8 +315,9 @@ export async function PATCH(req: NextRequest): Promise<Response> {
     return NextResponse.json({ error: "Location not found" }, { status: 404 });
   }
 
-  const isBranchUser = required.access?.recipient_type === "Branch";
-  if (isBranchUser && current.branch_id !== required.access.branch_id) {
+  const access = required.access;
+  const isBranchUser = access?.recipient_type === "Branch";
+  if (isBranchUser && access && current.branch_id !== access.branch_id) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

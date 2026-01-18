@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import type { QueryAPIResponse, ResultFormat } from "@/types/queries";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
+import { requireRecipientAccess } from "@/lib/requireRecipientAccess";
 import OpenAI from "openai";
 
 type AnthropicResponse = {
@@ -29,11 +30,11 @@ You are an AI assistant that generates safe, read-only SQL for YMCA attendance d
 DATABASE SCHEMA:
 - branches (id UUID, code TEXT, name TEXT, address, city, state, zip, phone, description)
 - classes (id UUID, name TEXT, description TEXT, category TEXT)
-- locations (id UUID, code TEXT, name TEXT)
+- locations (id UUID, branch_id UUID, code TEXT, name TEXT)
 - instructors (id UUID, first_name TEXT, last_name TEXT, nickname TEXT, branch_id UUID, raw_name TEXT)
 - instructor_branches (id UUID, instructor_id UUID, branch_id UUID, is_primary BOOLEAN)
-- schedules (id UUID, name TEXT, month_start DATE, status TEXT, published_at TIMESTAMPTZ)
-- class_sessions (id UUID, class_id UUID, location_id UUID, day_of_week TEXT, start_time TIME, end_time TIME, schedule_id UUID, headcount INTEGER, session_date DATE, headcount_submitted_at TIMESTAMPTZ)
+- schedules (id UUID, branch_id UUID, name TEXT, month_start DATE, status TEXT, published_at TIMESTAMPTZ)
+- class_sessions (id UUID, branch_id UUID, class_id UUID, location_id UUID, day_of_week TEXT, start_time TIME, end_time TIME, schedule_id UUID, headcount INTEGER, session_date DATE, headcount_submitted_at TIMESTAMPTZ)
 - session_instructors (session_id UUID, instructor_id UUID)
 
 KEY RELATIONSHIPS:
@@ -43,10 +44,15 @@ KEY RELATIONSHIPS:
 - session_instructors.session_id -> class_sessions.id
 - session_instructors.instructor_id -> instructors.id
 - instructors.branch_id -> branches.id
+- schedules.branch_id -> branches.id
+- class_sessions.branch_id -> branches.id
+- locations.branch_id -> branches.id
 
 RULES:
 - Only produce SELECT statements (no INSERT/UPDATE/DELETE/DDL).
-- Use the placeholder :branch_id for branch filtering when relevant.
+- Every query MUST be scoped to the selected branch by filtering with the placeholder :branch_id.
+  - Prefer: class_sessions.branch_id = :branch_id (or schedules.branch_id = :branch_id, locations.branch_id = :branch_id, etc.)
+  - Do NOT return SQL without :branch_id.
 - Use explicit JOINs and column aliases for clarity.
 - When the user specifies a column alias with "as XYZ", use double-quoted aliases to preserve case (e.g., AS "Instructor" not AS Instructor). This ensures capitalization appears correctly in results and reports.
 - Return a concise explanation, a resultFormat (table | short_list | single_value | time_series | aggregation | yes_no), and a reportTitle.
@@ -61,13 +67,36 @@ const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
 
 export async function POST(req: NextRequest): Promise<Response> {
   try {
+    const required = await requireRecipientAccess(req, { allowDevPassthrough: true });
+    if (!required.ok) return required.response;
+
     const body = await req.json().catch(() => ({}));
     const query = typeof body?.query === "string" ? body.query.trim() : "";
-    const branchId = typeof body?.branchId === "string" ? body.branchId : null;
+    const requestedBranchId = typeof body?.branchId === "string" ? body.branchId : null;
+
+    // Server-enforced branch context:
+    // - Branch users are ALWAYS forced to their assigned branch (ignore spoofed branchId)
+    // - Admins can supply a branchId (e.g., from the Admin hierarchy selector)
+    const access = required.access;
+    const effectiveBranchId =
+      access?.recipient_type === "Branch" && access ? access.branch_id : requestedBranchId;
+
     if (!query) {
       return NextResponse.json(
         { success: false, error: "Query is required." },
         { status: 400 },
+      );
+    }
+
+    // For this app, Natural Language Queries must always be scoped to a branch hierarchy.
+    if (!effectiveBranchId) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "branchId is required for this query. Please select or provide a branch.",
+          clarificationNeeded: "Select a branch and try again.",
+        },
+        { status: 200 },
       );
     }
 
@@ -87,10 +116,25 @@ export async function POST(req: NextRequest): Promise<Response> {
       return NextResponse.json(buildMockResponse(query, "table"), { status: 200 });
     }
 
+    const buildUserPrompt = (extra?: string) => {
+      const lines = [
+        `User question: ${query}`,
+        extra ? extra.trim() : null,
+        `Return JSON with keys: sql, explanation, resultFormat, reportTitle, summary.`,
+      ].filter(Boolean);
+      return lines.join("\n");
+    };
+
     let aiText: string | null = null;
 
     if (shouldUseAnthropic) {
-      const aiResponse = await callAnthropic({ apiKey: apiKey!, model, temperature, query });
+      const aiResponse = await callAnthropic({
+        apiKey: apiKey!,
+        model,
+        temperature,
+        query,
+        userPrompt: buildUserPrompt(),
+      });
       if (!aiResponse) {
         return NextResponse.json(buildMockResponse(query, "table"), { status: 200 });
       }
@@ -101,6 +145,7 @@ export async function POST(req: NextRequest): Promise<Response> {
         model,
         temperature,
         query,
+        userPrompt: buildUserPrompt(),
       });
       if (!aiText) {
         return NextResponse.json(buildMockResponse(query, "table"), { status: 200 });
@@ -135,21 +180,67 @@ export async function POST(req: NextRequest): Promise<Response> {
       return `generate_series((CURRENT_DATE + ${a1}::time), (CURRENT_DATE + ${a2}::time), ${a3})::time`;
     });
 
-    // Require branch_id if the SQL expects it
-    const needsBranch = sanitizedSql.includes(":branch_id");
-    if (needsBranch && !branchId) {
+    // Enforce branch scoping for NLQ (server-side, regardless of what the client sends)
+    let effectiveSql = sqlWithGenerateSeriesFix;
+    let effectiveParsed = parsed;
+    let hasBranchPlaceholder = sanitizedSql.includes(":branch_id");
+
+    // If the AI forgot the branch placeholder, retry once with a stronger instruction.
+    // If it STILL omits :branch_id, we refuse to execute.
+    if (!hasBranchPlaceholder) {
+      const branchFixInstruction =
+        "IMPORTANT: Your SQL MUST include a WHERE filter using the placeholder :branch_id. " +
+        "Prefer class_sessions.branch_id = :branch_id (or schedules.branch_id = :branch_id, locations.branch_id = :branch_id). " +
+        "Rewrite the SQL accordingly and return ONLY the JSON response.";
+
+      let retryText: string | null = null;
+      if (shouldUseAnthropic) {
+        const retry = await callAnthropic({
+          apiKey: apiKey!,
+          model,
+          temperature,
+          query,
+          userPrompt: buildUserPrompt(branchFixInstruction),
+        });
+        retryText = retry?.content?.[0]?.text ?? null;
+      } else if (shouldUseOpenAI) {
+        retryText = await callOpenAI({
+          apiKey: openaiKey!,
+          model,
+          temperature,
+          query,
+          userPrompt: buildUserPrompt(branchFixInstruction),
+        });
+      }
+
+      const retryParsed = parseAssistantJson(retryText ?? "");
+      if (retryParsed?.sql) {
+        const retrySanitizedSql = retryParsed.sql.replace(/;/g, "");
+        hasBranchPlaceholder = retrySanitizedSql.includes(":branch_id");
+        if (hasBranchPlaceholder) {
+          effectiveParsed = retryParsed;
+          effectiveSql = retrySanitizedSql.replace(gsTimePattern, (_m, a1, a2, a3) => {
+            return `generate_series((CURRENT_DATE + ${a1}::time), (CURRENT_DATE + ${a2}::time), ${a3})::time`;
+          });
+        }
+      }
+    }
+
+    if (!hasBranchPlaceholder) {
       return NextResponse.json(
         {
           success: false,
-          error: "branchId is required for this query. Please select or provide a branch.",
-          clarificationNeeded: "Select a branch and try again.",
+          error:
+            "Generated SQL must include the :branch_id placeholder so results are scoped to the selected branch.",
+          clarificationNeeded:
+            "Please rephrase your question (or include the branch context), then try again.",
         },
         { status: 200 },
       );
     }
 
     // Execute the SQL against the database
-    const sqlResult = await executeSql(sqlWithGenerateSeriesFix, branchId);
+    const sqlResult = await executeSql(effectiveSql, effectiveBranchId);
 
     // If SQL execution failed, return error but include the generated SQL
     if (!sqlResult.success) {
@@ -166,17 +257,17 @@ export async function POST(req: NextRequest): Promise<Response> {
       query: {
         id: crypto.randomUUID(),
         queryText: query,
-        generatedSql: parsed.sql,
-        explanation: parsed.explanation,
+        generatedSql: effectiveParsed.sql,
+        explanation: effectiveParsed.explanation,
         resultFormat,
-        reportTitle: parsed.reportTitle || "AI Generated Report",
+        reportTitle: effectiveParsed.reportTitle || "AI Generated Report",
       },
       results: {
         data: sqlResult.data,
         rowCount: sqlResult.row_count,
         executionTimeMs: sqlResult.execution_time_ms,
       },
-      summary: parsed.summary || parsed.explanation || "AI generated summary.",
+      summary: effectiveParsed.summary || effectiveParsed.explanation || "AI generated summary.",
     };
 
     return NextResponse.json(response, { status: 200 });
@@ -217,8 +308,9 @@ async function callAnthropic(params: {
   model: string;
   temperature: number;
   query: string;
+  userPrompt?: string;
 }): Promise<AnthropicResponse | null> {
-  const { apiKey, model, temperature, query } = params;
+  const { apiKey, model, temperature, query, userPrompt } = params;
 
   try {
     const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -239,7 +331,9 @@ async function callAnthropic(params: {
             content: [
               {
                 type: "text",
-                text: `User question: ${query}\nReturn JSON with keys: sql, explanation, resultFormat, reportTitle, summary.`,
+                text:
+                  userPrompt ??
+                  `User question: ${query}\nReturn JSON with keys: sql, explanation, resultFormat, reportTitle, summary.`,
               },
             ],
           },
@@ -275,8 +369,9 @@ async function callOpenAI(params: {
   model: string;
   temperature: number;
   query: string;
+  userPrompt?: string;
 }): Promise<string | null> {
-  const { apiKey, model, temperature, query } = params;
+  const { apiKey, model, temperature, query, userPrompt } = params;
   const client = new OpenAI({ apiKey });
   try {
     const res = await client.chat.completions.create({
@@ -288,7 +383,9 @@ async function callOpenAI(params: {
         { role: "system", content: BASE_PROMPT },
         {
           role: "user",
-          content: `User question: ${query}\nReturn JSON with keys: sql, explanation, resultFormat, reportTitle, summary.`,
+          content:
+            userPrompt ??
+            `User question: ${query}\nReturn JSON with keys: sql, explanation, resultFormat, reportTitle, summary.`,
         },
       ],
     });

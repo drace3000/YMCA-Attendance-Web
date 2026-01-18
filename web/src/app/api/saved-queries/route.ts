@@ -17,10 +17,9 @@ export async function GET(request: NextRequest): Promise<Response> {
 
   const { searchParams } = new URL(request.url);
   const requestedBranchId = searchParams.get("branch_id");
+  const access = required.access;
   const branchId =
-    required.access?.recipient_type === "Branch"
-      ? required.access.branch_id
-      : requestedBranchId;
+    access?.recipient_type === "Branch" && access ? access.branch_id : requestedBranchId;
 
   if (!branchId) {
     return NextResponse.json(
@@ -89,7 +88,9 @@ export async function POST(request: NextRequest): Promise<Response> {
 
     const supabase = createSupabaseServerClient();
     const resolvedBranchId =
-      required.access?.recipient_type === "Branch" ? required.access.branch_id : branchId;
+      required.access?.recipient_type === "Branch" && required.access
+        ? required.access.branch_id
+        : branchId;
 
     const { data, error } = await supabase
       .from("saved_queries")
@@ -143,14 +144,15 @@ export async function PUT(request: NextRequest): Promise<Response> {
     }
 
     const supabase = createSupabaseServerClient();
+    const access = required.access;
 
     let query = supabase
       .from("saved_queries")
       .update({ query_text: queryText.trim() })
       .eq("id", id);
 
-    if (required.access?.recipient_type === "Branch") {
-      query = query.eq("branch_id", required.access.branch_id);
+    if (access?.recipient_type === "Branch") {
+      query = query.eq("branch_id", access.branch_id);
     }
 
     const { data, error } = await query.select().single();
@@ -190,14 +192,15 @@ export async function DELETE(request: NextRequest): Promise<Response> {
 
   try {
     const supabase = createSupabaseServerClient();
+    const access = required.access;
 
     let query = supabase
       .from("saved_queries")
       .delete()
       .eq("id", id);
 
-    if (required.access?.recipient_type === "Branch") {
-      query = query.eq("branch_id", required.access.branch_id);
+    if (access?.recipient_type === "Branch") {
+      query = query.eq("branch_id", access.branch_id);
     }
 
     const { error } = await query;

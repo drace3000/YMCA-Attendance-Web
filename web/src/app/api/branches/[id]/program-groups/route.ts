@@ -39,10 +39,8 @@ export async function GET(
 
   const required = await requireRecipientAccess(req, { allowDevPassthrough: true });
   if (!required.ok) return required.response;
-  if (
-    required.access?.recipient_type === "Branch" &&
-    required.access.branch_id !== branchId
-  ) {
+  const access = required.access;
+  if (access && access.recipient_type === "Branch" && access.branch_id !== branchId) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -93,10 +91,8 @@ export async function PUT(
 
   const required = await requireRecipientAccess(req, { allowDevPassthrough: true });
   if (!required.ok) return required.response;
-  if (
-    required.access?.recipient_type === "Branch" &&
-    required.access.branch_id !== branchId
-  ) {
+  const access = required.access;
+  if (access && access.recipient_type === "Branch" && access.branch_id !== branchId) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

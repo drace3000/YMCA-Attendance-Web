@@ -86,10 +86,32 @@ describe("API - /api/maintenance/locations", () => {
     vi.clearAllMocks()
   })
 
-  it("GET: returns 400 for admin when branch_id is missing", async () => {
+  it("GET: admin falls back to access.branch_id when branch_id is missing", async () => {
     mockRequireRecipientAccess.mockResolvedValueOnce({
       ok: true,
-      access: { recipient_type: "Administrator", branch_id: "ignored" },
+      access: { recipient_type: "Administrator", branch_id: "br-admin" },
+    })
+
+    mockCreateSupabaseServerClient.mockReturnValue(
+      createMockSupabaseClient({
+        locations: async (state) => {
+          const branchFilter = state.filters.find((f) => f.op === "eq" && f.column === "branch_id")
+          expect(branchFilter?.value).toBe("br-admin")
+          return { data: [], error: null }
+        },
+      })
+    )
+
+    const req = new NextRequest("http://localhost:3000/api/maintenance/locations")
+    const res = await GET(req)
+
+    expect(res.status).toBe(200)
+  })
+
+  it("GET: returns 400 when branch_id is missing and no fallback branch exists", async () => {
+    mockRequireRecipientAccess.mockResolvedValueOnce({
+      ok: true,
+      access: { recipient_type: "Administrator", branch_id: null },
     })
 
     mockCreateSupabaseServerClient.mockReturnValue(
@@ -163,4 +185,5 @@ describe("API - /api/maintenance/locations", () => {
     expect(json.branch_id).toBe("br-1")
   })
 })
+
 

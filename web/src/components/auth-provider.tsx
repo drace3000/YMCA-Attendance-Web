@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState, useCallback } from "react";
-import type { User, Session } from "@supabase/supabase-js";
+import type { AuthChangeEvent, Session, User } from "@supabase/supabase-js";
 import { supabase, signOut as supabaseSignOut } from "@/lib/supabaseClient";
 
 // Dev bypass - skip Supabase entirely
@@ -18,26 +18,51 @@ const DEV_MOCK_USER: User = {
   created_at: new Date().toISOString(),
 };
 
+const RECIPIENT_CONTEXT_STORAGE_KEY = "ymca-recipient-context-v1";
+
+type RecipientContext = {
+  recipient_type: "Administrator" | "Branch" | null;
+  branch_id: string | null;
+  association_id: string | null;
+  alliance_id: string | null;
+};
+
+function readStoredRecipientContext(): RecipientContext {
+  if (typeof window === "undefined") {
+    return { recipient_type: null, branch_id: null, association_id: null, alliance_id: null };
+  }
+  if (typeof window.localStorage?.getItem !== "function") {
+    return { recipient_type: null, branch_id: null, association_id: null, alliance_id: null };
+  }
+  try {
+    const raw = window.localStorage.getItem(RECIPIENT_CONTEXT_STORAGE_KEY);
+    if (!raw) return { recipient_type: null, branch_id: null, association_id: null, alliance_id: null };
+    const parsed = JSON.parse(raw) as Partial<RecipientContext>;
+    const recipient_type =
+      parsed.recipient_type === "Administrator" || parsed.recipient_type === "Branch"
+        ? parsed.recipient_type
+        : null;
+    return {
+      recipient_type,
+      branch_id: typeof parsed.branch_id === "string" ? parsed.branch_id : null,
+      association_id: typeof parsed.association_id === "string" ? parsed.association_id : null,
+      alliance_id: typeof parsed.alliance_id === "string" ? parsed.alliance_id : null,
+    };
+  } catch {
+    return { recipient_type: null, branch_id: null, association_id: null, alliance_id: null };
+  }
+}
+
 type AuthContextType = {
   user: User | null;
   session: Session | null;
-  recipientContext: {
-    recipient_type: "Administrator" | "Branch" | null;
-    branch_id: string | null;
-    association_id: string | null;
-    alliance_id: string | null;
-  };
+  recipientContext: RecipientContext;
   loading: boolean;
   signOut: () => Promise<void>;
   refreshSession: () => Promise<void>;
   devSignIn: (email?: string) => void; // Dev bypass sign-in with optional email
   isDevMode: boolean; // Flag to indicate dev bypass mode
-  setRecipientContext: (ctx: {
-    recipient_type: "Administrator" | "Branch" | null;
-    branch_id: string | null;
-    association_id: string | null;
-    alliance_id: string | null;
-  }) => void;
+  setRecipientContext: (ctx: RecipientContext) => void;
 };
 
 const AuthContext = createContext<AuthContextType>({
@@ -57,12 +82,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(!DEV_AUTH_BYPASS); // Not loading if dev bypass
-  const [recipientContext, setRecipientContext] = useState<{
-    recipient_type: "Administrator" | "Branch" | null;
-    branch_id: string | null;
-    association_id: string | null;
-    alliance_id: string | null;
-  }>({ recipient_type: null, branch_id: null, association_id: null, alliance_id: null });
+  const [recipientContext, setRecipientContextState] = useState<RecipientContext>(() =>
+    readStoredRecipientContext()
+  );
+
+  const setRecipientContext = useCallback((ctx: RecipientContext) => {
+    setRecipientContextState(ctx);
+    if (typeof window === "undefined") return;
+    if (typeof window.localStorage?.setItem !== "function") return;
+    try {
+      window.localStorage.setItem(RECIPIENT_CONTEXT_STORAGE_KEY, JSON.stringify(ctx));
+    } catch {
+      // ignore
+    }
+  }, []);
 
   const refreshSession = useCallback(async () => {
     if (DEV_AUTH_BYPASS) return; // Skip Supabase in dev mode
@@ -112,7 +145,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // Listen for auth changes
     const { data: { subscription } } = auth.onAuthStateChange(
-      (_event, session) => {
+      (_event: AuthChangeEvent, session: Session | null) => {
         setSession(session);
         setUser(session?.user ?? null);
         setLoading(false);
@@ -131,6 +164,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
     setSession(null);
     setRecipientContext({ recipient_type: null, branch_id: null, association_id: null, alliance_id: null });
+    if (typeof window !== "undefined" && typeof window.localStorage?.removeItem === "function") {
+      try {
+        window.localStorage.removeItem(RECIPIENT_CONTEXT_STORAGE_KEY);
+      } catch {
+        // ignore
+      }
+    }
   }, []);
 
   // Dev bypass sign-in - sets mock user without Supabase

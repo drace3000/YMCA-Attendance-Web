@@ -25,6 +25,12 @@ import * as XLSX from "xlsx";
 import type { QueryAPIResponse, ResultFormat } from "@/types/queries";
 import { useThemeSettings } from "@/components/theme-settings-provider";
 import { EmailExcelModal } from "@/components/email-excel-modal";
+import {
+  Popover,
+  PopoverArrow,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 // Format numeric values to one decimal place
 function formatValue(value: unknown): string {
@@ -49,26 +55,26 @@ const sampleSuccess: QueryAPIResponse = {
   success: true,
   query: {
     id: "sample-123",
-    queryText: "Which classes had the highest attendance last week?",
+    queryText: "Which instructors teach which classes and what locations are classes being held",
     generatedSql:
-      "select class_name, instructor, avg(attendance) as avg_attendance from class_attendance where branch_id = :branch_id and attended_on >= current_date - interval '7 days' group by class_name, instructor order by avg_attendance desc limit 5;",
+      "select instructor_name, class_name, location_name from schedule_sessions where branch_id = :branch_id order by instructor_name, class_name, location_name;",
     explanation:
-      "These are the top 5 classes for the past 7 days, sorted by average attendance per class and instructor.",
+      "Lists instructors, the classes they teach, and the locations where those classes are held.",
     resultFormat: "table",
-    reportTitle: "Attendance Leaders",
+    reportTitle: "Instructor Class Locations",
   },
   results: {
     data: [
-      { class_name: "Power Yoga", instructor: "Alex Kim", avg_attendance: 32 },
-      { class_name: "Cycle 45", instructor: "Jordan Lee", avg_attendance: 29 },
-      { class_name: "Pilates Core", instructor: "Morgan Diaz", avg_attendance: 25 },
-      { class_name: "Bootcamp", instructor: "Taylor Chen", avg_attendance: 24 },
-      { class_name: "Zumba", instructor: "Avery Patel", avg_attendance: 22 },
+      { instructor_name: "Alex Kim", class_name: "Power Yoga", location_name: "Studio A" },
+      { instructor_name: "Jordan Lee", class_name: "Cycle 45", location_name: "Cycle Room" },
+      { instructor_name: "Morgan Diaz", class_name: "Pilates Core", location_name: "Studio B" },
+      { instructor_name: "Taylor Chen", class_name: "Bootcamp", location_name: "Turf" },
+      { instructor_name: "Avery Patel", class_name: "Zumba", location_name: "Studio A" },
     ],
     rowCount: 5,
     executionTimeMs: 120,
   },
-  summary: "Top attended classes last 7 days with average headcount per instructor.",
+  summary: "Instructor-to-class mapping with scheduled locations.",
 };
 
 const sampleShortList: QueryAPIResponse = {
@@ -148,6 +154,11 @@ function pickSample(format: ResultFormat): QueryAPIResponse {
 
 export default function DataMiningPage() {
   const { branch } = useThemeSettings();
+  const [branchDetails, setBranchDetails] = useState<{
+    alliance_name?: string | null;
+    association_name?: string | null;
+    name?: string | null;
+  } | null>(null);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<SubmitState>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -165,7 +176,44 @@ export default function DataMiningPage() {
   const [selectedSavedQueryId, setSelectedSavedQueryId] = useState<string | null>(null);
   const [updateModalOpen, setUpdateModalOpen] = useState(false);
   const [updatingQuery, setUpdatingQuery] = useState(false);
+  const [askAiTooltipOpen, setAskAiTooltipOpen] = useState(false);
   const controllerRef = useRef<AbortController | null>(null);
+
+  const toTitleCaseWithYmcaAndOf = (value: string | null | undefined): string | null => {
+    if (!value) return null;
+    const lowerWords = new Set(["of"]);
+    return value
+      .split(" ")
+      .filter(Boolean)
+      .map((word, idx) => {
+        const upper = word.toUpperCase();
+        if (upper === "YMCA") return "YMCA";
+        if (upper === "YMCAS") return "YMCAs";
+        const lower = word.toLowerCase();
+        if (idx !== 0 && lowerWords.has(lower)) return lower;
+        return lower.charAt(0).toUpperCase() + lower.slice(1);
+      })
+      .join(" ");
+  };
+
+  // Fetch hierarchy names for the currently selected branch (same pattern as Maintenance)
+  useEffect(() => {
+    const fetchBranchDetails = async () => {
+      try {
+        const res = await fetch(`/api/branches/${encodeURIComponent(branch.id)}`);
+        if (!res.ok) return;
+        const details = (await res.json()) as {
+          alliance_name?: string | null;
+          association_name?: string | null;
+          name?: string | null;
+        };
+        setBranchDetails(details);
+      } catch {
+        // ignore
+      }
+    };
+    void fetchBranchDetails();
+  }, [branch.id]);
 
   // Load saved queries when branch changes
   const loadSavedQueries = useCallback(async () => {
@@ -537,9 +585,33 @@ export default function DataMiningPage() {
     setSelectedSample(format);
   };
 
+  const handleClearQuery = () => {
+    controllerRef.current?.abort();
+    controllerRef.current = null;
+
+    setQuery("");
+    setSelectedSavedQueryId(null);
+    setSelectedSample(null);
+    setError(null);
+    setResponse(null);
+    setShowSql(false);
+    setStatus("idle");
+  };
+
+  const handleCancelAskAi = () => {
+    controllerRef.current?.abort();
+    controllerRef.current = null;
+    setStatus("idle");
+    // Keep query text + any previous response; only stop the in-flight request.
+  };
+
   const showPlaceholder = status === "idle" && !response;
   const isLoading = status === "loading";
   const hasError = status === "error" && !!error;
+  const askAiTooltipBranchName =
+    toTitleCaseWithYmcaAndOf(branchDetails?.name) ?? branch.name;
+  const canSubmit = !!query.trim() && !!branch?.id && !isLoading;
+  const canClear = !!query.trim() || isLoading;
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-6">
@@ -551,28 +623,37 @@ export default function DataMiningPage() {
           <h1 className="text-3xl font-bold tracking-tight text-foreground">
             Natural Language Queries
           </h1>
-          <span className="inline-flex items-center gap-1 rounded-full bg-[var(--brand-soft)]/30 px-3 py-1 text-xs font-semibold text-[var(--brand-strong)]">
-            <Sparkles className="h-4 w-4" />
-            Phase 1C
-          </span>
         </div>
         <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-          Ask plain language questions about attendance, instructors, and schedules. Responses call
-          the Data Mining API when available; you can also preview sample responses.
+          Ask plain language questions about attendance, instructors, and schedules.
         </p>
       </header>
 
       <section className="rounded-2xl border border-border bg-card shadow-sm">
         <form className="flex flex-col gap-4 p-6" onSubmit={handleSubmit}>
           <label className="flex flex-col gap-2 text-sm font-medium text-foreground">
-            <span className="inline-flex items-center gap-2 text-base">
-              <Search className="h-4 w-4" />
-              Enter a question
-            </span>
+            <div className="flex items-center gap-3">
+              <span className="inline-flex items-center gap-2 text-base">
+                <Search className="h-4 w-4" />
+                Enter a question
+              </span>
+              <button
+                type="button"
+                disabled={!canClear}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleClearQuery();
+                }}
+                className="btn-pill inline-flex items-center gap-2 border border-white/10 bg-card/60 px-3 py-1.5 text-xs font-semibold text-foreground shadow-sm ring-1 ring-white/5 transition hover:bg-card hover:ring-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Clear
+              </button>
+            </div>
             <div className="relative">
               <textarea
                 className="min-h-[120px] w-full resize-none rounded-xl border border-border bg-background/60 px-4 py-3 text-base text-foreground shadow-inner outline-none ring-1 ring-transparent transition focus:ring-[var(--cta)]/70"
-                placeholder="Example: Which classes had the highest attendance last week?"
+                placeholder="Example: Which instructors teach which classes and what locations are classes being held"
                 value={query}
                 onChange={(e) => {
                   setQuery(e.target.value);
@@ -673,13 +754,6 @@ export default function DataMiningPage() {
 
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-              <div className="flex items-center gap-2">
-                <span className="font-semibold text-foreground">Branch:</span>
-                <span className="rounded-md border border-border bg-background/60 px-3 py-2 text-foreground shadow-sm">
-                  {branch.name}
-                </span>
-              </div>
-
               <div className="flex flex-wrap items-center gap-2">
                 <span>Choose sample:</span>
                 <SampleChip label="Table" active={selectedSample === "table"} onClick={() => handleSample("table")} />
@@ -688,23 +762,56 @@ export default function DataMiningPage() {
                 <SampleChip label="Time series" active={selectedSample === "time_series"} onClick={() => handleSample("time_series")} />
               </div>
             </div>
-            <button
-              type="submit"
-              className="btn-pill inline-flex items-center gap-2 bg-[var(--cta)] px-4 py-2 text-sm font-semibold text-[var(--cta-foreground)] shadow-sm ring-1 ring-black/10 transition hover:-translate-y-0.5 hover:shadow-md active:translate-y-px active:scale-[0.98]"
-              disabled={isLoading}
-            >
+            <div className="flex items-center gap-2">
+              <Popover open={canSubmit && askAiTooltipOpen} onOpenChange={() => {}}>
+                <PopoverTrigger asChild>
+                  <button
+                    type="submit"
+                    className="btn-pill inline-flex items-center gap-2 bg-[var(--cta)] px-4 py-2 text-sm font-semibold text-[var(--cta-foreground)] shadow-sm ring-1 ring-black/10 transition hover:-translate-y-0.5 hover:shadow-md active:translate-y-px active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={!canSubmit}
+                    onMouseEnter={() => canSubmit && setAskAiTooltipOpen(true)}
+                    onMouseLeave={() => setAskAiTooltipOpen(false)}
+                    onFocus={() => canSubmit && setAskAiTooltipOpen(true)}
+                    onBlur={() => setAskAiTooltipOpen(false)}
+                  >
+                    {isLoading ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Sending to AI...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="h-4 w-4" />
+                        Ask AI
+                      </>
+                    )}
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent
+                  side="top"
+                  align="end"
+                  sideOffset={8}
+                  className="pointer-events-none w-auto rounded-2xl border-[var(--brand-strong)] bg-[rgb(var(--brand-soft-rgb)/0.35)] px-3 py-2 text-xs text-foreground shadow-lg backdrop-blur-md"
+                >
+                  <PopoverArrow
+                    width={12}
+                    height={8}
+                    className="fill-[rgb(var(--brand-soft-rgb)/0.35)] stroke-[var(--brand-strong)] stroke-1"
+                  />
+                  Restricted to {askAiTooltipBranchName} data only
+                </PopoverContent>
+              </Popover>
+
               {isLoading ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Sending to AI...
-                </>
-              ) : (
-                <>
-                  <Sparkles className="h-4 w-4" />
-                  Ask AI
-                </>
-              )}
-            </button>
+                <button
+                  type="button"
+                  onClick={handleCancelAskAi}
+                  className="btn-pill inline-flex items-center gap-2 border border-white/10 bg-card/60 px-3 py-2 text-sm font-semibold text-foreground shadow-sm ring-1 ring-white/5 transition hover:bg-card hover:ring-white/10 cursor-pointer"
+                >
+                  Cancel
+                </button>
+              ) : null}
+            </div>
           </div>
         </form>
       </section>
@@ -821,7 +928,7 @@ export default function DataMiningPage() {
 
       {/* Export to Excel Modal */}
       {exportModalOpen && response?.success && response.results?.data && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center">
           {/* Backdrop */}
           <div 
             className="absolute inset-0 bg-black/60 backdrop-blur-sm"
@@ -931,7 +1038,7 @@ export default function DataMiningPage() {
 
       {/* Save Query Modal */}
       {saveModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center">
           {/* Backdrop */}
           <div 
             className="absolute inset-0 bg-black/60 backdrop-blur-sm"
@@ -1029,7 +1136,7 @@ export default function DataMiningPage() {
 
       {/* Update Query Confirmation Modal */}
       {updateModalOpen && selectedSavedQueryId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center">
           {/* Backdrop */}
           <div 
             className="absolute inset-0 bg-black/60 backdrop-blur-sm"

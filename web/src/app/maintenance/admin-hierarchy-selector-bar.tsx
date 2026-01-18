@@ -5,6 +5,7 @@ import { ChevronDown } from "lucide-react";
 import { useBranchAccess } from "@/hooks/useBranchAccess";
 import { useThemeSettings } from "@/components/theme-settings-provider";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { getAdminHierarchySelection, setAdminHierarchySelection } from "@/lib/admin-hierarchy-selection";
 
 type Alliance = { id: string; code: string; name: string };
 type Association = { id: string; code: string; name: string; alliance_id: string | null };
@@ -17,6 +18,23 @@ type OrgPayload = {
 };
 
 type DropdownOption = { id: string; label: string };
+
+function toTitleCaseWithYmcaAndOf(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const lowerWords = new Set(["of"]);
+  return value
+    .split(" ")
+    .filter(Boolean)
+    .map((word, idx) => {
+      const upper = word.toUpperCase();
+      if (upper === "YMCA") return "YMCA";
+      if (upper === "YMCAS") return "YMCAs";
+      const lower = word.toLowerCase();
+      if (idx !== 0 && lowerWords.has(lower)) return lower;
+      return lower.charAt(0).toUpperCase() + lower.slice(1);
+    })
+    .join(" ");
+}
 
 function Dropdown({
   label,
@@ -107,6 +125,11 @@ export function AdminHierarchySelectorBar() {
   const { isAdmin } = useBranchAccess();
   const { branch: currentBranch, setBranch } = useThemeSettings();
 
+  // Avoid SSR/CSR hydration mismatches (auth/access can resolve differently on server vs client).
+  // Render nothing until mounted so server HTML matches initial client render.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -118,6 +141,24 @@ export function AdminHierarchySelectorBar() {
   const [selectedAssociationId, setSelectedAssociationId] = useState<string | null>(null);
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null);
   const [selectionInitialized, setSelectionInitialized] = useState(false);
+
+  const persistSelection = useCallback(
+    (next: { allianceId: string | null; associationId: string | null; branchId: string | null }) => {
+      const alliance = next.allianceId ? alliances.find((a) => a.id === next.allianceId) ?? null : null;
+      const association = next.associationId ? associations.find((a) => a.id === next.associationId) ?? null : null;
+      const branch = next.branchId ? branches.find((b) => b.id === next.branchId) ?? null : null;
+
+      setAdminHierarchySelection({
+        allianceId: next.allianceId,
+        allianceName: alliance?.name ?? null,
+        associationId: next.associationId,
+        associationName: association?.name ?? null,
+        branchId: next.branchId,
+        branchName: branch?.name ?? null,
+      });
+    },
+    [alliances, associations, branches]
+  );
 
   const loadOrg = useCallback(async () => {
     setLoading(true);
@@ -151,6 +192,35 @@ export function AdminHierarchySelectorBar() {
       return;
     }
 
+    // If admin has an in-progress selection (even if incomplete), restore it.
+    // This preserves the UX where Alliance/Association can be selected while Branch remains blank.
+    const storedSelection = getAdminHierarchySelection();
+    if (storedSelection.hasSelection) {
+      const allianceOk = storedSelection.selection.allianceId
+        ? alliances.some((a) => a.id === storedSelection.selection.allianceId)
+        : true;
+      const associationOk = storedSelection.selection.associationId
+        ? associations.some((a) => a.id === storedSelection.selection.associationId)
+        : true;
+      const branchOk = storedSelection.selection.branchId
+        ? branches.some((b) => b.id === storedSelection.selection.branchId)
+        : true;
+
+      if (allianceOk && associationOk && branchOk) {
+        setSelectedAllianceId(storedSelection.selection.allianceId);
+        setSelectedAssociationId(storedSelection.selection.associationId);
+        setSelectedBranchId(storedSelection.selection.branchId);
+        // Keep storage as-is, but refresh computed names from current loaded org arrays.
+        persistSelection({
+          allianceId: storedSelection.selection.allianceId,
+          associationId: storedSelection.selection.associationId,
+          branchId: storedSelection.selection.branchId,
+        });
+        setSelectionInitialized(true);
+        return;
+      }
+    }
+
     const stored = typeof window !== "undefined" ? window.localStorage?.getItem(ADMIN_LAST_BRANCH_KEY) : null;
     const initialBranchId =
       (stored && branches.some((b) => b.id === stored) ? stored : null) ??
@@ -175,8 +245,9 @@ export function AdminHierarchySelectorBar() {
     setSelectedBranchId(b.id);
     setSelectedAssociationId(assoc?.id ?? null);
     setSelectedAllianceId(allianceId);
+    persistSelection({ allianceId, associationId: assoc?.id ?? null, branchId: b.id });
     setSelectionInitialized(true);
-  }, [isAdmin, loading, selectionInitialized, branches, associations, currentBranch.id]);
+  }, [isAdmin, loading, selectionInitialized, branches, associations, alliances, currentBranch.id, persistSelection]);
 
   // When admin selects a branch, apply it globally (ThemeSettings) and remember it.
   useEffect(() => {
@@ -195,7 +266,11 @@ export function AdminHierarchySelectorBar() {
   }, [isAdmin, selectedBranchId, currentBranch.id, branches, setBranch]);
 
   const allianceOptions: DropdownOption[] = useMemo(
-    () => alliances.map((a) => ({ id: a.id, label: `${a.code} - ${a.name}` })),
+    () =>
+      alliances.map((a) => ({
+        id: a.id,
+        label: `${String(a.code).toUpperCase()} - ${toTitleCaseWithYmcaAndOf(a.name) ?? a.name}`,
+      })),
     [alliances]
   );
 
@@ -203,7 +278,10 @@ export function AdminHierarchySelectorBar() {
     () =>
       associations
         .filter((a) => (selectedAllianceId ? a.alliance_id === selectedAllianceId : true))
-        .map((a) => ({ id: a.id, label: `${a.code} - ${a.name}` })),
+        .map((a) => ({
+          id: a.id,
+          label: `${String(a.code).toUpperCase()} - ${toTitleCaseWithYmcaAndOf(a.name) ?? a.name}`,
+        })),
     [associations, selectedAllianceId]
   );
 
@@ -213,11 +291,12 @@ export function AdminHierarchySelectorBar() {
         .filter((b) => (selectedAssociationId ? b.association_id === selectedAssociationId : true))
         .map((b) => ({
           id: b.id,
-          label: `${(b.short_code ?? b.code).toUpperCase()} - ${b.name}`,
+          label: `${(b.short_code ?? b.code).toUpperCase()} - ${toTitleCaseWithYmcaAndOf(b.name) ?? b.name}`,
         })),
     [branches, selectedAssociationId]
   );
 
+  if (!mounted) return null;
   if (!isAdmin) return null;
 
   return (
@@ -229,9 +308,6 @@ export function AdminHierarchySelectorBar() {
             <div className="text-xs text-muted-foreground">
               Select a branch to view and update Maintenance data for that branch.
             </div>
-          </div>
-          <div className="text-xs text-muted-foreground">
-            Current: <span className="font-semibold text-foreground/90">{currentBranch.name}</span>
           </div>
         </div>
 
@@ -250,6 +326,7 @@ export function AdminHierarchySelectorBar() {
                 setSelectedAllianceId(id);
                 setSelectedAssociationId(null);
                 setSelectedBranchId(null);
+                persistSelection({ allianceId: id, associationId: null, branchId: null });
               }}
             />
             <Dropdown
@@ -261,6 +338,7 @@ export function AdminHierarchySelectorBar() {
               onChange={(id) => {
                 setSelectedAssociationId(id);
                 setSelectedBranchId(null);
+                persistSelection({ allianceId: selectedAllianceId, associationId: id, branchId: null });
               }}
             />
             <Dropdown
@@ -271,6 +349,7 @@ export function AdminHierarchySelectorBar() {
               disabled={!selectedAssociationId}
               onChange={(id) => {
                 setSelectedBranchId(id);
+                persistSelection({ allianceId: selectedAllianceId, associationId: selectedAssociationId, branchId: id });
               }}
             />
           </div>

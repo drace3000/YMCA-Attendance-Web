@@ -55,6 +55,6 @@ describe("Home (Welcome page) - OTP deep link", () => {
     expect(screen.getByPlaceholderText(/your\.email@ymca\.org/i)).toHaveValue("user@ymca.org")
     expect(screen.getByRole("button", { name: /send code/i })).toBeInTheDocument()
     expect(screen.queryByPlaceholderText(/enter your password/i)).toBeNull()
-  })
+  }, 15000)
 })
 

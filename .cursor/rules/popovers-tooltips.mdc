@@ -8,6 +8,11 @@ alwaysApply: false
 
 Use the shared Radix wrapper in `components/ui/popover.tsx` for all popovers/tooltips.
 
+## Global styling source of truth (required)
+
+For **any** popup/dropdown/picker request, follow:
+- `.cursor/rules/popup-dropdown-styling.mdc` (theme-first Shadcn-like standards, always applied)
+
 ## Tooltip-style popovers (for icon buttons like Refresh/Reset)
 
 Use this pattern for icon-only header actions (Refresh, Reset, Help icons) so users understand what the button does.
@@ -69,6 +74,9 @@ const isDisabled = false
 ## Dropdown-style popovers (interactive)
 
 If the popover contains clickable items (dropdown menus, searchable lists), do NOT use `pointer-events-none` on the content.
+
+- For interactive dropdowns/pickers, use `modal` popovers to avoid “flash open then close” inside overlays/modals:
+  - `<Popover modal open={open} onOpenChange={setOpen}>`
 
 - Close on outside click
 - Close on Escape

@@ -142,11 +142,25 @@ export function GenerateScheduleModal({
   const criteriaWithOrg = useMemo(() => {
     const lines = [...criteria];
     if (allianceName || associationName) {
-      lines.unshift(`Association: ${associationName ?? "Unknown"}`);
-      lines.unshift(`Alliance: ${allianceName ?? "Unknown"}`);
+      // Keep the schedule type line (criteria[0]) first; insert org immediately after.
+      const insertAt = Math.min(1, lines.length);
+      lines.splice(
+        insertAt,
+        0,
+        `Alliance: ${allianceName ?? "Unknown"}`,
+        `Association: ${associationName ?? "Unknown"}`,
+      );
     }
     return lines;
   }, [criteria, allianceName, associationName]);
+
+  const scheduleTypeForDisplay = useMemo(() => {
+    const raw = criteria[0]?.trim();
+    if (!raw) return null;
+    // e.g. "✓ FULL SCHEDULE" -> "FULL SCHEDULE"
+    // e.g. "⚠ PARTIAL SCHEDULE (Filtered)" -> "PARTIAL SCHEDULE (Filtered)"
+    return raw.replace(/^[^A-Za-z0-9]+/, "").trim();
+  }, [criteria]);
 
   const buildExcelWorkbook = (): XLSX.WorkBook => {
     // Calculate unique instructors
@@ -276,7 +290,7 @@ export function GenerateScheduleModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center">
       {/* Backdrop */}
       <div 
         className="absolute inset-0 bg-black/60 backdrop-blur-sm"
@@ -306,56 +320,49 @@ export function GenerateScheduleModal({
 
         {/* Schedule Info */}
         <div className="mb-6 rounded-xl border border-[var(--brand-strong)] bg-[var(--brand-strong)]/20 p-4">
-          <div className="space-y-2 text-sm">
-            {(allianceName || associationName) && (
-              <div className="flex justify-between">
-                <span className="text-[var(--brand-ink)]/70">Alliance / Association:</span>
-                <span className="font-medium text-[var(--brand-ink)]">
-                  {allianceName || "Alliance"}{associationName ? ` — ${associationName}` : ""}
+          <div className="grid grid-cols-[110px_1fr] gap-x-4 gap-y-2 text-sm">
+            {scheduleTypeForDisplay && (
+              <>
+                <span className="text-[var(--brand-ink)]/70">Type:</span>
+                <span className="font-medium text-[var(--brand-ink)] break-words">
+                  {scheduleTypeForDisplay}
                 </span>
-              </div>
+              </>
             )}
-            <div className="flex justify-between">
-              <span className="text-[var(--brand-ink)]/70">Branch:</span>
-              <span className="font-medium text-[var(--brand-ink)]">{branch?.name || "Not selected"}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-[var(--brand-ink)]/70">Group:</span>
-              <span className="font-medium text-[var(--brand-ink)]">
-                {programGroup ? `${programGroup.name} (${programGroup.code})` : "Not selected"}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-[var(--brand-ink)]/70">Schedule:</span>
-              <span className="font-medium text-[var(--brand-ink)]">
-                {schedule ? formatMonthYear(schedule.month_start) : "Not selected"}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-[var(--brand-ink)]/70">Sessions:</span>
-              <span className="font-medium text-[var(--brand-ink)]">{sessions.length} classes</span>
-            </div>
+            {(allianceName || associationName) && (
+              <>
+                <span className="text-[var(--brand-ink)]/70">Alliance:</span>
+                <span className="font-medium text-[var(--brand-ink)] break-words">
+                  {allianceName ?? "—"}
+                </span>
+                <span className="text-[var(--brand-ink)]/70">Association:</span>
+                <span className="font-medium text-[var(--brand-ink)] break-words">
+                  {associationName ?? "—"}
+                </span>
+              </>
+            )}
+
+            <span className="text-[var(--brand-ink)]/70">Branch:</span>
+            <span className="font-medium text-[var(--brand-ink)] break-words">
+              {branch?.name || "Not selected"}
+            </span>
+
+            <span className="text-[var(--brand-ink)]/70">Group:</span>
+            <span className="font-medium text-[var(--brand-ink)] break-words">
+              {programGroup ? `${programGroup.name} (${programGroup.code})` : "Not selected"}
+            </span>
+
+            <span className="text-[var(--brand-ink)]/70">Schedule:</span>
+            <span className="font-medium text-[var(--brand-ink)] break-words">
+              {schedule ? formatMonthYear(schedule.month_start) : "Not selected"}
+            </span>
+
+            <span className="text-[var(--brand-ink)]/70">Sessions:</span>
+            <span className="font-medium text-[var(--brand-ink)]">
+              {sessions.length} classes
+            </span>
           </div>
         </div>
-
-        {/* Grid Context */}
-        {criteriaWithOrg.length > 0 && (
-          <div className="mb-6 rounded-xl border border-[var(--brand-strong)] bg-[var(--brand-strong)]/10 p-4">
-            <div className="text-xs font-semibold uppercase tracking-wide text-[var(--brand-ink)]/80">
-              Grid Context
-            </div>
-            <div className="mt-2 space-y-1 text-xs text-[var(--brand-ink)]/85">
-              {criteriaWithOrg.slice(0, 8).map((line, idx) => (
-                <div key={idx}>{line}</div>
-              ))}
-            </div>
-            {criteriaWithOrg.length > 8 && (
-              <div className="mt-2 text-[11px] text-[var(--brand-ink)]/60">
-                (Showing first 8 context lines)
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Warning if no sessions */}
         {sessions.length === 0 && (
@@ -381,12 +388,12 @@ export function GenerateScheduleModal({
           <button
             onClick={() => void handleExcelPreview()}
             disabled={!canGenerate || loading !== null || excelLoading}
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--brand-strong)] bg-[var(--brand-strong)]/30 px-4 py-3 text-sm font-medium text-[var(--brand-ink)] transition hover:bg-[var(--brand-strong)] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+            className="group flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--brand-strong)] bg-[var(--brand-strong)]/30 px-4 py-3 text-sm font-medium text-[var(--brand-ink)] transition hover:bg-[var(--brand-strong)] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
           >
             {excelLoading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Loader2 className="h-4 w-4 animate-spin text-yellow-400" />
             ) : (
-              <FileSpreadsheet className="h-4 w-4" />
+              <FileSpreadsheet className="h-4 w-4 text-yellow-400 transition-transform group-hover:scale-125" />
             )}
             Preview Excel
           </button>
@@ -394,12 +401,12 @@ export function GenerateScheduleModal({
           <button
             onClick={() => handleAction("preview")}
             disabled={!canGenerate || loading !== null}
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--brand-strong)] bg-[var(--brand-strong)]/30 px-4 py-3 text-sm font-medium text-[var(--brand-ink)] transition hover:bg-[var(--brand-strong)] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+            className="group flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--brand-strong)] bg-[var(--brand-strong)]/30 px-4 py-3 text-sm font-medium text-[var(--brand-ink)] transition hover:bg-[var(--brand-strong)] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loading === "preview" ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Loader2 className="h-4 w-4 animate-spin text-yellow-400" />
             ) : (
-              <Eye className="h-4 w-4" />
+              <Eye className="h-4 w-4 text-yellow-400 transition-transform group-hover:scale-125" />
             )}
             Preview PDF
           </button>
@@ -407,12 +414,12 @@ export function GenerateScheduleModal({
           <button
             onClick={() => handleAction("download")}
             disabled={!canGenerate || loading !== null}
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--brand-strong)] bg-[var(--brand-strong)]/30 px-4 py-3 text-sm font-medium text-[var(--brand-ink)] transition hover:bg-[var(--brand-strong)] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+            className="group flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--brand-strong)] bg-[var(--brand-strong)]/30 px-4 py-3 text-sm font-medium text-[var(--brand-ink)] transition hover:bg-[var(--brand-strong)] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loading === "download" ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Loader2 className="h-4 w-4 animate-spin text-yellow-400" />
             ) : (
-              <Download className="h-4 w-4" />
+              <Download className="h-4 w-4 text-yellow-400 transition-transform group-hover:scale-125" />
             )}
             Download PDF
           </button>
@@ -420,12 +427,12 @@ export function GenerateScheduleModal({
           <button
             onClick={() => handleAction("print")}
             disabled={!canGenerate || loading !== null}
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--brand-strong)] bg-[var(--brand-strong)]/30 px-4 py-3 text-sm font-medium text-[var(--brand-ink)] transition hover:bg-[var(--brand-strong)] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+            className="group flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--brand-strong)] bg-[var(--brand-strong)]/30 px-4 py-3 text-sm font-medium text-[var(--brand-ink)] transition hover:bg-[var(--brand-strong)] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loading === "print" ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Loader2 className="h-4 w-4 animate-spin text-yellow-400" />
             ) : (
-              <Printer className="h-4 w-4" />
+              <Printer className="h-4 w-4 text-yellow-400 transition-transform group-hover:scale-125" />
             )}
             Print
           </button>
@@ -473,19 +480,6 @@ export function GenerateScheduleModal({
                 Download Excel
               </button>
             </div>
-
-            {criteriaWithOrg.length > 0 && (
-              <div className="mb-4 rounded-xl border border-[var(--brand-strong)] bg-[var(--brand-strong)]/10 p-4">
-                <div className="text-xs font-semibold uppercase tracking-wide text-[var(--brand-ink)]/80">
-                  Grid Context
-                </div>
-                <div className="mt-2 space-y-1 text-xs text-[var(--brand-ink)]/85">
-                  {criteriaWithOrg.slice(0, 10).map((line, idx) => (
-                    <div key={idx}>{line}</div>
-                  ))}
-                </div>
-              </div>
-            )}
 
             <div className="max-h-[60vh] overflow-auto rounded-xl border border-[var(--brand-strong)] bg-black/10">
               <table className="w-full border-collapse text-sm">

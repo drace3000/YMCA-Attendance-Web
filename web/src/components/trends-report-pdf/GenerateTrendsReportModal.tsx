@@ -102,7 +102,7 @@ Key metrics included:
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/60 backdrop-blur-sm"
@@ -137,29 +137,51 @@ Key metrics included:
         {/* Report Info */}
         <div className="mb-6 rounded-xl border border-[var(--brand-strong)] bg-[var(--brand-strong)]/20 p-4">
           <div className="space-y-2 text-sm">
-            <div className="flex justify-between">
+            {(data.allianceName || data.associationName || data.branchName) && (
+              <div className="space-y-1 border-b border-[var(--brand-strong)]/50 pb-3">
+                <div className="grid grid-cols-[110px_1fr] gap-x-3">
+                  <span className="text-[var(--brand-ink)]/70">Alliance:</span>
+                  <span className="font-medium text-[var(--brand-ink)] break-words">
+                    {data.allianceName ?? "—"}
+                  </span>
+                </div>
+                <div className="grid grid-cols-[110px_1fr] gap-x-3">
+                  <span className="text-[var(--brand-ink)]/70">Association:</span>
+                  <span className="font-medium text-[var(--brand-ink)] break-words">
+                    {data.associationName ?? "—"}
+                  </span>
+                </div>
+                <div className="grid grid-cols-[110px_1fr] gap-x-3">
+                  <span className="text-[var(--brand-ink)]/70">Branch:</span>
+                  <span className="font-medium text-[var(--brand-ink)] break-words">
+                    {data.branchName ?? "—"}
+                  </span>
+                </div>
+              </div>
+            )}
+            <div className="grid grid-cols-[110px_1fr] gap-x-3">
               <span className="text-[var(--brand-ink)]/70">Period:</span>
               <span className="font-medium text-[var(--brand-ink)]">
                 {data.periodLabel}
               </span>
             </div>
-            <div className="flex justify-between">
+            <div className="grid grid-cols-[110px_1fr] gap-x-3">
               <span className="text-[var(--brand-ink)]/70">Year:</span>
               <span className="font-medium text-[var(--brand-ink)]">
                 {data.year}
               </span>
             </div>
             {data.quarter && (
-              <div className="flex justify-between">
+              <div className="grid grid-cols-[110px_1fr] gap-x-3">
                 <span className="text-[var(--brand-ink)]/70">Quarter:</span>
                 <span className="font-medium text-[var(--brand-ink)]">
                   Q{data.quarter}
                 </span>
               </div>
             )}
-            <div className="flex justify-between">
+            <div className="grid grid-cols-[110px_1fr] gap-x-3">
               <span className="text-[var(--brand-ink)]/70">Date Range:</span>
-              <span className="font-medium text-[var(--brand-ink)]">
+              <span className="font-medium text-[var(--brand-ink)] break-words">
                 {data.periodStart} – {data.periodEnd}
               </span>
             </div>

@@ -1,23 +1,21 @@
 "use client";
 
-import { useState } from "react";
-import { Building2, GraduationCap, HelpCircle, Layers3, Mail, MapPin, Network, RotateCcw } from "lucide-react";
-import {
-  Popover,
-  PopoverArrow,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { useEffect, useState } from "react";
+import { Building2, CalendarDays, GraduationCap, HelpCircle, Layers3, Mail, MapPin, Network } from "lucide-react";
 import { AdminHierarchySelectorBar } from "./admin-hierarchy-selector-bar";
 import { InstructorsTab } from "./instructors-tab";
 import { ClassesTab } from "./classes-tab";
 import { LocationsTab } from "./locations-tab";
+import { HolidaysTab } from "./holidays-tab";
 import { RecipientsTab } from "./recipients-tab";
 import { HelperTab } from "./helper-tab";
 import { GroupsTab } from "./groups-tab";
 import { OrganizationTab } from "./organization-tab";
+import { useThemeSettings } from "@/components/theme-settings-provider";
+import { useBranchAccess } from "@/hooks/useBranchAccess";
+import { useAdminHierarchySelection } from "@/hooks/useAdminHierarchySelection";
 
-type TabId = "instructors" | "classes" | "locations" | "groups" | "recipients" | "organization" | "helper";
+type TabId = "instructors" | "classes" | "locations" | "holidays" | "groups" | "recipients" | "organization" | "helper";
 
 type Tab = {
   id: TabId;
@@ -29,6 +27,7 @@ const tabs: Tab[] = [
   { id: "instructors", label: "Instructors", icon: <GraduationCap className="h-4 w-4" /> },
   { id: "classes", label: "Classes", icon: <Building2 className="h-4 w-4" /> },
   { id: "locations", label: "Locations", icon: <MapPin className="h-4 w-4" /> },
+  { id: "holidays", label: "Holidays", icon: <CalendarDays className="h-4 w-4" /> },
   { id: "groups", label: "Groups", icon: <Layers3 className="h-4 w-4" /> },
   { id: "recipients", label: "Members", icon: <Mail className="h-4 w-4" /> },
   { id: "organization", label: "Organization", icon: <Network className="h-4 w-4" /> },
@@ -37,36 +36,54 @@ const tabs: Tab[] = [
 
 export default function MaintenancePage() {
   const [activeTab, setActiveTab] = useState<TabId>("instructors");
-  const [refreshKey, setRefreshKey] = useState(0);
-  const [refreshPopoverOpen, setRefreshPopoverOpen] = useState(false);
 
-  const handleRefresh = () => {
-    if (activeTab !== "helper") {
-      setRefreshKey((k) => k + 1);
-      setRefreshPopoverOpen(false);
-    }
+  const { isAdmin } = useBranchAccess();
+  const { hasSelection, isComplete } = useAdminHierarchySelection();
+  const selectionIncomplete = isAdmin && !isComplete;
+
+  const { branch } = useThemeSettings();
+  const [branchDetails, setBranchDetails] = useState<{
+    alliance_name?: string | null;
+    association_name?: string | null;
+    name?: string | null;
+  } | null>(null);
+
+  const toTitleCaseWithYmcaAndOf = (value: string | null | undefined): string | null => {
+    if (!value) return null;
+    const lowerWords = new Set(["of"]);
+    return value
+      .split(" ")
+      .filter(Boolean)
+      .map((word, idx) => {
+        const upper = word.toUpperCase();
+        if (upper === "YMCA") return "YMCA";
+        if (upper === "YMCAS") return "YMCAs";
+        const lower = word.toLowerCase();
+        if (idx !== 0 && lowerWords.has(lower)) return lower;
+        return lower.charAt(0).toUpperCase() + lower.slice(1);
+      })
+      .join(" ");
   };
 
-  const getRefreshMessage = () => {
-    switch (activeTab) {
-      case "instructors":
-        return "Reload instructors list from the database";
-      case "classes":
-        return "Reload classes list from the database";
-      case "locations":
-        return "Reload locations list from the database";
-      case "groups":
-        return "Reload program groups list from the database";
-      case "recipients":
-        return "Reload member accounts list from the database";
-      case "organization":
-        return "Reload YMCA alliances, associations, and branches";
-      default:
-        return "";
-    }
-  };
+  // Fetch hierarchy names for the currently selected branch (admin selector / branch context)
+  useEffect(() => {
+    const fetchBranchDetails = async () => {
+      try {
+        const res = await fetch(`/api/branches/${encodeURIComponent(branch.id)}`);
+        if (!res.ok) return;
+        const details = (await res.json()) as {
+          alliance_name?: string | null;
+          association_name?: string | null;
+          name?: string | null;
+        };
+        setBranchDetails(details);
+      } catch {
+        // ignore
+      }
+    };
 
-  const isRefreshDisabled = activeTab === "helper";
+    void fetchBranchDetails();
+  }, [branch.id]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -74,38 +91,6 @@ export default function MaintenancePage() {
       <div className="flex flex-col gap-1">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold tracking-tight">Maintenance</h1>
-          <Popover open={!isRefreshDisabled && refreshPopoverOpen} onOpenChange={() => {}}>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                onClick={handleRefresh}
-                onMouseEnter={() => !isRefreshDisabled && setRefreshPopoverOpen(true)}
-                onMouseLeave={() => setRefreshPopoverOpen(false)}
-                disabled={isRefreshDisabled}
-                aria-label="Refresh data"
-                className={`btn-pill inline-flex h-8 w-8 items-center justify-center shadow-sm ring-1 ring-black/10 transition ${
-                  isRefreshDisabled
-                    ? "cursor-not-allowed bg-gray-400/50 text-gray-500"
-                    : "bg-[var(--cta)] text-[var(--cta-foreground)] hover:-translate-y-0.5 hover:shadow-md active:translate-y-px active:scale-[0.98]"
-                }`}
-              >
-                <RotateCcw className="h-4 w-4" />
-              </button>
-            </PopoverTrigger>
-            <PopoverContent
-              side="right"
-              align="center"
-              sideOffset={8}
-              className="pointer-events-none w-auto rounded-2xl border-[var(--brand-strong)] bg-[rgb(var(--brand-soft-rgb)/0.35)] px-3 py-2 text-xs text-foreground shadow-lg backdrop-blur-md"
-            >
-              <PopoverArrow
-                width={12}
-                height={8}
-                className="fill-[rgb(var(--brand-soft-rgb)/0.35)] stroke-[var(--brand-strong)] stroke-1"
-              />
-              {getRefreshMessage()}
-            </PopoverContent>
-          </Popover>
         </div>
         <p className="text-sm text-muted-foreground">
           Manage instructors, classes, and locations for scheduling
@@ -122,11 +107,14 @@ export default function MaintenancePage() {
             <button
               key={tab.id}
               type="button"
-              onClick={() => setActiveTab(tab.id)}
+              disabled={selectionIncomplete}
+              onClick={() => !selectionIncomplete && setActiveTab(tab.id)}
               className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-all ${
-                activeTab === tab.id
-                  ? "bg-white/20 text-white shadow-sm"
-                  : "text-white/70 hover:bg-white/10 hover:text-white"
+                selectionIncomplete
+                  ? "cursor-not-allowed opacity-50"
+                  : activeTab === tab.id
+                    ? "bg-white/20 text-white shadow-sm"
+                    : "text-white/70 hover:bg-white/10 hover:text-white"
               }`}
             >
               {tab.icon}
@@ -138,13 +126,24 @@ export default function MaintenancePage() {
         {/* Tab Content */}
         <div className="p-5">
           <div className="min-h-[400px]">
-            {activeTab === "instructors" && <InstructorsTab key={`instructors-${refreshKey}`} />}
-            {activeTab === "classes" && <ClassesTab key={`classes-${refreshKey}`} />}
-            {activeTab === "locations" && <LocationsTab key={`locations-${refreshKey}`} />}
-            {activeTab === "groups" && <GroupsTab key={`groups-${refreshKey}`} />}
-            {activeTab === "recipients" && <RecipientsTab key={`recipients-${refreshKey}`} />}
-            {activeTab === "organization" && <OrganizationTab key={`organization-${refreshKey}`} />}
-            {activeTab === "helper" && <HelperTab />}
+            {selectionIncomplete ? (
+              <div className="rounded-xl border border-white/10 bg-black/20 p-4 text-sm text-foreground/80">
+                Select an <span className="font-semibold">Alliance</span>,{" "}
+                <span className="font-semibold">Association</span>, and{" "}
+                <span className="font-semibold">Branch</span> to enable Maintenance tools.
+              </div>
+            ) : (
+              <>
+                {activeTab === "instructors" && <InstructorsTab />}
+                {activeTab === "classes" && <ClassesTab />}
+                {activeTab === "locations" && <LocationsTab />}
+                {activeTab === "holidays" && <HolidaysTab />}
+                {activeTab === "groups" && <GroupsTab />}
+                {activeTab === "recipients" && <RecipientsTab />}
+                {activeTab === "organization" && <OrganizationTab />}
+                {activeTab === "helper" && <HelperTab />}
+              </>
+            )}
           </div>
         </div>
       </div>

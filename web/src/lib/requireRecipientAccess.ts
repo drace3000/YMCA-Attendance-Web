@@ -1,6 +1,6 @@
 import "server-only";
 
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 import { createSupabaseAuthRouteClient } from "@/lib/supabaseAuthRouteClient";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
 import { serverErrorResponse } from "@/lib/server-api-error";
@@ -66,7 +66,7 @@ function normalizeRelation<T>(value: T | T[] | null | undefined): T | null {
  *   to preserve the existing DEV_AUTH_BYPASS workflow (no Supabase cookies).
  */
 export async function requireRecipientAccess(
-  req: NextRequest,
+  req: Request,
   opts?: { allowDevPassthrough?: boolean },
 ): Promise<RequireAccessResult> {
   const allowDevPassthrough =

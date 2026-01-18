@@ -1,0 +1,128 @@
+---
+description: Global standards for theme-based Shadcn-like popups, dropdown lists, and pickers (Radix Popover). Applies across the app.
+globs: **/*.tsx, **/*.ts
+alwaysApply: true
+---
+
+# Global Popup + Dropdown Styling (Theme-first)
+
+These standards apply **any time a popup, dropdown list, tooltip popover, or picker is requested**.
+
+## Non-negotiable: Theme-first colors
+
+- Do **NOT** hard-code hex colors for popup/dropdown styling.
+- Use the app’s theme tokens / CSS variables:
+  - **Surfaces**: `bg-card`, `bg-popover`, `bg-[rgb(var(--brand-rgb)/0.95)]`
+  - **Borders**: `border-border`, `border-[var(--brand-strong)]`
+  - **Text**: `text-foreground`, `text-muted-foreground`
+  - **Selected / primary accent**: `bg-[var(--cta)] text-[var(--cta-foreground)]`
+
+If a special highlight is required (e.g., “month has data”), prefer a theme token. If using orange, keep it minimal and consistent: `border-orange-400/90` (no hex).
+
+## Popover primitive (required)
+
+- Use the shared wrapper: `@/components/ui/popover` (`web/src/components/ui/popover.tsx`).
+- **Interactive popovers must set `modal`** to prevent “flash open then close” in overlays/modals.
+  - Good: `<Popover modal open={open} onOpenChange={setOpen}>`
+  - Tooltip-only popovers can be non-modal.
+
+## Trigger styling contract (dropdown/picker openers)
+
+Use this visual language for any clickable trigger that opens a popup/dropdown:
+
+- **Base**:
+  - `rounded-lg`
+  - `border border-white/15`
+  - `bg-card/70`
+  - `ring-1 ring-white/10`
+  - `cursor-pointer`
+- **Hover**:
+  - `hover:bg-card hover:ring-white/15`
+- **Focus**:
+  - `focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]`
+- **Disabled**:
+  - `disabled:cursor-not-allowed disabled:opacity-50`
+- **Icons**:
+  - Action icon (calendar/clock): `text-[var(--cta)]`
+  - Chevron: `text-muted-foreground`
+
+## Popover panel styling contract (dropdown content)
+
+For interactive dropdown panels:
+
+- **Container**:
+  - `rounded-2xl`
+  - `border border-[var(--brand-strong)]`
+  - `bg-[rgb(var(--brand-rgb)/0.95)]`
+  - `shadow-xl`
+  - `backdrop-blur-md`
+- **Scrolling**:
+  - `max-h-[280px] overflow-y-auto`
+- **Widths (intentional sizing)**:
+  - Year dropdown: `w-[120px]`–`w-[140px]`
+  - Generic select dropdown: `w-[240px]`
+  - Time dropdown: `w-[220px]`
+
+## Option row styling contract
+
+- **Selected**: `bg-[var(--cta)] text-[var(--cta-foreground)]`
+- **Hover**: `hover:bg-[var(--brand-strong)]/50`
+- **Typography**: `text-sm font-semibold`
+
+## Use approved components (avoid native widgets when panel must be themed)
+
+- Prefer `PopoverSelect` for dropdown lists:
+  - `web/src/components/ui/popover-select.tsx`
+- Prefer `TimePicker` over `<input type="time">` when you need a themed dropdown panel:
+  - `web/src/components/ui/time-picker.tsx`
+- Prefer `MonthYearPicker` for month selection (no day grid unless explicitly needed):
+  - `web/src/components/ui/month-year-picker.tsx`
+
+## Month/Year picker specifics
+
+- Month grid: `grid grid-cols-3 gap-2` (3×4)
+- Selected month: `bg-[var(--cta)] text-[var(--cta-foreground)]`
+- Month with existing availability/data: `border-orange-400/90` (token-safe)
+
+## Copy/paste snippets
+
+### Standard dropdown (PopoverSelect)
+
+```tsx
+import { PopoverSelect } from "@/components/ui/popover-select"
+
+<PopoverSelect
+  value={value}
+  options={options}
+  onChange={setValue}
+  ariaLabel="Select option"
+/>
+```
+
+### Time picker (TimePicker with range constraints)
+
+```tsx
+import { TimePicker } from "@/components/ui/time-picker"
+
+<TimePicker
+  value={startTime}
+  onChange={setStartTime}
+  ariaLabel="Start time"
+  stepMinutes={15}
+  minTime={branchTimeStart}
+  maxTime={branchTimeEnd}
+/>
+```
+
+### Month/Year picker (MonthYearPicker with highlighted months)
+
+```tsx
+import { MonthYearPicker } from "@/components/ui/month-year-picker"
+
+<MonthYearPicker
+  value={month}
+  onChange={setMonth}
+  highlightedMonths={monthsWithData} // ["YYYY-MM", ...]
+/>
+```
+
