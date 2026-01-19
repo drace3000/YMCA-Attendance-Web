@@ -1,12 +1,21 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
 import { requireRecipientAccess } from "@/lib/requireRecipientAccess";
+import { loadUsFederalHolidaysJson, type UsHolidaysJson } from "@/lib/us-federal-holidays-source";
 import {
   addMonthsIso,
   mapSessionDateToNextMonthByWeekdayOrdinal,
   monthPrefixFromMonthStart,
   weekdayFromIsoDateUtc,
 } from "@/lib/scheduling/clone-utils";
+
+class HttpError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
 
 type ClonePayload = {
   branch_id?: string;
@@ -103,6 +112,262 @@ function isProdCloneHeadcountGateActive(req: NextRequest): boolean {
     process.env.NODE_ENV === "production" ||
     req.headers.get("x-ymca-emulate-prod-clone-gate") === "1"
   );
+}
+
+function isIsoDate(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test((value ?? "").trim());
+}
+
+function normalizeDayOfWeek(value: string): string {
+  return String(value ?? "").trim().toUpperCase();
+}
+
+function parseTimeToMinutes(time: string): number | null {
+  const m = /^(\d{2}):(\d{2})$/.exec(String(time ?? "").trim());
+  if (!m) return null;
+  const hh = Number(m[1]);
+  const mm = Number(m[2]);
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+  if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
+  return hh * 60 + mm;
+}
+
+type AvailabilityWindow = { startMin: number; endMin: number; start: string; end: string };
+type AvailabilityIndex = Map<string, Map<string, AvailabilityWindow[]>>; // instructor_id -> day_of_week -> windows
+
+async function loadTargetMonthAvailabilityIndex(opts: {
+  supabase: ReturnType<typeof createSupabaseServerClient>;
+  branchId: string;
+  instructorIds: string[];
+  scheduleMonth: string; // "YYYY-MM"
+}): Promise<AvailabilityIndex> {
+  const { supabase, branchId, instructorIds, scheduleMonth } = opts;
+  const ids = Array.from(new Set(instructorIds.filter(Boolean)));
+  if (ids.length === 0) return new Map();
+
+  const index: AvailabilityIndex = new Map();
+  for (const chunk of chunkArray(ids, 150)) {
+    const { data, error } = await supabase
+      .from("instructor_availability")
+      .select("instructor_id, day_of_week, available_start, available_end, schedule_month")
+      .eq("branch_id", branchId)
+      .eq("schedule_month", scheduleMonth)
+      .in("instructor_id", chunk);
+    if (error) throw new Error(error.message);
+
+    for (const r of (data ?? []) as Array<{
+      instructor_id: string;
+      day_of_week: string;
+      available_start: string;
+      available_end: string;
+      schedule_month: string;
+    }>) {
+      const instructorId = String(r.instructor_id ?? "").trim();
+      if (!instructorId) continue;
+      if (String(r.schedule_month ?? "").trim() !== scheduleMonth) continue;
+
+      const day = normalizeDayOfWeek(r.day_of_week);
+      if (!day) continue;
+
+      const start = String(r.available_start ?? "").slice(0, 5);
+      const end = String(r.available_end ?? "").slice(0, 5);
+      const startMin = parseTimeToMinutes(start);
+      const endMin = parseTimeToMinutes(end);
+      if (startMin === null || endMin === null) continue;
+      if (endMin <= startMin) continue;
+
+      if (!index.has(instructorId)) index.set(instructorId, new Map());
+      const byDay = index.get(instructorId)!;
+      const list = byDay.get(day) ?? [];
+      list.push({ startMin, endMin, start, end });
+      byDay.set(day, list);
+    }
+  }
+
+  return index;
+}
+
+async function copyInstructorAvailabilityForTargetMonth(opts: {
+  supabase: ReturnType<typeof createSupabaseServerClient>;
+  branchId: string;
+  instructorIds: string[];
+  sourceScheduleMonth: string; // "YYYY-MM"
+  targetScheduleMonth: string; // "YYYY-MM"
+}): Promise<{ insertedCount: number }> {
+  const { supabase, branchId, instructorIds, sourceScheduleMonth, targetScheduleMonth } = opts;
+
+  const uniqueInstructorIds = Array.from(new Set(instructorIds.filter(Boolean)));
+  if (uniqueInstructorIds.length === 0) return { insertedCount: 0 };
+  if (sourceScheduleMonth === targetScheduleMonth) return { insertedCount: 0 };
+
+  type AvailabilityRow = {
+    branch_id: string;
+    instructor_id: string;
+    schedule_month: string;
+    day_of_week: string;
+    available_start: string;
+    available_end: string;
+  };
+
+  const sourceRows: AvailabilityRow[] = [];
+  for (const chunk of chunkArray(uniqueInstructorIds, 150)) {
+    const { data, error } = await supabase
+      .from("instructor_availability")
+      .select("branch_id, instructor_id, schedule_month, day_of_week, available_start, available_end")
+      .eq("branch_id", branchId)
+      .eq("schedule_month", sourceScheduleMonth)
+      .in("instructor_id", chunk)
+      .returns<AvailabilityRow[]>();
+    if (error) throw new Error(error.message);
+    sourceRows.push(...(data ?? []));
+  }
+
+  if (sourceRows.length === 0) return { insertedCount: 0 };
+
+  // Insert missing only (never overwrite): compare against existing rows in target month.
+  const existingKeys = new Set<string>();
+  for (const chunk of chunkArray(uniqueInstructorIds, 150)) {
+    const { data, error } = await supabase
+      .from("instructor_availability")
+      .select("instructor_id, day_of_week, available_start, available_end")
+      .eq("branch_id", branchId)
+      .eq("schedule_month", targetScheduleMonth)
+      .in("instructor_id", chunk);
+    if (error) throw new Error(error.message);
+
+    for (const r of (data ?? []) as Array<{
+      instructor_id: string;
+      day_of_week: string;
+      available_start: string;
+      available_end: string;
+    }>) {
+      // Postgres may return time as HH:mm:ss; normalize to HH:mm to avoid false "missing" matches.
+      const start = String(r.available_start ?? "").slice(0, 5);
+      const end = String(r.available_end ?? "").slice(0, 5);
+      existingKeys.add([r.instructor_id, normalizeDayOfWeek(r.day_of_week), start, end].join("|"));
+    }
+  }
+
+  const rowsToInsert = sourceRows
+    .map((r) => ({
+      branch_id: branchId,
+      instructor_id: r.instructor_id,
+      schedule_month: targetScheduleMonth,
+      day_of_week: normalizeDayOfWeek(r.day_of_week),
+      available_start: String(r.available_start).slice(0, 5),
+      available_end: String(r.available_end).slice(0, 5),
+    }))
+    .filter((r) => !existingKeys.has([r.instructor_id, r.day_of_week, r.available_start, r.available_end].join("|")));
+
+  if (rowsToInsert.length === 0) return { insertedCount: 0 };
+
+  // Avoid PostgREST "URI too long" by chunking large inserts.
+  let insertedCount = 0;
+  for (const chunk of chunkArray(rowsToInsert, 500)) {
+    const { error } = await supabase.from("instructor_availability").insert(chunk);
+    if (error) throw new Error(error.message);
+    insertedCount += chunk.length;
+  }
+
+  return { insertedCount };
+}
+
+async function ensureUsFederalHolidaysForNewYearIfJanuary(opts: {
+  supabase: ReturnType<typeof createSupabaseServerClient>;
+  branchId: string;
+  targetMonthStart: string; // "YYYY-MM-DD"
+}): Promise<{ insertedCount: number }> {
+  const { supabase, branchId, targetMonthStart } = opts;
+  const targetMonth = monthPrefixFromMonthStart(targetMonthStart); // "YYYY-MM"
+  const isJanuary = targetMonth.endsWith("-01");
+  if (!isJanuary) return { insertedCount: 0 };
+
+  const year = Number(targetMonth.slice(0, 4));
+  if (!Number.isFinite(year) || year < 1900 || year > 3000) return { insertedCount: 0 };
+
+  // Load US federal holiday source (repo-level JSON).
+  let json: UsHolidaysJson;
+  try {
+    json = await loadUsFederalHolidaysJson();
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Failed to read holidays JSON";
+    throw new Error(`Failed to load holiday source file: ${msg}`);
+  }
+
+  const rowsToInsert: Array<{
+    branch_id: string;
+    holiday_date: string;
+    observed_date: string | null;
+    name: string;
+    notes: string | null;
+    is_active: boolean;
+    is_closed: boolean;
+    closed_start_time: string | null;
+    closed_end_time: string | null;
+    import_source: string;
+  }> = [];
+
+  const expectedDates: string[] = [];
+  for (const h of json.holidays ?? []) {
+    const name = String(h?.name ?? "").trim();
+    if (!name) continue;
+    const entry = (h?.dates ?? {})[String(year)];
+    if (!entry) continue;
+    const date = String(entry.date ?? "").trim();
+    const observed = String(entry.observed ?? "").trim();
+    const observedDate = observed && isIsoDate(observed) ? observed : null;
+    if (!isIsoDate(date)) continue;
+
+    expectedDates.push(date);
+    rowsToInsert.push({
+      branch_id: branchId,
+      holiday_date: date,
+      observed_date: observedDate,
+      name,
+      notes: null,
+      is_active: true,
+      is_closed: false,
+      closed_start_time: null,
+      closed_end_time: null,
+      import_source: "US_FEDERAL",
+    });
+  }
+
+  const dedupedByDate = new Map<string, (typeof rowsToInsert)[number]>();
+  for (const r of rowsToInsert) dedupedByDate.set(r.holiday_date, r);
+  const deduped = Array.from(dedupedByDate.values());
+  const candidateDates = Array.from(new Set(expectedDates));
+  if (candidateDates.length === 0) return { insertedCount: 0 };
+
+  const { data: existingRows, error: existingError } = await supabase
+    .from("holidays")
+    .select("holiday_date")
+    .eq("branch_id", branchId)
+    .in("holiday_date", candidateDates);
+  if (existingError) throw new Error(existingError.message);
+
+  const existingDates = new Set(
+    (existingRows ?? [])
+      .map((r: any) => String(r?.holiday_date ?? "").slice(0, 10))
+      .filter((d: string) => isIsoDate(d)),
+  );
+
+  const finalRows = deduped.filter((r) => !existingDates.has(r.holiday_date));
+
+  if (finalRows.length === 0) return { insertedCount: 0 };
+
+  // Production safety: don't mutate holiday schedules automatically.
+  if (process.env.NODE_ENV === "production") {
+    throw new HttpError(
+      409,
+      `Holiday schedule for ${year} is missing for this branch. Import US federal holidays before cloning into January ${year}.`,
+    );
+  }
+
+  const { error: insertError } = await supabase.from("holidays").insert(finalRows);
+  if (insertError) throw new Error(insertError.message);
+
+  return { insertedCount: finalRows.length };
 }
 
 function wantsSse(req: NextRequest): boolean {
@@ -242,26 +507,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       }
     }
 
-    // 5) Create target schedule (new schedule starts pending approval)
-    const targetName = monthNameYearFromMonthStart(targetMonthStart);
-    const { data: targetSchedule, error: createScheduleError } = await supabase
-      .from("schedules")
-      .insert({
-        branch_id: branchId,
-        program_group_id: programGroupId,
-        name: targetName,
-        month_start: targetMonthStart,
-        status: "draft",
-        is_approved: false,
-        cloned_from_id: source.id,
-      })
-      .select("id, name, month_start, status, is_approved, branch_id, program_group_id")
-      .single();
-
-    if (createScheduleError) throw new Error(createScheduleError.message);
-    const target = targetSchedule as ScheduleRow;
-
-    // 6) Load source sessions + instructor links
+    // 5) Load source sessions + instructor links
     const { data: sourceSessions, error: sourceSessionsError } = await supabase
       .from("class_sessions")
       .select("id, class_id, location_id, day_of_week, start_time, end_time, session_date, headcount")
@@ -295,7 +541,54 @@ export async function POST(req: NextRequest): Promise<Response> {
       }
     }
 
-    // 6) Build clone plan (map dates)
+    // 6) Pre-clone prep (do not bind to the schedule so Backout does not remove it):
+    // - copy instructor availability from source month -> target month (insert missing only)
+    // - if target month is January, ensure the new year's US federal holiday rows exist (dev-only auto import)
+    const allInstructorIds = Array.from(new Set(Object.values(instructorMap).flatMap((ids) => ids))).filter(Boolean);
+    const sourceScheduleMonth = monthPrefixFromMonthStart(source.month_start);
+    const targetScheduleMonth = monthPrefixFromMonthStart(targetMonthStart);
+
+    await copyInstructorAvailabilityForTargetMonth({
+      supabase,
+      branchId,
+      instructorIds: allInstructorIds,
+      sourceScheduleMonth,
+      targetScheduleMonth,
+    });
+
+    await ensureUsFederalHolidaysForNewYearIfJanuary({ supabase, branchId, targetMonthStart });
+
+    // 7) Create target schedule (new schedule starts pending approval)
+    const targetName = monthNameYearFromMonthStart(targetMonthStart);
+    const { data: targetSchedule, error: createScheduleError } = await supabase
+      .from("schedules")
+      .insert({
+        branch_id: branchId,
+        program_group_id: programGroupId,
+        name: targetName,
+        month_start: targetMonthStart,
+        status: "draft",
+        is_approved: false,
+        cloned_from_id: source.id,
+      })
+      .select("id, name, month_start, status, is_approved, branch_id, program_group_id")
+      .single();
+
+    if (createScheduleError) throw new Error(createScheduleError.message);
+    const target = targetSchedule as ScheduleRow;
+
+    // 8) Load target-month availability rules for enforcement during cloning.
+    // Semantics (matches conflict engine):
+    // - If an instructor has NO rows for the month, availability is NOT enforced (assumed available).
+    // - If an instructor has any rows for the month, they must be fully covered by a window for that day.
+    const targetAvailabilityIndex = await loadTargetMonthAvailabilityIndex({
+      supabase,
+      branchId,
+      instructorIds: allInstructorIds,
+      scheduleMonth: targetScheduleMonth,
+    });
+
+    // 9) Build clone plan (map dates)
     const sourceMonthStart = source.month_start;
     const targetMonthPrefix = monthPrefixFromMonthStart(targetMonthStart);
 
@@ -403,12 +696,16 @@ export async function POST(req: NextRequest): Promise<Response> {
       deduped.push(p);
     }
 
-    // 7) Insert sessions + instructor links (sequential to preserve mapping reliably)
+    // 10) Insert sessions + instructor links (sequential to preserve mapping reliably)
     const createdSessionIds: string[] = [];
     let skippedOutsideTargetMonth = 0;
+    let skippedNoInstructorsAfterAvailability = 0;
+    let modifiedDroppedInstructors = 0;
     try {
       const totalToInsert = deduped.length;
+      let processed = 0;
       for (const p of deduped) {
+        processed += 1;
         // safety: ensure target date is inside target month
         if (!p.target_session_date.startsWith(targetMonthPrefix)) {
           skippedOutsideTargetMonth += 1;
@@ -433,6 +730,91 @@ export async function POST(req: NextRequest): Promise<Response> {
           continue;
         }
 
+        // Availability enforcement (drop unavailable instructors; skip session if none remain).
+        const originalInstructorIds = (p.instructor_ids ?? []).filter(Boolean);
+        let keptInstructorIds = originalInstructorIds;
+        const droppedInstructorIds: string[] = [];
+
+        if (originalInstructorIds.length > 0 && targetAvailabilityIndex.size > 0) {
+          const startMin = parseTimeToMinutes(p.start_time);
+          const endMin = parseTimeToMinutes(p.end_time);
+          const day = normalizeDayOfWeek(p.target_day_of_week);
+
+          if (startMin !== null && endMin !== null && endMin > startMin && day) {
+            const nextKept: string[] = [];
+            for (const instructorId of originalInstructorIds) {
+              const byDay = targetAvailabilityIndex.get(instructorId);
+              if (!byDay) {
+                // No rows for this instructor+month => no enforcement.
+                nextKept.push(instructorId);
+                continue;
+              }
+
+              const windows = byDay.get(day) ?? [];
+              const covered = windows.some((w) => startMin >= w.startMin && endMin <= w.endMin);
+              if (covered) nextKept.push(instructorId);
+              else droppedInstructorIds.push(instructorId);
+            }
+
+            keptInstructorIds = nextKept;
+          }
+        }
+
+        if (originalInstructorIds.length > 0 && droppedInstructorIds.length > 0) {
+          if (keptInstructorIds.length === 0) {
+            skippedNoInstructorsAfterAvailability += 1;
+            exceptionEvents.push({
+              branch_id: branchId,
+              program_group_id: programGroupId,
+              source_schedule_id: source.id,
+              target_schedule_id: target.id,
+              event_type: "SKIPPED_NO_INSTRUCTORS_AFTER_AVAILABILITY",
+              source_session_id: p.source_session_id ?? null,
+              class_id: p.class_id ?? null,
+              location_id: p.location_id ?? null,
+              target_session_date: p.target_session_date ?? null,
+              target_day_of_week: p.target_day_of_week ?? null,
+              target_start_time: p.start_time ?? null,
+              target_end_time: p.end_time ?? null,
+              details: {
+                reason: "All instructors unavailable for target day/time",
+                schedule_month: targetScheduleMonth,
+                original_instructor_ids: originalInstructorIds,
+                dropped_instructor_ids: droppedInstructorIds,
+              },
+            });
+            if (onProgress) {
+              const total = Math.max(1, totalToInsert);
+              const percent = Math.round((processed / total) * 100);
+              onProgress({ done: processed, total, percent });
+            }
+            continue;
+          }
+
+          modifiedDroppedInstructors += 1;
+          exceptionEvents.push({
+            branch_id: branchId,
+            program_group_id: programGroupId,
+            source_schedule_id: source.id,
+            target_schedule_id: target.id,
+            event_type: "MODIFIED_DROPPED_INSTRUCTORS",
+            source_session_id: p.source_session_id ?? null,
+            class_id: p.class_id ?? null,
+            location_id: p.location_id ?? null,
+            target_session_date: p.target_session_date ?? null,
+            target_day_of_week: p.target_day_of_week ?? null,
+            target_start_time: p.start_time ?? null,
+            target_end_time: p.end_time ?? null,
+            details: {
+              reason: "Dropped unavailable instructors for target day/time",
+              schedule_month: targetScheduleMonth,
+              original_instructor_ids: originalInstructorIds,
+              kept_instructor_ids: keptInstructorIds,
+              dropped_instructor_ids: droppedInstructorIds,
+            },
+          });
+        }
+
         const { data: created, error: insertErr } = await supabase
           .from("class_sessions")
           .insert({
@@ -454,15 +836,13 @@ export async function POST(req: NextRequest): Promise<Response> {
         createdSessionIds.push(String((created as any)?.id));
 
         if (onProgress) {
-          const done = createdSessionIds.length;
           const total = Math.max(1, totalToInsert);
-          const percent = Math.round((done / total) * 100);
-          onProgress({ done, total, percent });
+          const percent = Math.round((processed / total) * 100);
+          onProgress({ done: processed, total, percent });
         }
 
-        const instructorIds = p.instructor_ids ?? [];
-        if (instructorIds.length > 0) {
-          const links = instructorIds.map((instructor_id) => ({
+        if (keptInstructorIds.length > 0) {
+          const links = keptInstructorIds.map((instructor_id) => ({
             session_id: created.id,
             instructor_id,
           }));
@@ -476,27 +856,28 @@ export async function POST(req: NextRequest): Promise<Response> {
       throw e;
     }
 
-    const modifiedSessionsTotal = 0;
-    const skippedTotal = skippable.length + dedupedSkipped + skippedOutsideTargetMonth;
+    const modifiedSessionsTotal = modifiedDroppedInstructors;
+    const skippedTotal =
+      skippable.length + dedupedSkipped + skippedOutsideTargetMonth + skippedNoInstructorsAfterAvailability;
 
-    // 8) Audit log
+    // 11) Audit log
     const { data: auditRow, error: auditErr } = await supabase
       .from("schedule_clone_audit")
       .insert({
-      branch_id: branchId,
-      program_group_id: programGroupId,
-      source_schedule_id: source.id,
-      target_schedule_id: target.id,
-      source_month_start: sourceMonthStart,
-      target_month_start: targetMonthStart,
-      missing_headcount_count: missingHeadcountCount,
-      override_missing_headcounts: override,
-      sessions_source_count: src.length,
-      sessions_created_count: createdSessionIds.length,
-      sessions_skipped_count: skippedTotal,
-      deduped_skipped_count: dedupedSkipped,
-      requested_by_email: access?.email ?? null,
-      requested_by_recipient_type: access?.recipient_type ?? null,
+        branch_id: branchId,
+        program_group_id: programGroupId,
+        source_schedule_id: source.id,
+        target_schedule_id: target.id,
+        source_month_start: sourceMonthStart,
+        target_month_start: targetMonthStart,
+        missing_headcount_count: missingHeadcountCount,
+        override_missing_headcounts: override,
+        sessions_source_count: src.length,
+        sessions_created_count: createdSessionIds.length,
+        sessions_skipped_count: skippedTotal,
+        deduped_skipped_count: dedupedSkipped,
+        requested_by_email: access?.email ?? null,
+        requested_by_recipient_type: access?.recipient_type ?? null,
       })
       .select("id")
       .single<{ id: string }>();
@@ -530,6 +911,7 @@ export async function POST(req: NextRequest): Promise<Response> {
         skipped_missing_occurrence: skippable.length,
         deduped_skipped: dedupedSkipped,
         skipped_outside_target_month: skippedOutsideTargetMonth,
+        skipped_no_instructors_after_availability: skippedNoInstructorsAfterAvailability,
         skipped_sessions_total: skippedTotal,
         modified_sessions_total: modifiedSessionsTotal,
         missing_headcount_count: missingHeadcountCount,
@@ -544,9 +926,10 @@ export async function POST(req: NextRequest): Promise<Response> {
       const result = await doClone();
       return NextResponse.json(result);
     } catch (e) {
+      const status = e instanceof HttpError ? e.status : 500;
       return NextResponse.json(
         { error: e instanceof Error ? e.message : "Failed to clone schedule" },
-        { status: 500 },
+        { status },
       );
     }
   }
@@ -576,7 +959,8 @@ export async function POST(req: NextRequest): Promise<Response> {
 
         send("complete", result);
       } catch (e) {
-        send("error", { error: e instanceof Error ? e.message : "Failed to clone schedule" });
+        const status = e instanceof HttpError ? e.status : 500;
+        send("error", { error: e instanceof Error ? e.message : "Failed to clone schedule", status });
       } finally {
         controller.close();
       }

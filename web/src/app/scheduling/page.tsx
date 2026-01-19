@@ -91,6 +91,7 @@ export default function SchedulingPage() {
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [selectedScheduleId, setSelectedScheduleId] = useState<string>("");
   const [scheduleDropdownOpen, setScheduleDropdownOpen] = useState(false);
+  const [schedulePendingHelpOpen, setSchedulePendingHelpOpen] = useState(false);
   const [loadingSchedules, setLoadingSchedules] = useState(true);
   const [programGroups, setProgramGroups] = useState<ProgramGroup[]>([]);
   const [selectedProgramGroupId, setSelectedProgramGroupId] = useState<string>("");
@@ -106,6 +107,7 @@ export default function SchedulingPage() {
   const [dateDropdownOpen, setDateDropdownOpen] = useState(false);
   const [selectedDay, setSelectedDay] = useState<string>("");
   const [dayDropdownOpen, setDayDropdownOpen] = useState(false);
+
   const [selectedWeekStart, setSelectedWeekStart] = useState<string>("");
   const [weekDropdownOpen, setWeekDropdownOpen] = useState(false);
   const [branchAllianceName, setBranchAllianceName] = useState<string>("");
@@ -271,6 +273,7 @@ export default function SchedulingPage() {
 
     void loadOrg();
   }, [branch.id]);
+
 
   useEffect(() => {
     void fetchProgramGroups();
@@ -747,12 +750,6 @@ export default function SchedulingPage() {
 
           {!scheduleApproved && !!selectedScheduleId && (
             <>
-              <span
-                className="rounded-full border border-[var(--brand-strong)] bg-black/20 px-3 py-1 text-xs font-semibold text-foreground"
-                title="This schedule is locked pending approval. No changes are allowed until approved."
-              >
-                Pending approval
-              </span>
               <button
                 type="button"
                 onClick={() => setExceptionReportOpen(true)}
@@ -822,7 +819,12 @@ export default function SchedulingPage() {
         {/* Group Selector */}
         <div className="flex items-center gap-2">
           <label className="text-sm font-medium">Group:</label>
-          <Popover open={groupDropdownOpen} onOpenChange={setGroupDropdownOpen}>
+          <Popover
+            open={groupDropdownOpen}
+            onOpenChange={(nextOpen) => {
+              setGroupDropdownOpen(nextOpen);
+            }}
+          >
             <PopoverTrigger asChild>
               <button
                 className="btn-pill flex min-w-[200px] items-center justify-between gap-2 border border-white/10 bg-card/60 px-4 py-2 text-sm shadow-sm ring-1 ring-white/5 transition hover:bg-card hover:ring-white/10"
@@ -882,7 +884,12 @@ export default function SchedulingPage() {
         {/* Schedule Selector */}
         <div className="flex items-center gap-2">
           <label className="text-sm font-medium">Schedule:</label>
-          <Popover open={scheduleDropdownOpen} onOpenChange={setScheduleDropdownOpen}>
+          <Popover
+            open={scheduleDropdownOpen}
+            onOpenChange={(nextOpen) => {
+              setScheduleDropdownOpen(nextOpen);
+            }}
+          >
             <PopoverTrigger asChild>
               <button
                 className="btn-pill flex min-w-[200px] items-center justify-between gap-2 border border-white/10 bg-card/60 px-4 py-2 text-sm shadow-sm ring-1 ring-white/5 transition hover:bg-card hover:ring-white/10"
@@ -896,13 +903,36 @@ export default function SchedulingPage() {
                     <>
                       <span className="truncate">{selectedSchedule?.name || "Select a schedule"}</span>
                       {selectedSchedule?.is_approved === false ? (
-                        <span
-                          aria-hidden="true"
-                          title="Pending approval"
-                          className="rounded-full border border-[var(--brand-strong)] bg-black/20 px-2 py-0.5 text-[11px] font-semibold text-foreground"
+                        <Popover
+                          open={schedulePendingHelpOpen}
+                          onOpenChange={setSchedulePendingHelpOpen}
                         >
-                          Pending
-                        </span>
+                          <PopoverTrigger asChild>
+                            <span
+                              aria-hidden="true"
+                              className="rounded-full border border-[var(--cta)] bg-[var(--cta)] px-2 py-0.5 text-[11px] font-semibold text-[var(--cta-foreground)] shadow-sm ring-1 ring-white/10"
+                              onMouseEnter={() => setSchedulePendingHelpOpen(true)}
+                              onMouseLeave={() => setSchedulePendingHelpOpen(false)}
+                            >
+                              Pending
+                            </span>
+                          </PopoverTrigger>
+                          <PopoverContent
+                            side="bottom"
+                            align="start"
+                            sideOffset={6}
+                            onOpenAutoFocus={(e) => e.preventDefault()}
+                            onCloseAutoFocus={(e) => e.preventDefault()}
+                            className="pointer-events-none w-[260px] rounded-2xl border border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] px-3 py-2 text-xs text-foreground shadow-xl backdrop-blur-md"
+                          >
+                            <PopoverArrow
+                              width={12}
+                              height={8}
+                              className="fill-[rgb(var(--brand-rgb)/0.95)] stroke-[var(--brand-strong)] stroke-1"
+                            />
+                            To activate select Approve in top row
+                          </PopoverContent>
+                        </Popover>
                       ) : null}
                     </>
                   )}
@@ -949,8 +979,7 @@ export default function SchedulingPage() {
                       <span className="flex items-center gap-2">
                         {schedule.is_approved === false ? (
                           <span
-                            title="Pending approval"
-                            className="rounded-full border border-[var(--brand-strong)] bg-black/20 px-2 py-0.5 text-[11px] font-semibold text-foreground"
+                            className="rounded-full border border-[var(--cta)] bg-[var(--cta)] px-2 py-0.5 text-[11px] font-semibold text-[var(--cta-foreground)] shadow-sm ring-1 ring-white/10"
                           >
                             Pending
                           </span>
@@ -975,7 +1004,12 @@ export default function SchedulingPage() {
         {/* Week Start Filter Selector */}
         <div className="relative flex items-center gap-2">
           <label className="text-sm font-medium">Week Start:</label>
-          <Popover open={weekDropdownOpen} onOpenChange={setWeekDropdownOpen}>
+          <Popover
+            open={weekDropdownOpen}
+            onOpenChange={(nextOpen) => {
+              setWeekDropdownOpen(nextOpen);
+            }}
+          >
             <PopoverTrigger asChild>
               <button
                 className="btn-pill flex min-w-[160px] items-center justify-between gap-2 border border-white/10 bg-card/60 px-4 py-2 text-sm shadow-sm ring-1 ring-white/5 transition hover:bg-card hover:ring-white/10"
@@ -1034,7 +1068,12 @@ export default function SchedulingPage() {
         {/* Date Filter Selector */}
         <div className="flex items-center gap-2">
           <label className="text-sm font-medium">Date:</label>
-          <Popover open={dateDropdownOpen} onOpenChange={setDateDropdownOpen}>
+          <Popover
+            open={dateDropdownOpen}
+            onOpenChange={(nextOpen) => {
+              setDateDropdownOpen(nextOpen);
+            }}
+          >
             <PopoverTrigger asChild>
               <button
                 className="btn-pill flex min-w-[160px] items-center justify-between gap-2 border border-white/10 bg-card/60 px-4 py-2 text-sm shadow-sm ring-1 ring-white/5 transition hover:bg-card hover:ring-white/10"
@@ -1090,7 +1129,12 @@ export default function SchedulingPage() {
         {/* Day Filter Selector */}
         <div className="flex items-center gap-2">
           <label className="text-sm font-medium">Day:</label>
-          <Popover open={dayDropdownOpen} onOpenChange={setDayDropdownOpen}>
+          <Popover
+            open={dayDropdownOpen}
+            onOpenChange={(nextOpen) => {
+              setDayDropdownOpen(nextOpen);
+            }}
+          >
             <PopoverTrigger asChild>
               <button
                 className="btn-pill flex min-w-[140px] items-center justify-between gap-2 border border-white/10 bg-card/60 px-4 py-2 text-sm shadow-sm ring-1 ring-white/5 transition hover:bg-card hover:ring-white/10"

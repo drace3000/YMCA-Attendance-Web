@@ -189,6 +189,25 @@ function formatReason(details: Record<string, unknown>): string | null {
   return reason ? `Reason: ${reason}` : null;
 }
 
+type InstructorDetail = {
+  id: string;
+  label?: string | null;
+  nickname?: string | null;
+  readable_id?: string | null;
+};
+
+function formatInstructorList(details: Record<string, unknown>, key: string): string | null {
+  const raw = (details as any)?.[key];
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+
+  const labels = raw
+    .map((v) => v as InstructorDetail)
+    .map((i) => String(i?.label ?? i?.nickname ?? i?.readable_id ?? i?.id ?? "").trim())
+    .filter(Boolean);
+
+  return labels.length > 0 ? labels.join(", ") : null;
+}
+
 export function ScheduleCloneConstraintsPDFDocument({
   title,
   orgLine,
@@ -237,6 +256,8 @@ export function ScheduleCloneConstraintsPDFDocument({
 
             {g.rows.map((r) => {
               const reasonLine = formatReason(r.details);
+              const dropped = formatInstructorList(r.details, "dropped_instructors");
+              const kept = formatInstructorList(r.details, "kept_instructors");
               return (
                 <View key={r.id} style={styles.row} wrap={false}>
                   <View style={styles.colLeft}>
@@ -250,6 +271,8 @@ export function ScheduleCloneConstraintsPDFDocument({
                   <View style={styles.colRight}>
                     <Text style={styles.bodyLine}>{formatClassLocation(r)}</Text>
                     {reasonLine ? <Text style={styles.smallLine}>{reasonLine}</Text> : null}
+                    {dropped ? <Text style={styles.smallLine}>Dropped instructor(s): {dropped}</Text> : null}
+                    {kept ? <Text style={styles.smallLine}>Kept instructor(s): {kept}</Text> : null}
                   </View>
                 </View>
               );

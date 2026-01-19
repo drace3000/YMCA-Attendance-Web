@@ -82,6 +82,12 @@ function chunkArray<T>(items: T[], chunkSize: number): T[][] {
   return out;
 }
 
+function extractStringArray(details: Record<string, unknown>, key: string): string[] {
+  const raw = (details as any)?.[key];
+  if (!Array.isArray(raw)) return [];
+  return raw.map((v) => String(v ?? "").trim()).filter(Boolean);
+}
+
 export async function GET(req: NextRequest): Promise<Response> {
   const required = await requireRecipientAccess(req, { allowDevPassthrough: true });
   if (!required.ok) return required.response;
@@ -191,6 +197,46 @@ export async function GET(req: NextRequest): Promise<Response> {
     }
   }
 
+  // 5) Enrich instructors referenced in details (e.g., dropped/kept instructor IDs).
+  const instructorIdsFromDetails = new Set<string>();
+  for (const r of rows) {
+    const d = (r.details ?? {}) as Record<string, unknown>;
+    for (const id of extractStringArray(d, "dropped_instructor_ids")) instructorIdsFromDetails.add(id);
+    for (const id of extractStringArray(d, "kept_instructor_ids")) instructorIdsFromDetails.add(id);
+    for (const id of extractStringArray(d, "original_instructor_ids")) instructorIdsFromDetails.add(id);
+  }
+
+  const instructorById: Record<
+    string,
+    { id: string; nickname: string | null; readable_id: string | null; label: string }
+  > = {};
+
+  const instructorIds = Array.from(instructorIdsFromDetails);
+  for (const chunk of chunkArray(instructorIds, 200)) {
+    const { data, error } = await supabase
+      .from("instructors")
+      .select("id, nickname, readable_id, first_name, last_name")
+      .in("id", chunk);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+    for (const r of (data ?? []) as Array<{
+      id: string;
+      nickname: string | null;
+      readable_id: string | null;
+      first_name: string | null;
+      last_name: string | null;
+    }>) {
+      const nickname = r.nickname ? String(r.nickname).trim() : "";
+      const first = r.first_name ? String(r.first_name).trim() : "";
+      const last = r.last_name ? String(r.last_name).trim() : "";
+      const readable = r.readable_id ? String(r.readable_id).trim() : "";
+      const nameFallback = [first, last].filter(Boolean).join(" ").trim();
+      const base = nickname || nameFallback || null;
+      const label = [base, readable].filter(Boolean).join(" • ") || r.id;
+      instructorById[r.id] = { id: r.id, nickname: base, readable_id: readable || null, label };
+    }
+  }
+
   const modifiedTotal = rows.filter((r) => r.event_type.startsWith("MODIFIED_")).length;
   const skippedTotal = rows.filter((r) => r.event_type.startsWith("SKIPPED_")).length;
 
@@ -235,7 +281,25 @@ export async function GET(req: NextRequest): Promise<Response> {
                 name: locationById[r.location_id]?.name ?? null,
               }
             : null,
-          details: r.details ?? {},
+          details: (() => {
+            const base = (r.details ?? {}) as Record<string, unknown>;
+            const droppedIds = extractStringArray(base, "dropped_instructor_ids");
+            const keptIds = extractStringArray(base, "kept_instructor_ids");
+            const originalIds = extractStringArray(base, "original_instructor_ids");
+
+            const enrich = (ids: string[]) =>
+              ids
+                .map((id) => instructorById[id] ?? null)
+                .filter(Boolean)
+                .map((x) => ({ id: x!.id, nickname: x!.nickname, readable_id: x!.readable_id, label: x!.label }));
+
+            return {
+              ...base,
+              dropped_instructors: droppedIds.length > 0 ? enrich(droppedIds) : undefined,
+              kept_instructors: keptIds.length > 0 ? enrich(keptIds) : undefined,
+              original_instructors: originalIds.length > 0 ? enrich(originalIds) : undefined,
+            };
+          })(),
         })),
       };
     });

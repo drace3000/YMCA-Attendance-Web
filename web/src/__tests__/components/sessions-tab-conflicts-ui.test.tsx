@@ -656,11 +656,12 @@ describe("SessionsTab conflicts UI", () => {
     expect(sessionsGetCalls).toBe(1);
 
     // Multiple durations => should require explicit selection.
-    const durationSelect = within(helper).getByRole("combobox", { name: "Select duration" }) as HTMLSelectElement;
-    expect(durationSelect.value).toBe("");
+    // Duration picker is a themed PopoverSelect (button trigger), not a native <select>.
+    const durationTrigger = within(helper).getByRole("button", { name: "Select duration" });
 
     // Pick 60 first => since durations aren't singleton, helper should require manual refresh (no auto-search).
-    fireEvent.change(durationSelect, { target: { value: "60" } });
+    fireEvent.click(durationTrigger);
+    fireEvent.click(await screen.findByRole("button", { name: "60 minutes" }));
 
     await waitFor(() => {
       expect(within(helper).getByText(/Select Refresh for Available Time Slots/i)).toBeInTheDocument();
@@ -677,7 +678,8 @@ describe("SessionsTab conflicts UI", () => {
     expect((await within(helper).findAllByRole("button", { name: /06:00 AM–07:00 AM/i })).length).toBeGreaterThan(0);
 
     // Change duration to 45 => slots should clear and require manual Refresh.
-    fireEvent.change(within(helper).getByRole("combobox", { name: "Select duration" }), { target: { value: "45" } });
+    fireEvent.click(within(helper).getByRole("button", { name: "Select duration" }));
+    fireEvent.click(await screen.findByRole("button", { name: "45 minutes" }));
 
     await waitFor(() => {
       expect(within(helper).getByText(/Select Refresh for Available Time Slots/i)).toBeInTheDocument();

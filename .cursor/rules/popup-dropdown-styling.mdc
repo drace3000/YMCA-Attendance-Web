@@ -26,6 +26,13 @@ If a special highlight is required (e.g., “month has data”), prefer a theme 
   - Good: `<Popover modal open={open} onOpenChange={setOpen}>`
   - Tooltip-only popovers can be non-modal.
 
+### Focus safety (required)
+
+- **Interactive popovers must not steal focus on close** (prevents “focus bounce” where typing/clicking stops working after using a filter popover):
+  - Add `onCloseAutoFocus={(e) => e.preventDefault()}` on `PopoverContent` for any popover that contains inputs/checkboxes/buttons/scroll areas.
+- **Tooltip-only popovers should not steal focus either**:
+  - Add `onOpenAutoFocus={(e) => e.preventDefault()}` and `onCloseAutoFocus={(e) => e.preventDefault()}` on tooltip `PopoverContent` when hover/focus tooltips are used near inputs.
+
 ## Trigger styling contract (dropdown/picker openers)
 
 Use this visual language for any clickable trigger that opens a popup/dropdown:

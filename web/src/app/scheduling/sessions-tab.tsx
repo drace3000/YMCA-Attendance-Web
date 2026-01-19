@@ -59,6 +59,29 @@ function ModalPortal({ children }: { children: React.ReactNode }): React.ReactPo
   return createPortal(children, document.body);
 }
 
+type HeaderTooltipState = { text: string; el: HTMLElement };
+
+function PortalTooltip({ text, rect }: { text: string; rect: DOMRect }): React.ReactPortal | null {
+  if (typeof document === "undefined") return null;
+  const left = rect.left + rect.width / 2;
+  const top = rect.top;
+
+  return createPortal(
+    <div
+      style={{
+        position: "fixed",
+        left,
+        top,
+        transform: "translate(-50%, calc(-100% - 8px))",
+      }}
+      className="pointer-events-none z-[9999] whitespace-nowrap rounded-2xl border border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] px-3 py-2 text-xs font-semibold text-foreground shadow-xl backdrop-blur-md"
+    >
+      {text}
+    </div>,
+    document.body,
+  );
+}
+
 export type Session = {
   id: string;
   branch_id: string;
@@ -1514,6 +1537,8 @@ useEffect(() => {
   const [popoverOpen, setPopoverOpen] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const tableContainerRef = useRef<HTMLDivElement>(null);
+  const [headerTooltip, setHeaderTooltip] = useState<HeaderTooltipState | null>(null);
+  const [headerTooltipRect, setHeaderTooltipRect] = useState<DOMRect | null>(null);
   // Sorting and filtering state
   const [sortOrder, setSortOrder] = useState<{ column: SortColumn; direction: SortDirection }[]>([]);
   const [classFilter, setClassFilter] = useState<string[]>([]);
@@ -2083,6 +2108,64 @@ useEffect(() => {
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [sessions]);
 
+  const isNarrowingColumnFilterActive = useCallback((selected: string[], allValues: string[]): boolean => {
+    // Active only when the filter narrows results (not when it effectively represents "all").
+    if (selected.includes("__NONE__")) return true;
+    if (selected.length === 0) return false; // UI treats empty as "all"
+    if (allValues.length === 0) return true; // stale selection still narrows to none/unknown
+
+    const selectedSet = new Set(selected);
+    const allSet = new Set(allValues);
+    if (selectedSet.size !== allSet.size) return true;
+    for (const v of allSet) {
+      if (!selectedSet.has(v)) return true;
+    }
+    return false; // equal sets => not narrowing
+  }, []);
+
+  const isClassFilterActive = isNarrowingColumnFilterActive(classFilter, uniqueClassValues);
+  const isLocationFilterActive = isNarrowingColumnFilterActive(locationFilter, uniqueLocationValues);
+  const isInstructorFilterActive = isNarrowingColumnFilterActive(instructorFilter, uniqueInstructorValues);
+
+  useEffect(() => {
+    if (!headerTooltip) {
+      setHeaderTooltipRect(null);
+      return;
+    }
+
+    const update = () => {
+      try {
+        setHeaderTooltipRect(headerTooltip.el.getBoundingClientRect());
+      } catch {
+        // noop
+      }
+    };
+
+    update();
+
+    const tableEl = tableContainerRef.current;
+    window.addEventListener("scroll", update, true);
+    window.addEventListener("resize", update);
+    tableEl?.addEventListener("scroll", update, { passive: true });
+
+    return () => {
+      window.removeEventListener("scroll", update, true);
+      window.removeEventListener("resize", update);
+      tableEl?.removeEventListener("scroll", update);
+    };
+  }, [headerTooltip]);
+
+  useEffect(() => {
+    // If the available instructor values change, drop any stale selections (except __NONE__).
+    // This prevents older combined values from lingering after we normalize the dropdown to individual instructors.
+    setInstructorFilter((prev) => {
+      if (prev.length === 0) return prev;
+      const next = prev.filter((v) => v === "__NONE__" || uniqueInstructorValues.includes(v));
+      if (next.length === prev.length) return prev;
+      return next.length === 0 ? [] : next;
+    });
+  }, [uniqueInstructorValues]);
+
   // Fuzzy match helper for Smart mode
   const fuzzyMatch = useCallback((text: string, pattern: string): boolean => {
     if (!pattern) return true;
@@ -2149,6 +2232,7 @@ useEffect(() => {
       });
     }
     if (instructorFilter.length > 0) {
+      // Match sessions where any selected instructor participates.
       result = result.filter((s) =>
         s.instructors.some((i) => {
           const name = i.nickname || `${i.first_name} ${i.last_name}`.trim();
@@ -4653,6 +4737,9 @@ function buildAvailabilityVm(opts: {
 
   return (
     <div className="flex flex-col gap-4">
+      {headerTooltip && headerTooltipRect ? (
+        <PortalTooltip text={headerTooltip.text} rect={headerTooltipRect} />
+      ) : null}
       <div className="flex flex-col gap-3">
         {/* Row 1: Search + filter controls */}
         <div className="flex flex-wrap items-center gap-3">
@@ -4739,6 +4826,8 @@ function buildAvailabilityVm(opts: {
                 side="bottom"
                 align="center"
                 sideOffset={8}
+                onOpenAutoFocus={(e) => e.preventDefault()}
+                onCloseAutoFocus={(e) => e.preventDefault()}
                 className="pointer-events-none w-64 rounded-2xl border-[var(--brand-strong)] bg-[rgb(var(--brand-soft-rgb)/0.35)] px-3 py-2 text-xs text-foreground shadow-lg backdrop-blur-md"
               >
                 <PopoverArrow
@@ -4794,6 +4883,10 @@ function buildAvailabilityVm(opts: {
                 side="top"
                 align="center"
                 sideOffset={8}
+                onCloseAutoFocus={(e) => {
+                  e.preventDefault();
+                }}
+                onOpenAutoFocus={(e) => e.preventDefault()}
                 className="pointer-events-none w-auto rounded-2xl border-[var(--brand-strong)] bg-[rgb(var(--brand-soft-rgb)/0.35)] px-3 py-2 text-xs text-foreground shadow-lg backdrop-blur-md"
               >
                 <PopoverArrow
@@ -4835,6 +4928,8 @@ function buildAvailabilityVm(opts: {
                 side="top"
                 align="center"
                 sideOffset={8}
+                onOpenAutoFocus={(e) => e.preventDefault()}
+                onCloseAutoFocus={(e) => e.preventDefault()}
                 className="pointer-events-none w-auto rounded-2xl border-[var(--brand-strong)] bg-[rgb(var(--brand-soft-rgb)/0.35)] px-3 py-2 text-xs text-foreground shadow-lg backdrop-blur-md"
               >
                 <PopoverArrow
@@ -4876,6 +4971,8 @@ function buildAvailabilityVm(opts: {
                 side="top"
                 align="center"
                 sideOffset={8}
+                onOpenAutoFocus={(e) => e.preventDefault()}
+                onCloseAutoFocus={(e) => e.preventDefault()}
                 className="pointer-events-none w-auto rounded-2xl border-[var(--brand-strong)] bg-[rgb(var(--brand-soft-rgb)/0.35)] px-3 py-2 text-xs text-foreground shadow-lg backdrop-blur-md"
               >
                 <PopoverArrow
@@ -4919,6 +5016,8 @@ function buildAvailabilityVm(opts: {
                 side="top"
                 align="center"
                 sideOffset={8}
+                onOpenAutoFocus={(e) => e.preventDefault()}
+                onCloseAutoFocus={(e) => e.preventDefault()}
                 className="pointer-events-none w-auto rounded-2xl border-[var(--brand-strong)] bg-[rgb(var(--brand-soft-rgb)/0.35)] px-3 py-2 text-xs text-foreground shadow-lg backdrop-blur-md"
               >
                 <PopoverArrow
@@ -5098,8 +5197,12 @@ function buildAvailabilityVm(opts: {
                   <button
                     type="button"
                     onClick={() => toggleSort("class")}
-                    className="rounded p-1 hover:bg-white/10"
-                    title="Sort Class"
+                    className="group relative rounded p-1 hover:bg-white/10"
+                    aria-label="Sort Class"
+                    onMouseEnter={(e) => setHeaderTooltip({ text: "Sort Class", el: e.currentTarget })}
+                    onMouseLeave={() => setHeaderTooltip(null)}
+                    onFocus={(e) => setHeaderTooltip({ text: "Sort Class", el: e.currentTarget })}
+                    onBlur={() => setHeaderTooltip(null)}
                   >
                     {getSortDirection("class") === "asc" ? (
                       <ArrowUp className="h-4 w-4" />
@@ -5109,19 +5212,40 @@ function buildAvailabilityVm(opts: {
                       <ArrowUpDown className="h-4 w-4" />
                     )}
                   </button>
-                  <Popover open={classFilterOpen} onOpenChange={setClassFilterOpen}>
+                  <Popover open={classFilterOpen} onOpenChange={setClassFilterOpen} modal>
                     <PopoverTrigger asChild>
                       <button
                         type="button"
-                        className="rounded p-1 hover:bg-white/10"
-                        title="Filter Class"
+                        className="group relative rounded p-1 hover:bg-white/10"
+                        aria-label={isClassFilterActive ? "Filter Class (active)" : "Filter Class"}
+                        onMouseEnter={(e) =>
+                          setHeaderTooltip({
+                            text: isClassFilterActive ? "Filter Class (active)" : "Filter Class",
+                            el: e.currentTarget,
+                          })
+                        }
+                        onMouseLeave={() => setHeaderTooltip(null)}
+                        onFocus={(e) =>
+                          setHeaderTooltip({
+                            text: isClassFilterActive ? "Filter Class (active)" : "Filter Class",
+                            el: e.currentTarget,
+                          })
+                        }
+                        onBlur={() => setHeaderTooltip(null)}
                       >
-                        <Filter className="h-4 w-4" />
+                        <Filter className={`h-4 w-4 ${isClassFilterActive ? "text-[var(--cta)]" : ""}`} />
+                        {isClassFilterActive ? (
+                          <span
+                            aria-hidden="true"
+                            className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-[var(--cta)] ring-1 ring-white/20"
+                          />
+                        ) : null}
                       </button>
                     </PopoverTrigger>
                     <PopoverContent
                       align="start"
                       sideOffset={4}
+                      onCloseAutoFocus={(e) => e.preventDefault()}
                       className="w-[220px] rounded-xl border border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] p-2 shadow-xl backdrop-blur-md"
                     >
                       <div className="flex flex-wrap items-center justify-between gap-1 pb-2 text-xs text-[var(--brand-ink)]">
@@ -5170,8 +5294,12 @@ function buildAvailabilityVm(opts: {
                   <button
                     type="button"
                     onClick={() => toggleSort("location")}
-                    className="rounded p-1 hover:bg-white/10"
-                    title="Sort Location"
+                    className="group relative rounded p-1 hover:bg-white/10"
+                    aria-label="Sort Location"
+                    onMouseEnter={(e) => setHeaderTooltip({ text: "Sort Location", el: e.currentTarget })}
+                    onMouseLeave={() => setHeaderTooltip(null)}
+                    onFocus={(e) => setHeaderTooltip({ text: "Sort Location", el: e.currentTarget })}
+                    onBlur={() => setHeaderTooltip(null)}
                   >
                     {getSortDirection("location") === "asc" ? (
                       <ArrowUp className="h-4 w-4" />
@@ -5181,19 +5309,40 @@ function buildAvailabilityVm(opts: {
                       <ArrowUpDown className="h-4 w-4" />
                     )}
                   </button>
-                  <Popover open={locationFilterOpen} onOpenChange={setLocationFilterOpen}>
+                  <Popover open={locationFilterOpen} onOpenChange={setLocationFilterOpen} modal>
                     <PopoverTrigger asChild>
                       <button
                         type="button"
-                        className="rounded p-1 hover:bg-white/10"
-                        title="Filter Location"
+                        className="group relative rounded p-1 hover:bg-white/10"
+                        aria-label={isLocationFilterActive ? "Filter Location (active)" : "Filter Location"}
+                        onMouseEnter={(e) =>
+                          setHeaderTooltip({
+                            text: isLocationFilterActive ? "Filter Location (active)" : "Filter Location",
+                            el: e.currentTarget,
+                          })
+                        }
+                        onMouseLeave={() => setHeaderTooltip(null)}
+                        onFocus={(e) =>
+                          setHeaderTooltip({
+                            text: isLocationFilterActive ? "Filter Location (active)" : "Filter Location",
+                            el: e.currentTarget,
+                          })
+                        }
+                        onBlur={() => setHeaderTooltip(null)}
                       >
-                        <Filter className="h-4 w-4" />
+                        <Filter className={`h-4 w-4 ${isLocationFilterActive ? "text-[var(--cta)]" : ""}`} />
+                        {isLocationFilterActive ? (
+                          <span
+                            aria-hidden="true"
+                            className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-[var(--cta)] ring-1 ring-white/20"
+                          />
+                        ) : null}
                       </button>
                     </PopoverTrigger>
                     <PopoverContent
                       align="start"
                       sideOffset={4}
+                      onCloseAutoFocus={(e) => e.preventDefault()}
                       className="w-[240px] rounded-xl border border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] p-2 shadow-xl backdrop-blur-md"
                     >
                       <div className="flex flex-wrap items-center justify-between gap-1 pb-2 text-xs text-[var(--brand-ink)]">
@@ -5242,8 +5391,12 @@ function buildAvailabilityVm(opts: {
                   <button
                     type="button"
                     onClick={() => toggleSort("instructor")}
-                    className="rounded p-1 hover:bg-white/10"
-                    title="Sort Instructor"
+                    className="group relative rounded p-1 hover:bg-white/10"
+                    aria-label="Sort Instructor"
+                    onMouseEnter={(e) => setHeaderTooltip({ text: "Sort Instructor", el: e.currentTarget })}
+                    onMouseLeave={() => setHeaderTooltip(null)}
+                    onFocus={(e) => setHeaderTooltip({ text: "Sort Instructor", el: e.currentTarget })}
+                    onBlur={() => setHeaderTooltip(null)}
                   >
                     {getSortDirection("instructor") === "asc" ? (
                       <ArrowUp className="h-4 w-4" />
@@ -5253,19 +5406,40 @@ function buildAvailabilityVm(opts: {
                       <ArrowUpDown className="h-4 w-4" />
                     )}
                   </button>
-                  <Popover open={instructorFilterOpen} onOpenChange={setInstructorFilterOpen}>
+                  <Popover open={instructorFilterOpen} onOpenChange={setInstructorFilterOpen} modal>
                     <PopoverTrigger asChild>
                       <button
                         type="button"
-                        className="rounded p-1 hover:bg-white/10"
-                        title="Filter Instructor"
+                        className="group relative rounded p-1 hover:bg-white/10"
+                        aria-label={isInstructorFilterActive ? "Filter Instructor (active)" : "Filter Instructor"}
+                        onMouseEnter={(e) =>
+                          setHeaderTooltip({
+                            text: isInstructorFilterActive ? "Filter Instructor (active)" : "Filter Instructor",
+                            el: e.currentTarget,
+                          })
+                        }
+                        onMouseLeave={() => setHeaderTooltip(null)}
+                        onFocus={(e) =>
+                          setHeaderTooltip({
+                            text: isInstructorFilterActive ? "Filter Instructor (active)" : "Filter Instructor",
+                            el: e.currentTarget,
+                          })
+                        }
+                        onBlur={() => setHeaderTooltip(null)}
                       >
-                        <Filter className="h-4 w-4" />
+                        <Filter className={`h-4 w-4 ${isInstructorFilterActive ? "text-[var(--cta)]" : ""}`} />
+                        {isInstructorFilterActive ? (
+                          <span
+                            aria-hidden="true"
+                            className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-[var(--cta)] ring-1 ring-white/20"
+                          />
+                        ) : null}
                       </button>
                     </PopoverTrigger>
                     <PopoverContent
                       align="start"
                       sideOffset={4}
+                      onCloseAutoFocus={(e) => e.preventDefault()}
                       className="w-[240px] rounded-xl border border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] p-2 shadow-xl backdrop-blur-md"
                     >
                       <div className="flex flex-wrap items-center justify-between gap-1 pb-2 text-xs text-[var(--brand-ink)]">

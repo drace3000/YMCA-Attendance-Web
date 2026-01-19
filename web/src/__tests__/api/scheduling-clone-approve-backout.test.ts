@@ -135,8 +135,18 @@ describe("/api/scheduling/clone approve/backout", () => {
 
     let deletedAudit = false;
     let touchedConstraintEvents = false;
+    let touchedHolidays = false;
+    let touchedAvailability = false;
     mockCreateSupabaseServerClient.mockReturnValue(
       createMockSupabaseClient({
+        holidays: async () => {
+          touchedHolidays = true;
+          return { data: null, error: { message: "should not touch holidays when backing out a schedule" } };
+        },
+        instructor_availability: async () => {
+          touchedAvailability = true;
+          return { data: null, error: { message: "should not touch instructor availability when backing out a schedule" } };
+        },
         schedule_clone_constraint_events: async () => {
           touchedConstraintEvents = true;
           return { data: null, error: { message: "should not touch constraint events directly (cascade)" } };
@@ -202,6 +212,8 @@ describe("/api/scheduling/clone approve/backout", () => {
     expect(json.deleted_schedule_id).toBe("sch-new");
     expect(json.redirect_schedule_id).toBe("sch-src");
     expect(touchedConstraintEvents).toBe(false);
+    expect(touchedHolidays).toBe(false);
+    expect(touchedAvailability).toBe(false);
   });
 });
 

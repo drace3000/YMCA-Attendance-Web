@@ -179,5 +179,90 @@ describe("/api/scheduling/clone/constraints-report", () => {
       location: { id: "loc-1", code: "STUDIO", name: "Studio" },
     });
   });
+
+  it("enriches dropped/kept instructor IDs in details for availability-related events", async () => {
+    mockRequireRecipientAccess.mockResolvedValueOnce({
+      ok: true,
+      access: { recipient_type: "Branch", branch_id: "br-1" },
+    });
+
+    mockCreateSupabaseServerClient.mockReturnValue(
+      createMockSupabaseClient({
+        schedule_clone_audit: async () => ({
+          data: {
+            id: "audit-1",
+            branch_id: "br-1",
+            program_group_id: "pg-1",
+            source_schedule_id: "sch-src",
+            target_schedule_id: "sch-target",
+            source_month_start: "2025-12-01",
+            target_month_start: "2026-01-01",
+            sessions_created_count: 1,
+            sessions_skipped_count: 0,
+          },
+          error: null,
+        }),
+        ymca_branches: async () => ({
+          data: { id: "br-1", name: "Eastside", association: { name: "Metro YMCA" } },
+          error: null,
+        }),
+        schedule_clone_constraint_events: async () => ({
+          data: [
+            {
+              id: "e2",
+              audit_id: "audit-1",
+              branch_id: "br-1",
+              program_group_id: "pg-1",
+              source_schedule_id: "sch-src",
+              target_schedule_id: "sch-target",
+              event_type: "MODIFIED_DROPPED_INSTRUCTORS",
+              source_session_id: "sess-src-1",
+              class_id: "cls-1",
+              location_id: "loc-1",
+              target_session_date: "2026-01-03",
+              target_day_of_week: "SATURDAY",
+              target_start_time: "07:15",
+              target_end_time: "07:45",
+              details: {
+                reason: "Dropped unavailable instructors for target day/time",
+                dropped_instructor_ids: ["inst-2"],
+                kept_instructor_ids: ["inst-1"],
+                original_instructor_ids: ["inst-1", "inst-2"],
+              },
+              created_at: "2026-01-01T00:00:00Z",
+            },
+          ],
+          error: null,
+        }),
+        classes: async () => ({ data: [{ id: "cls-1", name: "Yoga" }], error: null }),
+        locations: async () => ({ data: [{ id: "loc-1", code: "STUDIO", name: "Studio" }], error: null }),
+        instructors: async () => ({
+          data: [
+            { id: "inst-1", nickname: "MIKEY", first_name: "John", last_name: "Smith", readable_id: "I001" },
+            { id: "inst-2", nickname: "JENN W", first_name: "Jenn", last_name: "W", readable_id: "I002" },
+          ],
+          error: null,
+        }),
+      }),
+    );
+
+    const req = new NextRequest(
+      "http://localhost:3000/api/scheduling/clone/constraints-report?branch_id=br-1&program_group_id=pg-1&target_schedule_id=sch-target",
+    );
+    const res = await GET(req);
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.ok).toBe(true);
+    expect(json.groups).toHaveLength(1);
+
+    const row = json.groups[0].rows[0];
+    expect(row.details.dropped_instructors).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: "inst-2", label: expect.stringContaining("JENN W") })]),
+    );
+    expect(row.details.kept_instructors).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: "inst-1", label: expect.stringContaining("MIKEY") })]),
+    );
+  });
 });
 
