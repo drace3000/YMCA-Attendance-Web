@@ -9,6 +9,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { PopoverSelect } from "@/components/ui/popover-select";
 
 type ClassItem = {
   id: string;
@@ -38,6 +39,24 @@ type ProgramGroup = {
   is_enabled: boolean;
 };
 
+type LocationItem = {
+  id: string;
+  code: string;
+  name: string;
+  is_active: boolean;
+  branch_id: string;
+};
+
+type ClassLocationMapping = {
+  id: string;
+  class_id: string;
+  instructor_id: string;
+  location_id: string;
+  location_name: string | null;
+  location_label: string | null;
+  minutes: number;
+};
+
 // Trademark symbols available for class names
 const TRADEMARK_SYMBOLS = [
   { symbol: "\u2122", name: "Trademark", label: "TM" },
@@ -45,6 +64,8 @@ const TRADEMARK_SYMBOLS = [
   { symbol: "\u2120", name: "Service Mark", label: "SM" },
   { symbol: "\u00A9", name: "Copyright", label: "C" },
 ];
+
+const DURATION_OPTIONS = [30, 45, 60];
 
 export function ClassesTab() {
   const { branch } = useThemeSettings();
@@ -73,6 +94,24 @@ export function ClassesTab() {
   // Name validation
   const [nameExists, setNameExists] = useState(false);
   const [validatingName, setValidatingName] = useState(false);
+
+  // Class location + duration mappings (class-only, via placeholder instructor)
+  const [locations, setLocations] = useState<LocationItem[]>([]);
+  const [locationsLoading, setLocationsLoading] = useState(false);
+  const [locationsError, setLocationsError] = useState<string | null>(null);
+  const [classMappings, setClassMappings] = useState<ClassLocationMapping[]>([]);
+  const [allClassMappings, setAllClassMappings] = useState<ClassLocationMapping[]>([]);
+  const [classMappingLoading, setClassMappingLoading] = useState(false);
+  const [classMappingError, setClassMappingError] = useState<string | null>(null);
+  const [allMappingLoading, setAllMappingLoading] = useState(false);
+  const [allMappingError, setAllMappingError] = useState<string | null>(null);
+  const [placeholderInstructorId, setPlaceholderInstructorId] = useState<string | null>(null);
+  const [durationSelect, setDurationSelect] = useState<string>("");
+  const [locationSelect, setLocationSelect] = useState<string>("");
+  const [pendingLocationIds, setPendingLocationIds] = useState<string[]>([]);
+  const [customDurationInput, setCustomDurationInput] = useState<string>("");
+  const [durationActionError, setDurationActionError] = useState<string | null>(null);
+  const [locationActionError, setLocationActionError] = useState<string | null>(null);
 
   // Symbol picker
   const [showSymbolPicker, setShowSymbolPicker] = useState(false);
@@ -105,9 +144,120 @@ export function ClassesTab() {
     }
   }, [showInactive, branch.id, selectedProgramGroupId]);
 
+  const loadLocations = useCallback(async () => {
+    setLocationsLoading(true);
+    setLocationsError(null);
+    try {
+      const params = new URLSearchParams();
+      params.set("branch_id", branch.id);
+      const res = await fetch(`/api/maintenance/locations?${params.toString()}`);
+      if (!res.ok) throw new Error("Failed to load locations");
+      const data = (await res.json()) as LocationItem[];
+      setLocations(Array.isArray(data) ? data : []);
+    } catch (e) {
+      setLocationsError(e instanceof Error ? e.message : "Failed to load locations");
+      setLocations([]);
+    } finally {
+      setLocationsLoading(false);
+    }
+  }, [branch.id]);
+
+  const loadClassMappings = useCallback(async () => {
+    if (!editingId) {
+      setClassMappings([]);
+      setPlaceholderInstructorId(null);
+      return;
+    }
+
+    setClassMappingLoading(true);
+    setClassMappingError(null);
+    try {
+      const params = new URLSearchParams();
+      params.set("branch_id", branch.id);
+      params.set("class_id", editingId);
+      params.set("class_only", "true");
+      const res = await fetch(`/api/scheduling/instructor-class-location-details?${params.toString()}`);
+      if (!res.ok) {
+        const json = await res.json().catch(() => null);
+        throw new Error(json?.error || "Failed to load class mappings");
+      }
+      const json = (await res.json()) as {
+        rows?: ClassLocationMapping[];
+        placeholder_instructor_id?: string | null;
+      };
+      const rows = Array.isArray(json?.rows) ? json.rows : [];
+      setClassMappings(
+        rows.map((r) => ({
+          id: String(r.id ?? ""),
+          class_id: String(r.class_id ?? ""),
+          instructor_id: String(r.instructor_id ?? ""),
+          location_id: String(r.location_id ?? ""),
+          location_name: r.location_name ? String(r.location_name) : null,
+          location_label: r.location_label ? String(r.location_label) : null,
+          minutes: Number(r.minutes),
+        })),
+      );
+      setPlaceholderInstructorId(json?.placeholder_instructor_id ?? null);
+    } catch (e) {
+      setClassMappingError(e instanceof Error ? e.message : "Failed to load class mappings");
+      setClassMappings([]);
+      setPlaceholderInstructorId(null);
+    } finally {
+      setClassMappingLoading(false);
+    }
+  }, [branch.id, editingId]);
+
+  const loadAllClassMappings = useCallback(async () => {
+    if (!editingId) {
+      setAllClassMappings([]);
+      return;
+    }
+
+    setAllMappingLoading(true);
+    setAllMappingError(null);
+    try {
+      const params = new URLSearchParams();
+      params.set("branch_id", branch.id);
+      params.set("class_id", editingId);
+      const res = await fetch(`/api/scheduling/instructor-class-location-details?${params.toString()}`);
+      if (!res.ok) {
+        const json = await res.json().catch(() => null);
+        throw new Error(json?.error || "Failed to load class mappings");
+      }
+      const json = (await res.json()) as { rows?: ClassLocationMapping[] };
+      const rows = Array.isArray(json?.rows) ? json.rows : [];
+      setAllClassMappings(
+        rows.map((r) => ({
+          id: String(r.id ?? ""),
+          class_id: String(r.class_id ?? ""),
+          instructor_id: String(r.instructor_id ?? ""),
+          location_id: String(r.location_id ?? ""),
+          location_name: r.location_name ? String(r.location_name) : null,
+          location_label: r.location_label ? String(r.location_label) : null,
+          minutes: Number(r.minutes),
+        })),
+      );
+    } catch (e) {
+      setAllMappingError(e instanceof Error ? e.message : "Failed to load class mappings");
+      setAllClassMappings([]);
+    } finally {
+      setAllMappingLoading(false);
+    }
+  }, [branch.id, editingId]);
+
   useEffect(() => {
     void loadClasses();
   }, [loadClasses]);
+
+  useEffect(() => {
+    void loadLocations();
+  }, [loadLocations]);
+
+  useEffect(() => {
+    if (!isFormOpen) return;
+    void loadClassMappings();
+    void loadAllClassMappings();
+  }, [isFormOpen, loadClassMappings, loadAllClassMappings]);
 
   // Load enabled program groups for this branch (default GroupX)
   useEffect(() => {
@@ -193,6 +343,19 @@ export function ClassesTab() {
     setEditingId(null);
     setFormError(null);
     setNameExists(false);
+    setClassMappings([]);
+    setAllClassMappings([]);
+    setClassMappingError(null);
+    setClassMappingLoading(false);
+    setAllMappingError(null);
+    setAllMappingLoading(false);
+    setPlaceholderInstructorId(null);
+    setDurationSelect("");
+    setLocationSelect("");
+    setPendingLocationIds([]);
+    setCustomDurationInput("");
+    setDurationActionError(null);
+    setLocationActionError(null);
     setIsFormOpen(true);
   };
 
@@ -207,6 +370,12 @@ export function ClassesTab() {
     setEditingId(classItem.id);
     setFormError(null);
     setNameExists(false);
+    setDurationSelect("");
+    setLocationSelect("");
+    setPendingLocationIds([]);
+    setCustomDurationInput("");
+    setDurationActionError(null);
+    setLocationActionError(null);
     setIsFormOpen(true);
   };
 
@@ -216,6 +385,17 @@ export function ClassesTab() {
     setFormError(null);
     setNameExists(false);
     setShowSymbolPicker(false);
+    setClassMappings([]);
+    setAllClassMappings([]);
+    setClassMappingError(null);
+    setPlaceholderInstructorId(null);
+    setAllMappingError(null);
+    setDurationSelect("");
+    setLocationSelect("");
+    setPendingLocationIds([]);
+    setCustomDurationInput("");
+    setDurationActionError(null);
+    setLocationActionError(null);
   };
 
   const insertSymbol = (symbol: string) => {
@@ -293,6 +473,220 @@ export function ClassesTab() {
     }
   };
 
+  const durationOptions = useMemo(
+    () => DURATION_OPTIONS.map((value) => ({ value: String(value), label: `${value} minutes` })),
+    [],
+  );
+
+  const durationOptionByValue = useMemo(() => {
+    const map = new Map<number, { value: string; label: string }>();
+    for (const opt of durationOptions) {
+      const num = Number(opt.value);
+      if (Number.isFinite(num)) {
+        map.set(num, opt);
+      }
+    }
+    return map;
+  }, [durationOptions]);
+
+  const mappingDurations = useMemo(() => {
+    const unique = Array.from(new Set(allClassMappings.map((m) => m.minutes))).filter((m) => m > 0);
+    return unique.sort((a, b) => a - b);
+  }, [allClassMappings]);
+
+  const mappingLocations = useMemo(() => {
+    const byId = new Map<string, { id: string; label: string }>();
+    for (const row of allClassMappings) {
+      const label = row.location_label || row.location_name || row.location_id;
+      if (row.location_id && !byId.has(row.location_id)) {
+        byId.set(row.location_id, { id: row.location_id, label });
+      }
+    }
+    return Array.from(byId.values()).sort((a, b) => a.label.localeCompare(b.label));
+  }, [allClassMappings]);
+
+  const mappingKeySet = useMemo(() => {
+    return new Set(allClassMappings.map((r) => `${r.location_id}:${r.minutes}`));
+  }, [allClassMappings]);
+
+  const pendingLocations = useMemo(() => {
+    const byId = new Map(locations.map((loc) => [loc.id, loc]));
+    return pendingLocationIds
+      .map((id) => {
+        const loc = byId.get(id);
+        if (!loc) return null;
+        return { id: loc.id, label: `${loc.code} - ${loc.name}` };
+      })
+      .filter((item): item is { id: string; label: string } => !!item);
+  }, [locations, pendingLocationIds]);
+
+
+
+  const locationOptions = useMemo(
+    () =>
+      locations.map((l) => ({
+        value: l.id,
+        label: `${l.code} - ${l.name}`,
+      })),
+    [locations],
+  );
+
+  const addMappings = useCallback(
+    async (items: Array<{ location_id: string; minutes: number; location_name?: string }>) => {
+      if (!editingId) return;
+      if (!items.length) return;
+      const payload = {
+        branch_id: branch.id,
+        class_id: editingId,
+        class_name: formData.name,
+        items: items.map((i) => ({
+          location_id: i.location_id,
+          minutes: i.minutes,
+          location_name: i.location_name,
+          class_name: formData.name,
+        })),
+      };
+      const res = await fetch("/api/scheduling/instructor-class-location-details", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json?.error || "Failed to save class mappings");
+      }
+      await loadClassMappings();
+      await loadAllClassMappings();
+    },
+    [branch.id, editingId, formData.name, loadClassMappings, loadAllClassMappings],
+  );
+
+  const handleAddDuration = useCallback(async (nextMinutes?: number) => {
+    setDurationActionError(null);
+    if (!editingId) return;
+    const minutes = Number(nextMinutes ?? durationSelect);
+    if (!Number.isFinite(minutes) || minutes <= 0) return;
+    if (minutes % 15 !== 0) {
+      setDurationActionError("Duration must be in 15-minute increments.");
+      return;
+    }
+    if (mappingLocations.length === 0 && pendingLocations.length === 0) {
+      setDurationActionError("Select a location first, then add a duration.");
+      return;
+    }
+    if (mappingDurations.includes(minutes)) {
+      setDurationActionError("That duration is already assigned.");
+      return;
+    }
+
+    const activeLocations = mappingLocations.length > 0 ? mappingLocations : pendingLocations;
+    const items = activeLocations
+      .map((loc) => ({
+        location_id: loc.id,
+        minutes,
+        location_name: loc.label,
+      }))
+      .filter((item) => !mappingKeySet.has(`${item.location_id}:${item.minutes}`));
+
+    if (items.length === 0) return;
+    try {
+      await addMappings(items);
+      if (pendingLocations.length > 0) {
+        setPendingLocationIds([]);
+      }
+      setDurationSelect("");
+    } catch (e) {
+      setDurationActionError(e instanceof Error ? e.message : "Failed to add duration");
+    }
+  }, [addMappings, durationSelect, editingId, mappingKeySet, mappingLocations, mappingDurations, pendingLocations.length]);
+
+  const handleAddLocation = useCallback(async (nextLocationId?: string) => {
+    setLocationActionError(null);
+    if (!editingId) return;
+    const locationId = nextLocationId ?? locationSelect;
+    if (!locationId) return;
+    if (mappingDurations.length === 0) {
+      setLocationActionError(null);
+      setPendingLocationIds((prev) => (prev.includes(locationId) ? prev : [...prev, locationId]));
+      setLocationSelect("");
+      return;
+    }
+    if (mappingLocations.some((loc) => loc.id === locationId)) {
+      setLocationActionError("That location is already assigned.");
+      return;
+    }
+    if (pendingLocationIds.includes(locationId)) {
+      return;
+    }
+
+    const loc = locations.find((l) => l.id === locationId);
+    if (!loc) return;
+    const label = `${loc.code} - ${loc.name}`;
+
+    const items = mappingDurations
+      .map((minutes) => ({
+        location_id: loc.id,
+        minutes,
+        location_name: label,
+      }))
+      .filter((item) => !mappingKeySet.has(`${item.location_id}:${item.minutes}`));
+
+    if (items.length === 0) return;
+    try {
+      await addMappings(items);
+      setLocationSelect("");
+    } catch (e) {
+      setLocationActionError(e instanceof Error ? e.message : "Failed to add location");
+    }
+  }, [addMappings, editingId, locationSelect, locations, mappingDurations, mappingKeySet, mappingLocations, pendingLocationIds]);
+
+  const deleteMappingsByCriteria = useCallback(
+    async (criteria: { minutes?: number; locationId?: string }) => {
+      if (!editingId) return;
+      const params = new URLSearchParams();
+      params.set("branch_id", branch.id);
+      params.set("class_id", editingId);
+      params.set("scope", "all");
+      if (criteria.minutes !== undefined) params.set("minutes", String(criteria.minutes));
+      if (criteria.locationId) params.set("location_id", criteria.locationId);
+      const res = await fetch(
+        `/api/scheduling/instructor-class-location-details?${params.toString()}`,
+        { method: "DELETE" },
+      );
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json?.error || "Failed to delete class mappings");
+      }
+      await loadClassMappings();
+      await loadAllClassMappings();
+    },
+    [branch.id, editingId, loadClassMappings, loadAllClassMappings],
+  );
+
+  const handleRemoveDuration = useCallback(
+    async (minutes: number) => {
+      setDurationActionError(null);
+      try {
+        await deleteMappingsByCriteria({ minutes });
+      } catch (e) {
+        setDurationActionError(e instanceof Error ? e.message : "Failed to remove duration");
+      }
+    },
+    [deleteMappingsByCriteria],
+  );
+
+  const handleRemoveLocation = useCallback(
+    async (locationId: string) => {
+      setLocationActionError(null);
+      try {
+        await deleteMappingsByCriteria({ locationId });
+      } catch (e) {
+        setLocationActionError(e instanceof Error ? e.message : "Failed to remove location");
+      }
+    },
+    [deleteMappingsByCriteria],
+  );
+
   // Search/filter logic
   const matchesSearch = useCallback((classItem: ClassItem, term: string): boolean => {
     if (!term.trim()) return true;
@@ -364,20 +758,25 @@ export function ClassesTab() {
             ) : programGroups.length === 0 ? (
               <span className="text-xs text-muted-foreground">No enabled groups</span>
             ) : (
-              <select
-                className="ymca-select w-44 text-sm font-semibold"
-                value={selectedProgramGroupId}
-                onChange={(e) => {
-                  setSelectedProgramGroupId(e.target.value);
-                  setFormData((f) => ({ ...f, program_group_id: e.target.value, branch_id: branch.id }));
-                }}
-              >
-                {programGroups.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.code} - {g.name}
-                  </option>
-                ))}
-              </select>
+              <>
+                <select
+                  className="rounded-lg border border-white/15 bg-[var(--cta)] px-3 py-1 text-sm font-semibold text-[var(--cta-foreground)] shadow-sm ring-1 ring-white/10 hover:opacity-90 focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
+                  value={selectedProgramGroupId}
+                  onChange={(e) => {
+                    setSelectedProgramGroupId(e.target.value);
+                    setFormData((f) => ({ ...f, program_group_id: e.target.value, branch_id: branch.id }));
+                  }}
+                >
+                  {programGroups.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.code}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-xs font-semibold text-orange-400/90">
+                  {programGroups.find((g) => g.id === selectedProgramGroupId)?.name ?? ""}
+                </span>
+              </>
             )}
           </div>
         </div>
@@ -469,7 +868,7 @@ export function ClassesTab() {
 
       {/* Form Modal */}
       {isFormOpen && (
-        <div className="border-b border-border bg-card/50 px-5 py-4">
+        <div className="rounded-2xl border border-[var(--brand-strong)]/60 bg-[rgb(var(--brand-soft-rgb)/0.18)] px-5 py-4 shadow-sm ring-1 ring-white/5">
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold">
@@ -484,85 +883,319 @@ export function ClassesTab() {
               </button>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="text-sm font-medium text-foreground">
-                  Class Name <span className="text-red-400">*</span>
-                  {validatingName && (
-                    <span className="ml-2 text-xs text-foreground/50">checking...</span>
-                  )}
-                </label>
-                <div className="relative mt-1 flex">
-                  <input
-                    ref={nameInputRef}
-                    type="text"
-                    value={formData.name}
-                    onChange={(e) => setFormData((f) => ({ ...f, name: e.target.value }))}
-                    className={`flex-1 rounded-l-xl border-r-0 px-3 py-2 text-sm text-foreground placeholder:text-foreground/50 focus:outline-none focus:ring-2 ${
-                      nameExists
-                        ? "border border-red-400/50 bg-red-950/20 focus:ring-red-400/50"
-                        : "border border-white/15 bg-black/20 focus:ring-[var(--brand)]/50"
-                    }`}
-                    placeholder="e.g., BODYPUMP"
-                  />
-                  <div className="relative" ref={symbolPickerRef}>
-                    <button
-                      type="button"
-                      onClick={() => setShowSymbolPicker(!showSymbolPicker)}
-                      className="flex h-full items-center gap-1 rounded-r-xl border border-white/15 bg-[var(--brand)]/80 px-3 text-sm font-medium text-white hover:bg-[var(--brand)]"
-                      title="Insert trademark symbol"
-                    >
-                      TM
-                      <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                      </svg>
-                    </button>
+            <div className="rounded-2xl border border-[var(--brand-strong)]/60 bg-[rgb(var(--brand-soft-rgb)/0.18)] px-4 py-3 shadow-sm ring-1 ring-white/5">
+              <div className="flex flex-col gap-2">
+                <div className="text-sm font-semibold text-foreground">Class details</div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="text-sm font-medium text-foreground">
+                      Class Name <span className="text-red-400">*</span>
+                      {validatingName && (
+                        <span className="ml-2 text-xs text-foreground/50">checking...</span>
+                      )}
+                    </label>
+                    <div className="relative mt-1 flex">
+                      <input
+                        ref={nameInputRef}
+                        type="text"
+                        value={formData.name}
+                        onChange={(e) => setFormData((f) => ({ ...f, name: e.target.value }))}
+                        className={`flex-1 rounded-l-xl border-r-0 px-3 py-2 text-sm text-foreground placeholder:text-foreground/50 focus:outline-none focus:ring-2 ${
+                          nameExists
+                            ? "border border-red-400/50 bg-red-950/20 focus:ring-red-400/50"
+                            : "border border-white/15 bg-black/20 focus:ring-[var(--brand)]/50"
+                        }`}
+                        placeholder="e.g., BODYPUMP"
+                      />
+                      <div className="relative" ref={symbolPickerRef}>
+                        <button
+                          type="button"
+                          onClick={() => setShowSymbolPicker(!showSymbolPicker)}
+                          className="flex h-full items-center gap-1 rounded-r-xl border border-white/15 bg-[var(--brand)]/80 px-3 text-sm font-medium text-white hover:bg-[var(--brand)]"
+                          title="Insert trademark symbol"
+                        >
+                          TM
+                          <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </button>
 
-                    {showSymbolPicker && (
-                      <div className="absolute right-0 top-full z-10 mt-1 min-w-[160px] rounded-xl border border-white/15 bg-black/90 py-1 shadow-xl backdrop-blur">
-                        {TRADEMARK_SYMBOLS.map((item) => (
-                          <button
-                            key={item.symbol}
-                            type="button"
-                            onClick={() => insertSymbol(item.symbol)}
-                            className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-white/10"
-                          >
-                            <span className="text-lg">{item.symbol}</span>
-                            <span className="text-foreground/80">{item.name}</span>
-                          </button>
-                        ))}
+                        {showSymbolPicker && (
+                          <div className="absolute right-0 top-full z-10 mt-1 min-w-[160px] rounded-xl border border-white/15 bg-black/90 py-1 shadow-xl backdrop-blur">
+                            {TRADEMARK_SYMBOLS.map((item) => (
+                              <button
+                                key={item.symbol}
+                                type="button"
+                                onClick={() => insertSymbol(item.symbol)}
+                                className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-white/10"
+                              >
+                                <span className="text-lg">{item.symbol}</span>
+                                <span className="text-foreground/80">{item.name}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </div>
+                      {formData.name && !validatingName && !nameExists && (
+                        <Check className="absolute right-14 top-1/2 h-4 w-4 -translate-y-1/2 text-green-400" />
+                      )}
+                    </div>
+                    {nameExists && (
+                      <p className="mt-1 text-xs text-red-400">This class name already exists</p>
                     )}
                   </div>
-                  {formData.name && !validatingName && !nameExists && (
-                    <Check className="absolute right-14 top-1/2 h-4 w-4 -translate-y-1/2 text-green-400" />
-                  )}
+
+                  <div>
+                    <label className="text-sm font-medium text-foreground">Category</label>
+                    <input
+                      type="text"
+                      value={formData.category}
+                      onChange={(e) => setFormData((f) => ({ ...f, category: e.target.value }))}
+                      className="mt-1 w-full rounded-xl border border-white/15 bg-black/20 px-3 py-2 text-sm text-foreground placeholder:text-foreground/50 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/50"
+                      placeholder="e.g., Cardio, Strength, Yoga"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label className="text-sm font-medium text-foreground">Description</label>
+                    <textarea
+                      value={formData.description}
+                      onChange={(e) => setFormData((f) => ({ ...f, description: e.target.value }))}
+                      rows={2}
+                      className="mt-1 w-full rounded-xl border border-white/15 bg-black/20 px-3 py-2 text-sm text-foreground placeholder:text-foreground/50 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/50"
+                      placeholder="Optional description..."
+                    />
+                  </div>
                 </div>
-                {nameExists && (
-                  <p className="mt-1 text-xs text-red-400">This class name already exists</p>
+              </div>
+            </div>
+
+            <div
+              className="rounded-2xl border border-[var(--brand-strong)]/60 bg-[rgb(var(--brand-soft-rgb)/0.18)] px-4 py-3 shadow-sm ring-1 ring-white/5"
+              data-testid="class-durations-section"
+            >
+              <div className="flex flex-col gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="text-sm font-semibold text-foreground">Class durations</div>
+                  <span className="rounded-full bg-black/15 px-2 py-0.5 text-[11px] font-semibold text-foreground/80 ring-1 ring-black/10">
+                    {mappingDurations.length}
+                  </span>
+                </div>
+
+                {!editingId ? (
+                  <div className="text-sm text-muted-foreground">
+                    Save the class first to assign durations.
+                  </div>
+                ) : classMappingLoading ? (
+                  <div className="text-sm text-muted-foreground">Loading durations…</div>
+                ) : (
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="rounded-xl border border-white/10 bg-black/15 p-3">
+                      <div className="mb-2 text-xs font-semibold text-muted-foreground">Assigned durations</div>
+                      {mappingDurations.length === 0 ? (
+                        <span className="text-sm text-muted-foreground">No durations assigned yet.</span>
+                      ) : (
+                        <div className="flex flex-wrap gap-2">
+                          {mappingDurations.map((d) => {
+                            return (
+                              <button
+                                key={d}
+                                type="button"
+                                onClick={() => void handleRemoveDuration(d)}
+                                className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/20 px-3 py-1 text-xs font-semibold text-foreground whitespace-nowrap hover:bg-black/30"
+                                aria-label={`Remove ${d} minutes`}
+                              >
+                                <span>{d} minutes</span>
+                                <X className="h-3 w-3 text-foreground/70" />
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="rounded-xl border border-white/10 bg-black/15 p-3">
+                      <div className="mb-2 text-xs font-semibold text-muted-foreground">Available durations</div>
+                      <div className="flex flex-wrap gap-2">
+                        {DURATION_OPTIONS.map((d) => {
+                          const disabled =
+                            mappingDurations.includes(d) ||
+                            (mappingLocations.length === 0 && pendingLocations.length === 0);
+                          return (
+                            <button
+                              key={d}
+                              type="button"
+                              disabled={disabled}
+                              onClick={() => void handleAddDuration(d)}
+                              className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                                disabled
+                                  ? "cursor-not-allowed bg-black/20 text-muted-foreground/60"
+                                  : "border border-white/10 bg-black/20 text-foreground hover:bg-black/30"
+                              }`}
+                              aria-disabled={disabled}
+                            >
+                              <span className="mr-2 inline-flex h-4 w-4 items-center justify-center rounded-full border border-white/20 text-[10px] text-foreground/80">
+                                +
+                              </span>
+                              {durationOptionByValue.get(d)?.label ?? `${d} minutes`}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            min={15}
+                            step={15}
+                            value={customDurationInput}
+                            onChange={(e) => setCustomDurationInput(e.target.value)}
+                            className="w-[110px] rounded-lg border border-white/15 bg-black/20 px-2 py-1 text-xs text-foreground placeholder:text-foreground/40 focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
+                            placeholder="Custom min"
+                            aria-label="Custom duration"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const minutes = Number(customDurationInput);
+                              void handleAddDuration(minutes);
+                              setCustomDurationInput("");
+                            }}
+                            disabled={
+                              !customDurationInput ||
+                              (mappingLocations.length === 0 && pendingLocations.length === 0)
+                            }
+                            className="btn-pill inline-flex items-center gap-2 bg-black/40 px-3 py-1.5 text-xs font-semibold text-foreground shadow-sm hover:bg-black/50 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <Plus className="h-3 w-3" />
+                            Add custom
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 )}
-              </div>
 
-              <div>
-                <label className="text-sm font-medium text-foreground">Category</label>
-                <input
-                  type="text"
-                  value={formData.category}
-                  onChange={(e) => setFormData((f) => ({ ...f, category: e.target.value }))}
-                  className="mt-1 w-full rounded-xl border border-white/15 bg-black/20 px-3 py-2 text-sm text-foreground placeholder:text-foreground/50 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/50"
-                  placeholder="e.g., Cardio, Strength, Yoga"
-                />
+                {durationActionError ? (
+                  <div className="text-sm text-red-400">{durationActionError}</div>
+                ) : null}
+                {mappingLocations.length === 0 && pendingLocations.length === 0 ? (
+                  <div className="text-sm text-orange-400/90">
+                    Sequence: choose a location first, then add a duration.
+                  </div>
+                ) : null}
+                {classMappingError ? (
+                  <div className="text-sm text-red-400">{classMappingError}</div>
+                ) : null}
               </div>
+            </div>
 
-              <div className="sm:col-span-2">
-                <label className="text-sm font-medium text-foreground">Description</label>
-                <textarea
-                  value={formData.description}
-                  onChange={(e) => setFormData((f) => ({ ...f, description: e.target.value }))}
-                  rows={2}
-                  className="mt-1 w-full rounded-xl border border-white/15 bg-black/20 px-3 py-2 text-sm text-foreground placeholder:text-foreground/50 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/50"
-                  placeholder="Optional description..."
-                />
+            <div
+              className="rounded-2xl border border-[var(--brand-strong)]/60 bg-[rgb(var(--brand-soft-rgb)/0.18)] px-4 py-3 shadow-sm ring-1 ring-white/5"
+              data-testid="class-locations-section"
+            >
+              <div className="flex flex-col gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="text-sm font-semibold text-foreground">Class locations</div>
+                  <span className="rounded-full bg-black/15 px-2 py-0.5 text-[11px] font-semibold text-foreground/80 ring-1 ring-black/10">
+                    {mappingLocations.length + pendingLocations.length}
+                  </span>
+                </div>
+
+                {!editingId ? (
+                  <div className="text-sm text-muted-foreground">
+                    Save the class first to assign locations.
+                  </div>
+                ) : locationsLoading ? (
+                  <div className="text-sm text-muted-foreground">Loading locations…</div>
+                ) : (
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="rounded-xl border border-white/10 bg-black/15 p-3">
+                      <div className="mb-2 text-xs font-semibold text-muted-foreground">Assigned locations</div>
+                      {mappingLocations.length === 0 && pendingLocations.length === 0 ? (
+                        <span className="text-sm text-muted-foreground">No locations assigned yet.</span>
+                      ) : (
+                        <div className="flex flex-wrap gap-2">
+                          {mappingLocations.map((loc) => (
+                            <button
+                              key={loc.id}
+                              type="button"
+                              onClick={() => void handleRemoveLocation(loc.id)}
+                              className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/20 px-3 py-1 text-xs font-semibold text-foreground whitespace-nowrap hover:bg-black/30"
+                              aria-label={`Remove ${loc.label}`}
+                            >
+                              <span>{loc.label}</span>
+                              <X className="h-3 w-3 text-foreground/70" />
+                            </button>
+                          ))}
+                          {mappingLocations.length === 0
+                            ? pendingLocations.map((loc) => (
+                                <button
+                                  key={`pending-${loc.id}`}
+                                  type="button"
+                                  onClick={() =>
+                                    setPendingLocationIds((prev) => prev.filter((id) => id !== loc.id))
+                                  }
+                                  className="inline-flex items-center gap-2 rounded-full border border-white/15 border-dashed bg-black/10 px-3 py-1 text-xs font-semibold text-foreground/80 whitespace-nowrap hover:bg-black/20"
+                                  aria-label={`Remove pending ${loc.label}`}
+                                >
+                                  <span>{loc.label} (pending duration)</span>
+                                  <X className="h-3 w-3 text-foreground/60" />
+                                </button>
+                              ))
+                            : null}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="rounded-xl border border-white/10 bg-black/15 p-3">
+                      <div className="mb-2 text-xs font-semibold text-muted-foreground">Available locations</div>
+                      {locationsLoading ? (
+                        <span className="text-sm text-muted-foreground">Loading locations…</span>
+                      ) : (
+                        <div className="flex flex-wrap gap-2">
+                          {locations.map((loc) => {
+                            const label = `${loc.code} - ${loc.name}`;
+                            const disabled =
+                              mappingLocations.some((m) => m.id === loc.id) ||
+                              pendingLocationIds.includes(loc.id);
+                            return (
+                              <button
+                                key={loc.id}
+                                type="button"
+                                disabled={disabled}
+                                onClick={() => void handleAddLocation(loc.id)}
+                                className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                                  disabled
+                                    ? "cursor-not-allowed bg-black/20 text-muted-foreground/60"
+                                    : "border border-white/10 bg-black/20 text-foreground hover:bg-black/30"
+                                }`}
+                                aria-disabled={disabled}
+                              >
+                                <span className="mr-2 inline-flex h-4 w-4 items-center justify-center rounded-full border border-white/20 text-[10px] text-foreground/80">
+                                  +
+                                </span>
+                                {label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {locationActionError ? (
+                  <div className="text-sm text-red-400">{locationActionError}</div>
+                ) : null}
+                {mappingDurations.length === 0 ? (
+                  <div className="text-sm text-orange-400/90">
+                    Sequence: choose locations first, then add a duration.
+                  </div>
+                ) : null}
+                {locationsError ? (
+                  <div className="text-sm text-red-400">{locationsError}</div>
+                ) : null}
               </div>
             </div>
 
@@ -570,7 +1203,7 @@ export function ClassesTab() {
               <p className="text-sm text-red-400">{formError}</p>
             )}
 
-            <div className="flex justify-end gap-2">
+            <div className="flex justify-start gap-2">
               <button
                 type="button"
                 onClick={closeForm}
