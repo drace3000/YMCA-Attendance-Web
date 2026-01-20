@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
 import { requireRecipientAccess } from "@/lib/requireRecipientAccess";
+import { autoBackfillIcldForInstructorInBranch } from "@/lib/icld-auto-backfill";
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -62,7 +63,7 @@ export async function PUT(req: NextRequest, { params }: RouteParams): Promise<Re
 
   const { data: instructorRow, error: instructorError } = await supabase
     .from("instructors")
-    .select("id, branch_id")
+    .select("id, branch_id, nickname, first_name, last_name")
     .eq("id", id)
     .single();
 
@@ -101,6 +102,15 @@ export async function PUT(req: NextRequest, { params }: RouteParams): Promise<Re
     );
   }
 
+  const { data: existingLinks, error: existingLinksError } = await supabase
+    .from("instructor_branches")
+    .select("branch_id")
+    .eq("instructor_id", id);
+
+  if (existingLinksError) return NextResponse.json({ error: existingLinksError.message }, { status: 500 });
+  const existingBranchIds = new Set<string>((existingLinks ?? []).map((r: { branch_id: string }) => r.branch_id));
+  const addedBranchIds = desired.filter((bid) => !existingBranchIds.has(bid));
+
   // Replace all links for this instructor.
   const { error: deleteError } = await supabase
     .from("instructor_branches")
@@ -127,6 +137,28 @@ export async function PUT(req: NextRequest, { params }: RouteParams): Promise<Re
     .eq("instructor_id", id);
 
   if (updatedError) return NextResponse.json({ error: updatedError.message }, { status: 500 });
+
+  // Auto-backfill ICLD rows for any newly added branches (idempotent).
+  // Important: do not delete ICLD rows when branches are removed.
+  if (addedBranchIds.length > 0) {
+    const instructor = {
+      id: String(instructorRow.id),
+      nickname: (instructorRow as any).nickname ?? null,
+      first_name: (instructorRow as any).first_name ?? null,
+      last_name: (instructorRow as any).last_name ?? null,
+    };
+
+    for (const branchId of addedBranchIds) {
+      try {
+        await autoBackfillIcldForInstructorInBranch({ supabase, branchId, instructor });
+      } catch (e) {
+        return NextResponse.json(
+          { error: e instanceof Error ? e.message : "Failed to auto-backfill instructor mappings" },
+          { status: 500 },
+        );
+      }
+    }
+  }
 
   return NextResponse.json(updated ?? []);
 }

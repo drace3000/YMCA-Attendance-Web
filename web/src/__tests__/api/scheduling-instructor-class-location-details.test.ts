@@ -8,6 +8,7 @@ type MockQueryState = {
   action: "select" | "insert" | "delete" | "upsert";
   filters: Array<{ op: "eq" | "ilike"; column: string; value: unknown }>;
   payload?: unknown;
+  options?: unknown;
 };
 
 type MockHandlerResult = { data: any; error: any };
@@ -34,9 +35,10 @@ function createMockSupabaseClient(handlers: Record<string, MockTableHandler>) {
         state.action = "delete";
         return builder;
       },
-      upsert: (payload: unknown) => {
+      upsert: (payload: unknown, options?: unknown) => {
         state.action = "upsert";
         state.payload = payload;
+        state.options = options;
         return builder;
       },
       eq: (column: string, value: unknown) => {
@@ -231,12 +233,89 @@ describe("POST/DELETE /api/scheduling/instructor-class-location-details", () => 
 
     mockCreateSupabaseServerClient.mockReturnValue(
       createMockSupabaseClient({
-        instructors: async () => ({ data: [{ id: "ph-1", nickname: "UNASSIGNED" }], error: null }),
+        instructors: async (state) => {
+          const isPlaceholderLookup =
+            state.filters.some((f) => f.op === "ilike" && f.column === "nickname" && f.value === "UNASSIGNED") &&
+            state.filters.some((f) => f.op === "eq" && f.column === "branch_id" && f.value === "br-1");
+
+          if (isPlaceholderLookup) {
+            return { data: [{ id: "ph-1", nickname: "UNASSIGNED" }], error: null };
+          }
+
+          const isActiveBranchLookup =
+            state.filters.some((f) => f.op === "eq" && f.column === "branch_id" && f.value === "br-1") &&
+            state.filters.some((f) => f.op === "eq" && f.column === "is_active" && f.value === true);
+
+          if (isActiveBranchLookup) {
+            return {
+              data: [
+                {
+                  id: "ph-1",
+                  nickname: "UNASSIGNED",
+                  first_name: "Unassigned",
+                  last_name: "Instructor",
+                  is_active: true,
+                },
+                { id: "inst-1", nickname: "CASEY", first_name: null, last_name: null, is_active: true },
+              ],
+              error: null,
+            };
+          }
+
+          return { data: [], error: null };
+        },
+        instructor_branches: async (state) => {
+          expect(state.action).toBe("select");
+          expect(state.filters).toContainEqual({ op: "eq", column: "branch_id", value: "br-1" });
+          return {
+            data: [
+              {
+                instructor_id: "inst-2",
+                instructor: {
+                  id: "inst-2",
+                  nickname: "MIKEY",
+                  first_name: null,
+                  last_name: null,
+                  is_active: true,
+                },
+              },
+            ],
+            error: null,
+          };
+        },
         instructor_class_location_details: async (state) => {
-          if (state.action === "insert") {
-            const payload = state.payload as Array<{ instructor_id: string }>;
-            expect(payload[0].instructor_id).toBe("ph-1");
-            return { data: [{ id: "new-1" }], error: null };
+          if (state.action === "upsert") {
+            const payload = state.payload as Array<{ instructor_id: string; source_file: string }>;
+
+            const isPlaceholderInsert = payload.some((p) => p.instructor_id === "ph-1");
+            if (isPlaceholderInsert) {
+              expect(payload).toHaveLength(1);
+              expect(payload[0].instructor_id).toBe("ph-1");
+              expect(payload[0].source_file).toBe("manual_class_ui");
+              expect(state.options).toEqual({
+                onConflict: "branch_id,instructor_id,class_id,location_id,minutes",
+                ignoreDuplicates: true,
+              });
+              return {
+                data: [
+                  {
+                    id: "new-1",
+                    class_id: "c1",
+                    location_id: "l1",
+                    minutes: 45,
+                    instructor_id: "ph-1",
+                  },
+                ],
+                error: null,
+              };
+            }
+
+            const instructorIds = payload.map((p) => p.instructor_id).sort();
+            expect(instructorIds).toEqual(["inst-1", "inst-2"]);
+            for (const row of payload) {
+              expect(row.source_file).toBe("auto_backfill_from_class_level_unassigned");
+            }
+            return { data: [], error: null };
           }
           return { data: [], error: null };
         },
@@ -266,7 +345,7 @@ describe("POST/DELETE /api/scheduling/instructor-class-location-details", () => 
     mockCreateSupabaseServerClient.mockReturnValue(
       createMockSupabaseClient({
         instructor_class_location_details: async (state) => {
-          if (state.action === "insert") {
+          if (state.action === "upsert") {
             const payload = state.payload as Array<{ instructor_id: string; instructor_nickname: string }>;
             expect(payload[0].instructor_id).toBe("inst-9");
             expect(payload[0].instructor_nickname).toBe("CASEY");

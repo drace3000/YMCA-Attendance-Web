@@ -5,10 +5,11 @@ import { GET, PUT } from "@/app/api/maintenance/instructors/[id]/branches/route"
 
 type MockQueryState = {
   table: string;
-  action: "select" | "insert" | "update" | "delete";
+  action: "select" | "insert" | "update" | "delete" | "upsert";
   payload?: unknown;
   filters: Array<{ op: "eq" | "ilike" | "neq" | "in"; column: string; value: unknown }>;
   wantSingle: boolean;
+  options?: unknown;
 };
 
 type MockHandlerResult = { data: any; error: any };
@@ -26,9 +27,16 @@ function createMockSupabaseClient(handlers: Record<string, MockTableHandler>) {
     const builder: any = {
       select: () => builder,
       returns: () => builder,
+      limit: () => builder,
       insert: (payload: unknown) => {
         state.action = "insert";
         state.payload = payload;
+        return builder;
+      },
+      upsert: (payload: unknown, options?: unknown) => {
+        state.action = "upsert";
+        state.payload = payload;
+        state.options = options;
         return builder;
       },
       update: (payload: unknown) => {
@@ -120,12 +128,38 @@ describe("Admin-only instructor sharing - /api/maintenance/instructors/[id]/bran
 
     let deleted = false;
     let insertedPayload: any[] | null = null;
+    let icldUpsertPayload: any[] | null = null;
+    let branchSelectCount = 0;
 
     mockCreateSupabaseServerClient.mockReturnValue(
       createMockSupabaseClient({
         instructors: async (state) => {
           expect(state.action).toBe("select");
-          return { data: { id: instructorId, branch_id: homeBranchId }, error: null };
+          const isSingleByIdLookup =
+            state.wantSingle &&
+            state.filters.some((f) => f.op === "eq" && f.column === "id" && f.value === instructorId);
+          if (isSingleByIdLookup) {
+            return {
+              data: {
+                id: instructorId,
+                branch_id: homeBranchId,
+                nickname: "CASEY",
+                first_name: null,
+                last_name: null,
+              },
+              error: null,
+            };
+          }
+
+          const isPlaceholderLookup =
+            state.filters.some((f) => f.op === "ilike" && f.column === "nickname" && f.value === "UNASSIGNED") &&
+            state.filters.some((f) => f.op === "eq" && f.column === "branch_id" && f.value === sharedBranchId);
+          if (isPlaceholderLookup) {
+            return { data: [{ id: "ph-1", nickname: "UNASSIGNED" }], error: null };
+          }
+
+          // Any other selects in this test return empty set.
+          return { data: [], error: null };
         },
         ymca_branches: async (state) => {
           expect(state.action).toBe("select");
@@ -135,6 +169,22 @@ describe("Admin-only instructor sharing - /api/maintenance/instructors/[id]/bran
           return { data: [{ id: homeBranchId }, { id: sharedBranchId }], error: null };
         },
         instructor_branches: async (state) => {
+          if (state.action === "select") {
+            branchSelectCount += 1;
+            if (branchSelectCount === 1) {
+              // existing links (before replacement): ensure home only
+              return { data: [{ branch_id: homeBranchId, is_primary: true }], error: null };
+            }
+
+            // final select (after replacement)
+            return {
+              data: [
+                { branch_id: homeBranchId, is_primary: true },
+                { branch_id: sharedBranchId, is_primary: false },
+              ],
+              error: null,
+            };
+          }
           if (state.action === "delete") {
             deleted = true;
             return { data: null, error: null };
@@ -143,14 +193,34 @@ describe("Admin-only instructor sharing - /api/maintenance/instructors/[id]/bran
             insertedPayload = state.payload as any[];
             return { data: null, error: null };
           }
-          // final select
-          return {
-            data: [
-              { branch_id: homeBranchId, is_primary: true },
-              { branch_id: sharedBranchId, is_primary: false },
-            ],
-            error: null,
-          };
+          return { data: null, error: null };
+        },
+        // Auto-backfill calls
+        instructor_class_location_details: async (state) => {
+          if (state.action === "select") {
+            // placeholder lookup pairs should query placeholder in shared branch
+            return {
+              data: [
+                {
+                  class_id: "c1",
+                  class_name: "ACTIVE YOGA",
+                  location_id: "l1",
+                  location_name: "Studio",
+                  minutes: 60,
+                },
+              ],
+              error: null,
+            };
+          }
+          if (state.action === "upsert") {
+            icldUpsertPayload = state.payload as any[];
+            expect(state.options).toEqual({
+              onConflict: "branch_id,instructor_id,class_id,location_id,minutes",
+              ignoreDuplicates: true,
+            });
+            return { data: [], error: null };
+          }
+          return { data: [], error: null };
         },
       }),
     );
@@ -172,6 +242,17 @@ describe("Admin-only instructor sharing - /api/maintenance/instructors/[id]/bran
       { branch_id: homeBranchId, is_primary: true },
       { branch_id: sharedBranchId, is_primary: false },
     ]);
+
+    // ICLD backfill should have happened for the newly-added shared branch.
+    expect(Array.isArray(icldUpsertPayload)).toBe(true);
+    expect(icldUpsertPayload?.[0]).toMatchObject({
+      branch_id: sharedBranchId,
+      instructor_id: instructorId,
+      class_id: "c1",
+      location_id: "l1",
+      minutes: 60,
+      source_file: "auto_backfill_from_class_level_unassigned",
+    });
   });
 
   it("PUT returns 400 when a branch_id does not exist", async () => {

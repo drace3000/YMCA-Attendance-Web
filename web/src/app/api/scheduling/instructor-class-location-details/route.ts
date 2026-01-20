@@ -7,6 +7,13 @@ export const runtime = "nodejs";
 type ClassRel = { name: string };
 type InstructorRel = { nickname: string | null; first_name: string | null; last_name: string | null };
 type LocationRel = { code: string; name: string };
+type InstructorRelFull = {
+  id: string;
+  nickname: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  is_active: boolean | null;
+};
 
 type MappingRow = {
   id: string;
@@ -48,6 +55,7 @@ const PLACEHOLDER_NICKNAME = "UNASSIGNED";
 const PLACEHOLDER_FIRST_NAME = "Unassigned";
 const PLACEHOLDER_LAST_NAME = "Instructor";
 const PLACEHOLDER_SOURCE_FILE = "manual_class_ui";
+const AUTO_BACKFILL_SOURCE_FILE = "auto_backfill_from_class_level_unassigned";
 
 function normalizeText(value: unknown): string {
   if (value === null || value === undefined) return "";
@@ -67,6 +75,59 @@ function buildInstructorLabel(rel: InstructorRel | null, fallback: string | null
   const fb = String(fallback ?? "").trim();
   if (fb) return fb;
   return id;
+}
+
+function buildInstructorLabelFromRow(row: InstructorRelFull): string {
+  const nick = String(row.nickname ?? "").trim();
+  if (nick) return nick;
+  const full = `${String(row.first_name ?? "").trim()} ${String(row.last_name ?? "").trim()}`.trim();
+  if (full) return full;
+  return String(row.id);
+}
+
+async function getTargetInstructorsForBranch(opts: {
+  supabase: ReturnType<typeof createSupabaseServerClient>;
+  branchId: string;
+  placeholderInstructorId: string;
+}): Promise<Array<{ instructor_id: string; instructor_label: string }>> {
+  const { supabase, branchId, placeholderInstructorId } = opts;
+
+  const seen = new Map<string, string>();
+
+  const { data: primary, error: primaryError } = await supabase
+    .from("instructors")
+    .select("id, nickname, first_name, last_name, is_active")
+    .eq("branch_id", branchId)
+    .eq("is_active", true)
+    .returns<InstructorRelFull[]>();
+
+  if (primaryError) throw new Error(primaryError.message);
+  for (const row of primary ?? []) {
+    const id = String(row.id);
+    if (!id || id === placeholderInstructorId) continue;
+    seen.set(id, buildInstructorLabelFromRow(row));
+  }
+
+  const { data: shared, error: sharedError } = await supabase
+    .from("instructor_branches")
+    .select("instructor_id, instructor:instructor_id (id, nickname, first_name, last_name, is_active)")
+    .eq("branch_id", branchId)
+    .returns<Array<{ instructor_id: string; instructor: InstructorRelFull | InstructorRelFull[] | null }>>();
+
+  if (sharedError) throw new Error(sharedError.message);
+  for (const row of shared ?? []) {
+    const rel = normalizeRelation(row.instructor);
+    const id = String(rel?.id ?? row.instructor_id ?? "");
+    if (!id || id === placeholderInstructorId) continue;
+    if (rel?.is_active === false) continue;
+    const label = rel ? buildInstructorLabelFromRow(rel) : id;
+    if (!seen.has(id)) seen.set(id, label);
+  }
+
+  return Array.from(seen.entries()).map(([instructor_id, instructor_label]) => ({
+    instructor_id,
+    instructor_label,
+  }));
 }
 
 function buildLocationLabel(rel: LocationRel | null, fallback: string | null, id: string): string {
@@ -338,6 +399,8 @@ export async function POST(req: NextRequest): Promise<Response> {
   const resolvedInstructorNickname =
     instructorNickname || placeholder?.nickname || PLACEHOLDER_NICKNAME;
 
+  const isClassLevelInsert = !instructorId && !!placeholder?.id;
+
   const inserts = items
     .map((item) => {
       const className = normalizeText(item.class_name ?? body.class_name ?? classId);
@@ -371,11 +434,61 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const { data, error } = await supabase
     .from("instructor_class_location_details")
-    .insert(inserts)
+    .upsert(inserts, {
+      onConflict: "branch_id,instructor_id,class_id,location_id,minutes",
+      ignoreDuplicates: true,
+    })
     .select("id, class_id, location_id, minutes, instructor_id");
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  // Step 5: keep it fixed — whenever we add class-level (UNASSIGNED) pairs, ensure all instructors
+  // also have rows for the same class/location/minutes combinations (idempotent upsert).
+  if (isClassLevelInsert && placeholder?.id) {
+    const targets = await getTargetInstructorsForBranch({
+      supabase,
+      branchId,
+      placeholderInstructorId: placeholder.id,
+    });
+
+    if (targets.length > 0) {
+      const classLevelPairs = inserts.map((r) => ({
+        class_id: r.class_id,
+        class_name: r.class_name,
+        location_id: r.location_id,
+        location_name: r.location_name,
+        minutes: r.minutes,
+      }));
+
+      const backfill = targets.flatMap((t) =>
+        classLevelPairs.map((p) => ({
+          branch_id: branchId,
+          instructor_id: t.instructor_id,
+          instructor_nickname: t.instructor_label,
+          class_id: p.class_id,
+          class_name: p.class_name,
+          location_id: p.location_id,
+          location_name: p.location_name,
+          minutes: p.minutes,
+          source_file: AUTO_BACKFILL_SOURCE_FILE,
+        })),
+      );
+
+      if (backfill.length > 0) {
+        const { error: backfillError } = await supabase
+          .from("instructor_class_location_details")
+          .upsert(backfill, {
+            onConflict: "branch_id,instructor_id,class_id,location_id,minutes",
+            ignoreDuplicates: true,
+          });
+
+        if (backfillError) {
+          return NextResponse.json({ error: backfillError.message }, { status: 500 });
+        }
+      }
+    }
   }
 
   return NextResponse.json({ rows: data ?? [] }, { status: 201 });

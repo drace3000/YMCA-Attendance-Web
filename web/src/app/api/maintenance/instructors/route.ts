@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
 import { requireRecipientAccess } from "@/lib/requireRecipientAccess";
+import { autoBackfillIcldForInstructorInBranch } from "@/lib/icld-auto-backfill";
 
 type InstructorRow = {
   id: string;
@@ -441,6 +442,26 @@ export async function POST(req: NextRequest): Promise<Response> {
       { instructor_id: data.id, branch_id, is_primary: true },
       { onConflict: "instructor_id,branch_id" },
     );
+
+  // Auto-backfill ICLD rows for this new instructor in their home branch (idempotent).
+  // This keeps Slot Helper stable even if class-level (UNASSIGNED) pairs already exist.
+  try {
+    await autoBackfillIcldForInstructorInBranch({
+      supabase,
+      branchId: branch_id,
+      instructor: {
+        id: String(data.id),
+        nickname: data.nickname ?? trimmedNickname,
+        first_name: data.first_name ?? first_name,
+        last_name: data.last_name ?? last_name,
+      },
+    });
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "Failed to auto-backfill instructor mappings" },
+      { status: 500 },
+    );
+  }
 
   return NextResponse.json(data, { status: 201 });
 }
