@@ -257,6 +257,42 @@ describe("POST/DELETE /api/scheduling/instructor-class-location-details", () => 
     expect(res.status).toBe(201);
   });
 
+  it("creates instructor mappings when instructor_id is provided", async () => {
+    mockRequireRecipientAccess.mockResolvedValueOnce({
+      ok: true,
+      access: { recipient_type: "Administrator", branch_id: "br-1" },
+    });
+
+    mockCreateSupabaseServerClient.mockReturnValue(
+      createMockSupabaseClient({
+        instructor_class_location_details: async (state) => {
+          if (state.action === "insert") {
+            const payload = state.payload as Array<{ instructor_id: string; instructor_nickname: string }>;
+            expect(payload[0].instructor_id).toBe("inst-9");
+            expect(payload[0].instructor_nickname).toBe("CASEY");
+            return { data: [{ id: "new-2" }], error: null };
+          }
+          return { data: [], error: null };
+        },
+      }),
+    );
+
+    const req = new NextRequest("http://localhost:3000/api/scheduling/instructor-class-location-details", {
+      method: "POST",
+      body: JSON.stringify({
+        branch_id: "br-1",
+        class_id: "c1",
+        class_name: "ACTIVE YOGA",
+        instructor_id: "inst-9",
+        instructor_nickname: "CASEY",
+        items: [{ location_id: "l1", location_name: "Studio", minutes: 30 }],
+      }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(201);
+  });
+
   it("deletes only placeholder mappings by id", async () => {
     mockRequireRecipientAccess.mockResolvedValueOnce({
       ok: true,
@@ -277,6 +313,33 @@ describe("POST/DELETE /api/scheduling/instructor-class-location-details", () => 
 
     const req = new NextRequest(
       "http://localhost:3000/api/scheduling/instructor-class-location-details?id=m1&branch_id=br-1",
+      { method: "DELETE" },
+    );
+    const res = await DELETE(req);
+    const json = await res.json();
+    expect(res.status).toBe(200);
+    expect(json.deleted).toBe(1);
+  });
+
+  it("deletes only instructor mappings when instructor_id is provided", async () => {
+    mockRequireRecipientAccess.mockResolvedValueOnce({
+      ok: true,
+      access: { recipient_type: "Administrator", branch_id: "br-1" },
+    });
+
+    mockCreateSupabaseServerClient.mockReturnValue(
+      createMockSupabaseClient({
+        instructor_class_location_details: async (state) => {
+          expect(state.action).toBe("delete");
+          expect(state.filters).toContainEqual({ op: "eq", column: "instructor_id", value: "inst-9" });
+          expect(state.filters).toContainEqual({ op: "eq", column: "class_id", value: "c1" });
+          return { data: [{ id: "m1" }], error: null };
+        },
+      }),
+    );
+
+    const req = new NextRequest(
+      "http://localhost:3000/api/scheduling/instructor-class-location-details?branch_id=br-1&class_id=c1&instructor_id=inst-9",
       { method: "DELETE" },
     );
     const res = await DELETE(req);

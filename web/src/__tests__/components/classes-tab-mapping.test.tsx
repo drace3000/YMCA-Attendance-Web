@@ -54,6 +54,15 @@ describe("ClassesTab mapping sections", () => {
         );
       }
 
+      if (url.includes("/api/maintenance/instructors?")) {
+        return new Response(
+          JSON.stringify([
+            { id: "inst-1", nickname: "CASEY", first_name: "Casey", last_name: "Jones", is_active: true },
+          ]),
+          { status: 200 },
+        );
+      }
+
       if (url.includes("/api/scheduling/instructor-class-location-details?")) {
         const isClassOnly = url.includes("class_only=true");
         return new Response(
@@ -91,6 +100,7 @@ describe("ClassesTab mapping sections", () => {
 
     expect(await screen.findByText("Class durations")).toBeInTheDocument();
     expect(await screen.findByText("Class locations")).toBeInTheDocument();
+    expect(await screen.findByText("Class instructors")).toBeInTheDocument();
   });
 
   it("adds a duration by posting class mappings", async () => {
@@ -127,6 +137,15 @@ describe("ClassesTab mapping sections", () => {
       if (url.includes("/api/maintenance/locations?")) {
         return new Response(
           JSON.stringify([{ id: "loc-1", code: "ST1", name: "Studio", is_active: true, branch_id: "br-1" }]),
+          { status: 200 },
+        );
+      }
+
+      if (url.includes("/api/maintenance/instructors?")) {
+        return new Response(
+          JSON.stringify([
+            { id: "inst-1", nickname: "CASEY", first_name: "Casey", last_name: "Jones", is_active: true },
+          ]),
           { status: 200 },
         );
       }

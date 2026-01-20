@@ -47,6 +47,14 @@ type LocationItem = {
   branch_id: string;
 };
 
+type InstructorItem = {
+  id: string;
+  nickname: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  is_active: boolean;
+};
+
 type ClassLocationMapping = {
   id: string;
   class_id: string;
@@ -66,6 +74,7 @@ const TRADEMARK_SYMBOLS = [
 ];
 
 const DURATION_OPTIONS = [30, 45, 60];
+const WARNING_POPUPS_KEY = "classMaintenance.warningPopupsEnabled";
 
 export function ClassesTab() {
   const { branch } = useThemeSettings();
@@ -99,6 +108,9 @@ export function ClassesTab() {
   const [locations, setLocations] = useState<LocationItem[]>([]);
   const [locationsLoading, setLocationsLoading] = useState(false);
   const [locationsError, setLocationsError] = useState<string | null>(null);
+  const [instructors, setInstructors] = useState<InstructorItem[]>([]);
+  const [instructorsLoading, setInstructorsLoading] = useState(false);
+  const [instructorsError, setInstructorsError] = useState<string | null>(null);
   const [classMappings, setClassMappings] = useState<ClassLocationMapping[]>([]);
   const [allClassMappings, setAllClassMappings] = useState<ClassLocationMapping[]>([]);
   const [classMappingLoading, setClassMappingLoading] = useState(false);
@@ -112,6 +124,17 @@ export function ClassesTab() {
   const [customDurationInput, setCustomDurationInput] = useState<string>("");
   const [durationActionError, setDurationActionError] = useState<string | null>(null);
   const [locationActionError, setLocationActionError] = useState<string | null>(null);
+  const [instructorActionError, setInstructorActionError] = useState<string | null>(null);
+  const [instructorSearch, setInstructorSearch] = useState("");
+  const [instructorFilter, setInstructorFilter] = useState<"all" | "available" | "selected">("all");
+  const [warningPopupsEnabled, setWarningPopupsEnabled] = useState(true);
+  const [warningDialog, setWarningDialog] = useState<{
+    title: string;
+    message: string;
+    confirmLabel?: string;
+    onConfirm: () => Promise<void>;
+  } | null>(null);
+  const [warningSuppressNext, setWarningSuppressNext] = useState(false);
 
   // Symbol picker
   const [showSymbolPicker, setShowSymbolPicker] = useState(false);
@@ -159,6 +182,24 @@ export function ClassesTab() {
       setLocations([]);
     } finally {
       setLocationsLoading(false);
+    }
+  }, [branch.id]);
+
+  const loadInstructors = useCallback(async () => {
+    setInstructorsLoading(true);
+    setInstructorsError(null);
+    try {
+      const params = new URLSearchParams();
+      params.set("branch_id", branch.id);
+      const res = await fetch(`/api/maintenance/instructors?${params.toString()}`);
+      if (!res.ok) throw new Error("Failed to load instructors");
+      const data = (await res.json()) as InstructorItem[];
+      setInstructors(Array.isArray(data) ? data : []);
+    } catch (e) {
+      setInstructorsError(e instanceof Error ? e.message : "Failed to load instructors");
+      setInstructors([]);
+    } finally {
+      setInstructorsLoading(false);
     }
   }, [branch.id]);
 
@@ -252,6 +293,21 @@ export function ClassesTab() {
   useEffect(() => {
     void loadLocations();
   }, [loadLocations]);
+
+  useEffect(() => {
+    void loadInstructors();
+  }, [loadInstructors]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const stored = window.localStorage.getItem(WARNING_POPUPS_KEY);
+      if (stored === null) return;
+      setWarningPopupsEnabled(stored === "true");
+    } catch {
+      // Ignore localStorage failures
+    }
+  }, []);
 
   useEffect(() => {
     if (!isFormOpen) return;
@@ -356,6 +412,9 @@ export function ClassesTab() {
     setCustomDurationInput("");
     setDurationActionError(null);
     setLocationActionError(null);
+    setInstructorActionError(null);
+    setInstructorSearch("");
+    setInstructorFilter("all");
     setIsFormOpen(true);
   };
 
@@ -376,6 +435,9 @@ export function ClassesTab() {
     setCustomDurationInput("");
     setDurationActionError(null);
     setLocationActionError(null);
+    setInstructorActionError(null);
+    setInstructorSearch("");
+    setInstructorFilter("all");
     setIsFormOpen(true);
   };
 
@@ -396,7 +458,20 @@ export function ClassesTab() {
     setCustomDurationInput("");
     setDurationActionError(null);
     setLocationActionError(null);
+    setInstructorActionError(null);
+    setInstructorSearch("");
+    setInstructorFilter("all");
   };
+
+  const updateWarningPopups = useCallback((next: boolean) => {
+    setWarningPopupsEnabled(next);
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(WARNING_POPUPS_KEY, String(next));
+    } catch {
+      // Ignore localStorage failures
+    }
+  }, []);
 
   const insertSymbol = (symbol: string) => {
     const input = nameInputRef.current;
@@ -505,6 +580,51 @@ export function ClassesTab() {
     return Array.from(byId.values()).sort((a, b) => a.label.localeCompare(b.label));
   }, [allClassMappings]);
 
+  const assignedInstructorIds = useMemo(() => {
+    const ids = new Set(
+      allClassMappings
+        .map((row) => row.instructor_id)
+        .filter((id) => id && id !== placeholderInstructorId),
+    );
+    return ids;
+  }, [allClassMappings, placeholderInstructorId]);
+
+  const instructorOptions = useMemo(() => {
+    const list = instructors
+      .filter((i) => {
+        if (i.id === placeholderInstructorId) return false;
+        const nickname = String(i.nickname ?? "").trim().toUpperCase();
+        return nickname !== "UNASSIGNED";
+      })
+      .map((i) => {
+        const nickname = String(i.nickname ?? "").trim();
+        const label = nickname || "(No nickname)";
+        return { id: i.id, label };
+      })
+      .sort((a, b) => a.label.localeCompare(b.label));
+    return list;
+  }, [instructors, placeholderInstructorId]);
+
+  const filteredInstructors = useMemo(() => {
+    const term = instructorSearch.trim().toLowerCase();
+    return instructorOptions
+      .filter((opt) => (term ? opt.label.toLowerCase().includes(term) : true));
+  }, [instructorOptions, instructorSearch]);
+
+  const visibleInstructors = useMemo(() => {
+    if (instructorFilter === "available") {
+      return filteredInstructors.filter((opt) => !assignedInstructorIds.has(opt.id));
+    }
+    if (instructorFilter === "selected") {
+      return filteredInstructors.filter((opt) => assignedInstructorIds.has(opt.id));
+    }
+    return filteredInstructors;
+  }, [assignedInstructorIds, filteredInstructors, instructorFilter]);
+
+  const assignedInstructors = useMemo(() => {
+    return instructorOptions.filter((opt) => assignedInstructorIds.has(opt.id));
+  }, [assignedInstructorIds, instructorOptions]);
+
   const mappingKeySet = useMemo(() => {
     return new Set(allClassMappings.map((r) => `${r.location_id}:${r.minutes}`));
   }, [allClassMappings]);
@@ -559,6 +679,37 @@ export function ClassesTab() {
       await loadAllClassMappings();
     },
     [branch.id, editingId, formData.name, loadClassMappings, loadAllClassMappings],
+  );
+
+  const addInstructorMappings = useCallback(
+    async (instructorId: string, instructorNickname: string, items: Array<{ location_id: string; minutes: number; location_name?: string }>) => {
+      if (!editingId) return;
+      if (!items.length) return;
+      const payload = {
+        branch_id: branch.id,
+        class_id: editingId,
+        class_name: formData.name,
+        instructor_id: instructorId,
+        instructor_nickname: instructorNickname,
+        items: items.map((i) => ({
+          location_id: i.location_id,
+          minutes: i.minutes,
+          location_name: i.location_name,
+          class_name: formData.name,
+        })),
+      };
+      const res = await fetch("/api/scheduling/instructor-class-location-details", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json?.error || "Failed to save instructor mappings");
+      }
+      await loadAllClassMappings();
+    },
+    [branch.id, editingId, formData.name, loadAllClassMappings],
   );
 
   const handleAddDuration = useCallback(async (nextMinutes?: number) => {
@@ -659,20 +810,64 @@ export function ClassesTab() {
       }
       await loadClassMappings();
       await loadAllClassMappings();
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("instructor-class-mappings-updated", { detail: { classId: editingId } }),
+        );
+      }
     },
     [branch.id, editingId, loadClassMappings, loadAllClassMappings],
+  );
+
+  const deleteMappingsByInstructor = useCallback(
+    async (instructorId: string) => {
+      if (!editingId) return;
+      const params = new URLSearchParams();
+      params.set("branch_id", branch.id);
+      params.set("class_id", editingId);
+      params.set("instructor_id", instructorId);
+      const res = await fetch(
+        `/api/scheduling/instructor-class-location-details?${params.toString()}`,
+        { method: "DELETE" },
+      );
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json?.error || "Failed to delete instructor mappings");
+      }
+      await loadAllClassMappings();
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("instructor-class-mappings-updated", { detail: { classId: editingId } }),
+        );
+      }
+    },
+    [branch.id, editingId, loadAllClassMappings],
   );
 
   const handleRemoveDuration = useCallback(
     async (minutes: number) => {
       setDurationActionError(null);
-      try {
-        await deleteMappingsByCriteria({ minutes });
-      } catch (e) {
-        setDurationActionError(e instanceof Error ? e.message : "Failed to remove duration");
+      const runDelete = async () => {
+        try {
+          await deleteMappingsByCriteria({ minutes });
+        } catch (e) {
+          setDurationActionError(e instanceof Error ? e.message : "Failed to remove duration");
+        }
+      };
+      if (!warningPopupsEnabled) {
+        await runDelete();
+        return;
       }
+      setWarningSuppressNext(false);
+      setWarningDialog({
+        title: "Remove duration?",
+        message:
+          "Removing this duration will also remove instructor links for this class at that duration.",
+        confirmLabel: "Remove duration",
+        onConfirm: runDelete,
+      });
     },
-    [deleteMappingsByCriteria],
+    [deleteMappingsByCriteria, warningPopupsEnabled],
   );
 
   const handleRemoveLocation = useCallback(
@@ -685,6 +880,57 @@ export function ClassesTab() {
       }
     },
     [deleteMappingsByCriteria],
+  );
+
+  const handleAddInstructor = useCallback(
+    async (instructorId: string) => {
+      setInstructorActionError(null);
+      if (!editingId) return;
+      if (mappingDurations.length === 0 || mappingLocations.length === 0) {
+        setInstructorActionError("Assign durations and locations before adding instructors.");
+        return;
+      }
+      const instructor = instructorOptions.find((opt) => opt.id === instructorId);
+      const nickname = instructor?.label ?? "";
+      const items = mappingLocations.flatMap((loc) =>
+        mappingDurations.map((minutes) => ({
+          location_id: loc.id,
+          minutes,
+          location_name: loc.label,
+        })),
+      );
+      try {
+        await addInstructorMappings(instructorId, nickname, items);
+      } catch (e) {
+        setInstructorActionError(e instanceof Error ? e.message : "Failed to add instructor");
+      }
+    },
+    [addInstructorMappings, editingId, instructorOptions, mappingDurations, mappingLocations],
+  );
+
+  const handleRemoveInstructor = useCallback(
+    async (instructorId: string, label: string) => {
+      setInstructorActionError(null);
+      const runDelete = async () => {
+        try {
+          await deleteMappingsByInstructor(instructorId);
+        } catch (e) {
+          setInstructorActionError(e instanceof Error ? e.message : "Failed to remove instructor");
+        }
+      };
+      if (!warningPopupsEnabled) {
+        await runDelete();
+        return;
+      }
+      setWarningSuppressNext(false);
+      setWarningDialog({
+        title: "Remove instructor?",
+        message: `Removing ${label} will unlink them from all class durations and locations.`,
+        confirmLabel: "Remove instructor",
+        onConfirm: runDelete,
+      });
+    },
+    [deleteMappingsByInstructor, warningPopupsEnabled],
   );
 
   // Search/filter logic
@@ -871,9 +1117,20 @@ export function ClassesTab() {
         <div className="rounded-2xl border border-[var(--brand-strong)]/60 bg-[rgb(var(--brand-soft-rgb)/0.18)] px-5 py-4 shadow-sm ring-1 ring-white/5">
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold">
-                {editingId ? "Edit Class" : "New Class"}
-              </h3>
+              <div className="flex flex-wrap items-center gap-3">
+                <h3 className="text-sm font-semibold">
+                  {editingId ? "Edit Class" : "New Class"}
+                </h3>
+                <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    checked={warningPopupsEnabled}
+                    onChange={(e) => updateWarningPopups(e.target.checked)}
+                    className="h-4 w-4 rounded border-white/20 bg-black/20"
+                  />
+                  Warning popups
+                </label>
+              </div>
               <button
                 type="button"
                 onClick={closeForm}
@@ -1199,6 +1456,130 @@ export function ClassesTab() {
               </div>
             </div>
 
+            <div className="rounded-2xl border border-[var(--brand-strong)]/60 bg-[rgb(var(--brand-soft-rgb)/0.18)] px-4 py-3 shadow-sm ring-1 ring-white/5">
+              <div className="flex flex-col gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="text-sm font-semibold text-foreground">Class instructors</div>
+                  <span className="rounded-full bg-black/15 px-2 py-0.5 text-[11px] font-semibold text-foreground/80 ring-1 ring-black/10">
+                    {assignedInstructors.length}
+                  </span>
+                </div>
+
+                {!editingId ? (
+                  <div className="text-sm text-muted-foreground">
+                    Save the class first to assign instructors.
+                  </div>
+                ) : instructorsLoading ? (
+                  <div className="text-sm text-muted-foreground">Loading instructors…</div>
+                ) : (
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="rounded-xl border border-white/10 bg-black/15 p-3">
+                      <div className="mb-2 text-xs font-semibold text-muted-foreground">Assigned instructors</div>
+                      {assignedInstructors.length === 0 ? (
+                        <span className="text-sm text-muted-foreground">No instructors assigned yet.</span>
+                      ) : (
+                        <div className="flex flex-wrap gap-2">
+                          {assignedInstructors.map((inst) => (
+                            <button
+                              key={inst.id}
+                              type="button"
+                              onClick={() => void handleRemoveInstructor(inst.id, inst.label)}
+                              className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/20 px-3 py-1 text-xs font-semibold text-foreground whitespace-nowrap hover:bg-black/30"
+                              aria-label={`Remove ${inst.label}`}
+                            >
+                              <span>{inst.label}</span>
+                              <X className="h-3 w-3 text-foreground/70" />
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="rounded-xl border border-white/10 bg-black/15 p-3">
+                      <div className="mb-2 text-xs font-semibold text-muted-foreground">Available instructors</div>
+                      <div className="flex w-1/2 items-center gap-2">
+                        <input
+                          type="text"
+                          value={instructorSearch}
+                          onChange={(e) => setInstructorSearch(e.target.value)}
+                          placeholder="Search instructors..."
+                          className="w-full rounded-lg border border-white/15 bg-black/20 px-3 py-2 text-xs text-foreground placeholder:text-foreground/50 focus:outline-none focus:ring-1 focus:ring-[var(--brand-strong)]"
+                        />
+                        <div className="flex items-center gap-1">
+                          {(["all", "available", "selected"] as const).map((option) => (
+                            <button
+                              key={option}
+                              type="button"
+                              onClick={() => setInstructorFilter(option)}
+                              className={`rounded-full px-2 py-1 text-[11px] font-semibold transition ${
+                                instructorFilter === option
+                                  ? "bg-[var(--cta)] text-[var(--cta-foreground)]"
+                                  : "border border-white/15 bg-black/20 text-foreground/70 hover:bg-black/30"
+                              }`}
+                            >
+                              {option === "all"
+                                ? "All"
+                                : option === "available"
+                                  ? "Available"
+                                  : "Selected"}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="mt-2 w-1/2 max-h-[220px] overflow-y-auto rounded-xl border border-white/10 bg-black/10 p-1">
+                        {visibleInstructors.length === 0 ? (
+                          <div className="px-3 py-2 text-xs text-muted-foreground">
+                            No instructors found.
+                          </div>
+                        ) : (
+                          visibleInstructors.map((inst) => {
+                            const isAssigned = assignedInstructorIds.has(inst.id);
+                            return (
+                            <button
+                              key={inst.id}
+                              type="button"
+                              onClick={() => void handleAddInstructor(inst.id)}
+                              disabled={isAssigned}
+                              aria-disabled={isAssigned}
+                              className={`flex w-full items-center justify-start gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold transition ${
+                                isAssigned
+                                  ? "cursor-not-allowed opacity-60"
+                                  : "hover:bg-[var(--brand-strong)]/50"
+                              }`}
+                            >
+                              {isAssigned ? (
+                                <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-red-400/80 text-[10px] text-red-400">
+                                  <X className="h-3 w-3" />
+                                </span>
+                              ) : (
+                                <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-white/20 text-[10px] text-foreground/80">
+                                  +
+                                </span>
+                              )}
+                              <span className="truncate">{inst.label}</span>
+                            </button>
+                          );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {instructorActionError ? (
+                  <div className="text-sm text-red-400">{instructorActionError}</div>
+                ) : null}
+                {mappingDurations.length === 0 || mappingLocations.length === 0 ? (
+                  <div className="text-sm text-orange-400/90">
+                    Assign at least one duration and one location before adding instructors.
+                  </div>
+                ) : null}
+                {instructorsError ? (
+                  <div className="text-sm text-red-400">{instructorsError}</div>
+                ) : null}
+              </div>
+            </div>
+
             {formError && (
               <p className="text-sm text-red-400">{formError}</p>
             )}
@@ -1223,6 +1604,54 @@ export function ClassesTab() {
           </div>
         </div>
       )}
+
+      {warningDialog ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-2xl border border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] p-4 shadow-xl">
+            <div className="text-sm font-semibold text-foreground">{warningDialog.title}</div>
+            <p className="mt-2 text-sm text-muted-foreground">{warningDialog.message}</p>
+            <label className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={warningSuppressNext}
+                onChange={(e) => {
+                  const next = e.target.checked;
+                  setWarningSuppressNext(next);
+                  if (next) {
+                    updateWarningPopups(false);
+                  }
+                }}
+                className="h-4 w-4 rounded border-white/20 bg-black/20"
+              />
+              No warnings please
+            </label>
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setWarningDialog(null);
+                  setWarningSuppressNext(false);
+                }}
+                className="rounded-lg border border-white/15 bg-black/20 px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-black/30"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const confirm = warningDialog.onConfirm;
+                  setWarningDialog(null);
+                  setWarningSuppressNext(false);
+                  await confirm();
+                }}
+                className="rounded-lg bg-[var(--cta)] px-3 py-1.5 text-xs font-semibold text-[var(--cta-foreground)] shadow-sm hover:opacity-90"
+              >
+                {warningDialog.confirmLabel ?? "OK"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* Content */}
       <div className="p-5">

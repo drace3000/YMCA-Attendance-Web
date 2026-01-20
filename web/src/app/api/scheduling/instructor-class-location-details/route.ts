@@ -288,6 +288,8 @@ type CreateMappingPayload = {
   branch_id?: string;
   class_id: string;
   class_name?: string | null;
+  instructor_id?: string | null;
+  instructor_nickname?: string | null;
   items?: CreateMappingItem[];
   location_id?: string;
   minutes?: number;
@@ -329,7 +331,12 @@ export async function POST(req: NextRequest): Promise<Response> {
           },
         ];
 
-  const placeholder = await resolvePlaceholderInstructor(supabase, branchId);
+  const instructorId = normalizeText(body.instructor_id ?? "");
+  const instructorNickname = normalizeText(body.instructor_nickname ?? "");
+  const placeholder = instructorId ? null : await resolvePlaceholderInstructor(supabase, branchId);
+  const resolvedInstructorId = instructorId || placeholder?.id || "";
+  const resolvedInstructorNickname =
+    instructorNickname || placeholder?.nickname || PLACEHOLDER_NICKNAME;
 
   const inserts = items
     .map((item) => {
@@ -341,8 +348,8 @@ export async function POST(req: NextRequest): Promise<Response> {
       return {
         class_id: classId,
         class_name: className || classId,
-        instructor_id: placeholder.id,
-        instructor_nickname: placeholder.nickname,
+        instructor_id: resolvedInstructorId,
+        instructor_nickname: resolvedInstructorNickname,
         location_id: locationId,
         location_name: locationName || locationId,
         minutes,
@@ -350,7 +357,13 @@ export async function POST(req: NextRequest): Promise<Response> {
         source_file: PLACEHOLDER_SOURCE_FILE,
       };
     })
-    .filter((item) => item.location_id && Number.isFinite(item.minutes) && item.minutes > 0);
+    .filter(
+      (item) =>
+        item.location_id &&
+        Number.isFinite(item.minutes) &&
+        item.minutes > 0 &&
+        item.instructor_id,
+    );
 
   if (inserts.length === 0) {
     return NextResponse.json({ error: "location_id and minutes are required" }, { status: 400 });
@@ -376,6 +389,7 @@ export async function DELETE(req: NextRequest): Promise<Response> {
   const requestedBranchId = searchParams.get("branch_id")?.trim() || null;
   const classId = searchParams.get("class_id")?.trim() || null;
   const locationId = searchParams.get("location_id")?.trim() || null;
+  const instructorId = searchParams.get("instructor_id")?.trim() || null;
   const minutesParam = searchParams.get("minutes")?.trim() || null;
   const id = searchParams.get("id")?.trim() || null;
   const scope = searchParams.get("scope")?.trim() || "placeholder";
@@ -391,14 +405,17 @@ export async function DELETE(req: NextRequest): Promise<Response> {
   }
 
   const supabase = createSupabaseServerClient();
-  const placeholder = scope === "all" ? null : await resolvePlaceholderInstructor(supabase, branchId);
+  const placeholder =
+    scope === "all" || instructorId ? null : await resolvePlaceholderInstructor(supabase, branchId);
 
   let query = supabase
     .from("instructor_class_location_details")
     .delete()
     .eq("branch_id", branchId);
 
-  if (placeholder?.id) {
+  if (instructorId) {
+    query = query.eq("instructor_id", instructorId);
+  } else if (placeholder?.id) {
     query = query.eq("instructor_id", placeholder.id);
   }
 
