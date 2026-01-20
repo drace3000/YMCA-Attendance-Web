@@ -37,11 +37,18 @@ docker ps --filter "name=$dbContainer" --format "table {{.Names}}\t{{.Status}}\t
 
 ## Preferred workflow (PowerShell, Windows)
 
+> Note: Use **Windows PowerShell (`powershell`)** on this machine (no `pwsh` in PATH). If you run as a one-liner, wrap the script in `& { ... }` to avoid parser errors with `-not` and string terminators.
+
 ### 1) Create the archive inside the container, copy to `backups/`, then cleanup
 
 Requirements:
 - Use `--no-owner --no-acl` so restores are more portable.
 - Prefer running `pg_dump` inside the container to avoid host port confusion.
+- When running as a single command, use:
+
+```powershell
+powershell -NoProfile -Command "& { $ErrorActionPreference='Stop'; $dbContainer = docker ps --filter \"name=supabase_db_\" --format \"{{.Names}}\" | Select-Object -First 1; if (-not $dbContainer) { throw 'Supabase DB container not found'; }; $ts = Get-Date -Format 'yyyyMMdd_HHmmss'; $dumpName = \"supabase_backup_${ts}_full.dump\"; $hostDumpPath = Join-Path (Resolve-Path .\backups) $dumpName; docker exec -i $dbContainer pg_dump -U postgres -d postgres -Fc --verbose --no-owner --no-acl -f \"/tmp/$dumpName\"; if ($LASTEXITCODE -ne 0) { throw 'pg_dump failed'; }; docker cp \"$dbContainer`:/tmp/$dumpName\" \"$hostDumpPath\"; if ($LASTEXITCODE -ne 0) { throw 'docker cp failed'; }; docker exec -i $dbContainer rm -f \"/tmp/$dumpName\" | Out-Null; Write-Output \"DUMP_PATH=$hostDumpPath\"; }"
+```
 
 ```powershell
 # From repo root
@@ -67,6 +74,12 @@ docker exec -i $dbContainer rm -f "/tmp/$dumpName" | Out-Null
 
 Important: **don’t truncate output** with `Select-Object -First N` or `head` while validating, because that can break the pipe and cause a false non‑zero exit.
 
+One-liner variant (validate latest dump):
+
+```powershell
+powershell -NoProfile -Command "& { $ErrorActionPreference='Stop'; $dbContainer = docker ps --filter \"name=supabase_db_\" --format \"{{.Names}}\" | Select-Object -First 1; if (-not $dbContainer) { throw 'Supabase DB container not found'; }; $dumpPath = Get-ChildItem .\\backups\\supabase_backup_*_full.dump | Sort-Object LastWriteTime -Descending | Select-Object -First 1 | ForEach-Object FullName; if (-not $dumpPath) { throw 'No dump found to validate'; }; $dumpName = Split-Path $dumpPath -Leaf; docker cp \"$dumpPath\" \"$dbContainer`:/tmp/$dumpName\"; if ($LASTEXITCODE -ne 0) { throw 'docker cp failed'; }; docker exec -i $dbContainer pg_restore --list \"/tmp/$dumpName\" | Out-Null; if ($LASTEXITCODE -ne 0) { throw 'pg_restore --list failed (dump may be invalid)'; }; docker exec -i $dbContainer rm -f \"/tmp/$dumpName\" | Out-Null; Write-Output \"VALIDATED=$dumpName\"; }"
+```
+
 ```powershell
 docker cp "$hostDumpPath" "$dbContainer`:/tmp/$dumpName"
 if ($LASTEXITCODE -ne 0) { throw "docker cp failed" }
@@ -79,6 +92,12 @@ docker exec -i $dbContainer rm -f "/tmp/$dumpName" | Out-Null
 ```
 
 ### 3) Create a checksum sidecar (recommended)
+
+One-liner variant (latest dump):
+
+```powershell
+powershell -NoProfile -Command "& { $ErrorActionPreference='Stop'; $dumpPath = Get-ChildItem .\\backups\\supabase_backup_*_full.dump | Sort-Object LastWriteTime -Descending | Select-Object -First 1 | ForEach-Object FullName; if (-not $dumpPath) { throw 'No dump found'; }; $hash = Get-FileHash $dumpPath -Algorithm SHA256; $hash.Hash | Out-File ($dumpPath + '.sha256.txt') -Encoding ascii; Write-Output \"SHA256=$($hash.Hash)\"; }"
+```
 
 ```powershell
 $hash = Get-FileHash $hostDumpPath -Algorithm SHA256
