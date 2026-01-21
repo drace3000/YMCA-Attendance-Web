@@ -38,7 +38,11 @@ The Maintenance page provides Branch Managers with CRUD (Create, Read, Update, D
 
 2. **Real-time Validation**: Duplicate checking happens as the user types (debounced at 300ms) with visual feedback.
 
-3. **Nickname Suggestions**: When an instructor nickname is already taken, the system generates alternative suggestions based on the instructor's name.
+3. **Nickname Suggestions + Instructor ID**:
+   - Nicknames are **A–Z only**, **uppercase**, **min 2 / max 8 characters**, and **unique within the branch scope** (owned + shared).
+   - When adding a new instructor, the UI offers **5 suggested nicknames** derived from first + last name, with override capability.
+   - On save, the system generates a stable **Instructor ID** (`readable_id`) in the format `ASSOC-BRANCHSHORT-NICKNAME` (e.g., `GROC-ES-JOHNDOE`).
+   - After creation, **Nickname** and **Instructor ID** are **not editable**.
 
 4. **Trademark Symbols**: Class names can include ™ ® ℠ © symbols for licensed fitness programs.
 
@@ -140,7 +144,8 @@ CREATE INDEX idx_locations_is_active ON locations(is_active) WHERE is_active = t
 | branch_id | uuid | No | FK to branches |
 | first_name | text | Yes | Display on forms |
 | last_name | text | Yes | Display on forms |
-| nickname | text | No | Unique per branch, shown on schedules |
+| nickname | text | Yes | **A–Z only**, uppercase, **min 2 / max 8**, unique per branch scope; shown on schedules |
+| readable_id | text | Yes | Stable Instructor ID: `ASSOC-BRANCHSHORT-NICKNAME` |
 | raw_name | text | Yes | Auto-generated: "first_name last_name" |
 | is_active | boolean | Yes | Default: true |
 
@@ -188,7 +193,19 @@ Response:
 ```json
 {
   "exists": true,
-  "suggestions": ["JOHN S", "JOHN SM", "J SMITH"]
+  "suggestions": ["JOHNSMITH", "JOHNSMIT", "JOHNSMI", "JSMITH", "JOHNSMITHA"]
+}
+```
+
+#### GET - Suggest Nicknames (New Instructor)
+```
+GET /api/maintenance/instructors?suggest_nicknames=true&first_name=John&last_name=Smith&branch_id=uuid
+```
+
+Response:
+```json
+{
+  "suggestions": ["JOHNSMITH", "JOHNSMIT", "JOHNSMI", "JSMITH", "JOHNSMITHA"]
 }
 ```
 
@@ -197,7 +214,7 @@ Response:
 {
   "first_name": "John",
   "last_name": "Smith",
-  "nickname": "JOHN S",
+  "nickname": "JOHNSMITH",
   "branch_id": "optional-uuid"
 }
 ```
@@ -207,8 +224,7 @@ Response:
 {
   "id": "instructor-uuid",
   "first_name": "John",
-  "last_name": "Smith",
-  "nickname": "JOHNNY"
+  "last_name": "Smith"
 }
 ```
 

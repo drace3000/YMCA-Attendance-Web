@@ -36,33 +36,98 @@ type UpdateInstructorPayload = {
   is_active?: boolean;
 };
 
-// Generate nickname suggestions based on first and last name
-function generateNicknameSuggestions(firstName: string, lastName: string): string[] {
-  const first = firstName.trim().toUpperCase();
-  const last = lastName.trim().toUpperCase();
-  
-  if (!first && !last) return [];
-  
-  const suggestions: string[] = [];
-  
-  if (first) {
-    suggestions.push(first); // JOHN
+const NICKNAME_MIN_LEN = 2;
+const NICKNAME_MAX_LEN = 8;
+
+function sanitizeNickname(input: string): string {
+  return input
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z]/g, "")
+    .slice(0, NICKNAME_MAX_LEN);
+}
+
+function sanitizeNamePart(input: string): string {
+  // Same rules as nickname, but keep full length for candidate generation.
+  return input.trim().toUpperCase().replace(/[^A-Z]/g, "");
+}
+
+function isNicknameTaken(takenNormalized: Set<string>, candidate: string): boolean {
+  const normalized = sanitizeNickname(candidate);
+  if (!normalized) return true;
+  return takenNormalized.has(normalized);
+}
+
+function buildBaseNicknameCandidates(firstName: string, lastName: string): string[] {
+  const first = sanitizeNamePart(firstName);
+  const last = sanitizeNamePart(lastName);
+  if (!first || !last) return [];
+
+  // Each tuple is [charsFromFirst, charsFromLast], sum <= 8, both >= 1.
+  const patterns: Array<[number, number]> = [
+    [5, 3],
+    [4, 4],
+    [6, 2],
+    [2, 6],
+    [3, 5],
+    [5, 2],
+    [2, 5],
+    [4, 3],
+    [3, 4],
+    [7, 1],
+    [1, 7],
+  ];
+
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const [fCount, lCount] of patterns) {
+    const f = first.slice(0, fCount);
+    const l = last.slice(0, lCount);
+    if (!f || !l) continue;
+    const candidate = sanitizeNickname(`${f}${l}`);
+    if (!candidate) continue;
+    if (seen.has(candidate)) continue;
+    seen.add(candidate);
+    out.push(candidate);
   }
-  
-  if (first && last) {
-    suggestions.push(`${first} ${last.charAt(0)}`); // JOHN S
-    if (last.length >= 2) {
-      suggestions.push(`${first} ${last.substring(0, 2)}`); // JOHN SM
+  return out;
+}
+
+function fillNicknameSuggestions(
+  firstName: string,
+  lastName: string,
+  takenNormalized: Set<string>,
+  limit: number,
+): string[] {
+  const base = buildBaseNicknameCandidates(firstName, lastName);
+  const out: string[] = [];
+
+  for (const c of base) {
+    if (out.length >= limit) break;
+    if (isNicknameTaken(takenNormalized, c)) continue;
+    out.push(c);
+  }
+
+  // If we still don't have enough, append a trailing letter suffix (A, B, C...)
+  // while keeping max length 10. No numeric suffixes.
+  if (out.length < limit && base.length > 0) {
+    const suffixLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    for (const seed of base) {
+      for (const ch of suffixLetters) {
+        if (out.length >= limit) break;
+        // Use (max-1) chars of seed + suffix (or replace last char if seed is already max).
+        const stem = seed.length >= NICKNAME_MAX_LEN ? seed.slice(0, NICKNAME_MAX_LEN - 1) : seed;
+        const candidate = sanitizeNickname(`${stem}${ch}`);
+        if (!candidate) continue;
+        if (out.includes(candidate)) continue;
+        if (isNicknameTaken(takenNormalized, candidate)) continue;
+        out.push(candidate);
+      }
+      if (out.length >= limit) break;
     }
-    suggestions.push(`${first.charAt(0)} ${last}`); // J SMITH
-    suggestions.push(`${first} ${last}`); // JOHN SMITH
   }
-  
-  if (last && !first) {
-    suggestions.push(last); // SMITH
-  }
-  
-  return suggestions;
+
+  return out.slice(0, limit);
 }
 
 function sanitizeReadableIdPart(input: string): string {
@@ -118,12 +183,56 @@ async function getNextReadableId(
   return `${base}-${maxSuffix + 1}`;
 }
 
+async function getBranchScopedNicknameSet(
+  supabase: ReturnType<typeof createSupabaseServerClient>,
+  branchId: string,
+  linkedIds: string[],
+): Promise<Set<string>> {
+  const ownedNickQuery = supabase
+    .from("instructors")
+    .select("nickname")
+    .eq("branch_id", branchId);
+
+  const linkedNickQuery =
+    linkedIds.length > 0
+      ? supabase
+          .from("instructors")
+          .select("nickname")
+          .in("id", linkedIds)
+      : null;
+
+  const [{ data: ownedNicknames, error: ownedErr }, linkedNickRes] = await Promise.all([
+    ownedNickQuery,
+    linkedNickQuery ? linkedNickQuery : Promise.resolve({ data: [], error: null }),
+  ]);
+
+  const linkedErr = (linkedNickRes as any)?.error ?? null;
+  if (ownedErr || linkedErr) {
+    const msg =
+      (ownedErr ?? linkedErr)?.message ?? "Failed to load nickname scope";
+    throw new Error(msg);
+  }
+
+  const rows = [
+    ...(Array.isArray(ownedNicknames) ? ownedNicknames : []),
+    ...(((linkedNickRes as any)?.data ?? []) as Array<{ nickname?: string | null }>),
+  ];
+
+  const taken = new Set<string>();
+  for (const r of rows) {
+    const normalized = sanitizeNickname(String(r?.nickname ?? ""));
+    if (normalized) taken.add(normalized);
+  }
+  return taken;
+}
+
 // GET - List all instructors or check nickname availability
 export async function GET(req: NextRequest): Promise<Response> {
   const required = await requireRecipientAccess(req, { allowDevPassthrough: true });
   if (!required.ok) return required.response;
 
   const { searchParams } = new URL(req.url);
+  const suggestNicknames = searchParams.get("suggest_nicknames") === "true";
   const checkNickname = searchParams.get("check_nickname");
   const requestedBranchId = searchParams.get("branch_id");
   const firstName = searchParams.get("first_name") || "";
@@ -154,91 +263,39 @@ export async function GET(req: NextRequest): Promise<Response> {
     .map((r: { instructor_id: string }) => r.instructor_id)
     .filter(Boolean);
 
+  if (suggestNicknames) {
+    try {
+      const taken = await getBranchScopedNicknameSet(supabase, branchId, linkedIds);
+      const suggestions = fillNicknameSuggestions(firstName, lastName, taken, 5);
+      return NextResponse.json({ suggestions });
+    } catch (e) {
+      return NextResponse.json(
+        { error: e instanceof Error ? e.message : "Failed to suggest nicknames" },
+        { status: 500 },
+      );
+    }
+  }
+
   // If checking nickname availability, return validation result with suggestions
   if (checkNickname) {
-    const nickname = checkNickname.trim();
-
-    const ownedQuery = supabase
-      .from("instructors")
-      .select("id, nickname")
-      .ilike("nickname", nickname)
-      .eq("branch_id", branchId);
-
-    const linkedQuery =
-      linkedIds.length > 0
-        ? supabase
-            .from("instructors")
-            .select("id, nickname")
-            .ilike("nickname", nickname)
-            .in("id", linkedIds)
-        : null;
-
-    const [{ data: ownedData, error: ownedError }, linkedRes] = await Promise.all([
-      ownedQuery,
-      linkedQuery ? linkedQuery : Promise.resolve({ data: [], error: null }),
-    ]);
-
-    const linkedData = (linkedRes as any)?.data ?? [];
-    const error = ownedError ?? (linkedRes as any)?.error ?? null;
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    const normalized = sanitizeNickname(checkNickname);
+    if (!normalized || normalized.length < NICKNAME_MIN_LEN) {
+      return NextResponse.json({ exists: false, suggestions: [] });
     }
 
-    const merged = [...(ownedData ?? []), ...(linkedData ?? [])];
-    const exists = (merged.length ?? 0) > 0;
-    
-    if (exists) {
-      // Generate suggestions and filter out existing ones
-      const allSuggestions = generateNicknameSuggestions(firstName, lastName);
-      
-      // Check which suggestions are available
-      const ownedNickQuery = supabase
-        .from("instructors")
-        .select("nickname")
-        .eq("branch_id", branchId);
-
-      const linkedNickQuery =
-        linkedIds.length > 0
-          ? supabase
-              .from("instructors")
-              .select("nickname")
-              .in("id", linkedIds)
-          : null;
-
-      const [{ data: ownedNicknames, error: nickErr }, linkedNickRes] =
-        await Promise.all([
-          ownedNickQuery,
-          linkedNickQuery ? linkedNickQuery : Promise.resolve({ data: [], error: null }),
-        ]);
-
-      if (nickErr || (linkedNickRes as any)?.error) {
-        return NextResponse.json(
-          { error: (nickErr ?? (linkedNickRes as any)?.error)?.message ?? "Failed to validate nickname" },
-          { status: 500 },
-        );
-      }
-
-      const existingNicknames = [
-        ...(ownedNicknames ?? []),
-        ...(((linkedNickRes as any)?.data ?? []) as any[]),
-      ];
-
-      const takenNicknames = new Set(
-        (existingNicknames ?? []).map((r) => (r.nickname ?? "").toUpperCase())
+    try {
+      const taken = await getBranchScopedNicknameSet(supabase, branchId, linkedIds);
+      const exists = taken.has(normalized);
+      const suggestions = exists
+        ? fillNicknameSuggestions(firstName, lastName, taken, 5)
+        : [];
+      return NextResponse.json({ exists, suggestions });
+    } catch (e) {
+      return NextResponse.json(
+        { error: e instanceof Error ? e.message : "Failed to validate nickname" },
+        { status: 500 },
       );
-
-      const availableSuggestions = allSuggestions.filter(
-        (s) => !takenNicknames.has(s.toUpperCase())
-      );
-
-      return NextResponse.json({
-        exists: true,
-        suggestions: availableSuggestions.slice(0, 4),
-      });
     }
-
-    return NextResponse.json({ exists: false, suggestions: [] });
   }
 
   // Regular list query
@@ -361,27 +418,45 @@ export async function POST(req: NextRequest): Promise<Response> {
     return NextResponse.json({ error: "branch_id is required" }, { status: 400 });
   }
 
-  const trimmedNickname = nickname?.trim();
+  const trimmedNickname = sanitizeNickname(nickname ?? "");
   if (!trimmedNickname) {
     // We use nickname for schedules and for readable_id generation.
     return NextResponse.json({ error: "nickname is required" }, { status: 400 });
   }
+  if (trimmedNickname.length < NICKNAME_MIN_LEN) {
+    return NextResponse.json(
+      { error: `nickname must be at least ${NICKNAME_MIN_LEN} characters` },
+      { status: 400 },
+    );
+  }
 
-  // Check nickname uniqueness if provided
-  if (trimmedNickname) {
-    let nickQuery = supabase
-      .from("instructors")
-      .select("id")
-      .ilike("nickname", trimmedNickname);
-    nickQuery = nickQuery.eq("branch_id", branch_id);
-    const { data: existing } = await nickQuery;
+  // Compute nickname uniqueness for this branch scope (owned + linked/shared).
+  const { data: linkedRows, error: linkedError } = await supabase
+    .from("instructor_branches")
+    .select("instructor_id")
+    .eq("branch_id", branch_id);
 
-    if (existing && existing.length > 0) {
+  if (linkedError) {
+    return NextResponse.json({ error: linkedError.message }, { status: 500 });
+  }
+
+  const linkedIds = (linkedRows ?? [])
+    .map((r: { instructor_id: string }) => r.instructor_id)
+    .filter(Boolean);
+
+  try {
+    const taken = await getBranchScopedNicknameSet(supabase, branch_id, linkedIds);
+    if (taken.has(trimmedNickname)) {
       return NextResponse.json(
         { error: "Nickname already exists for this branch" },
-        { status: 409 }
+        { status: 409 },
       );
     }
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "Failed to validate nickname" },
+      { status: 500 },
+    );
   }
 
   const raw_name = `${first_name.trim()} ${last_name.trim()}`;
@@ -497,6 +572,18 @@ export async function PUT(req: NextRequest): Promise<Response> {
     return NextResponse.json({ error: "Instructor not found" }, { status: 404 });
   }
 
+  // Nickname becomes immutable after creation (readable_id is stable and should not be recomputed).
+  if (nickname !== undefined) {
+    const normalizedIncoming = sanitizeNickname(String(nickname ?? ""));
+    const normalizedCurrent = sanitizeNickname(String(current.nickname ?? ""));
+    if (normalizedIncoming !== normalizedCurrent) {
+      return NextResponse.json(
+        { error: "Nickname cannot be changed after creation" },
+        { status: 400 },
+      );
+    }
+  }
+
   // Branch users may only update instructors that are in-scope (owned OR linked).
   const access = required.access;
   if (access?.recipient_type === "Branch") {
@@ -515,32 +602,12 @@ export async function PUT(req: NextRequest): Promise<Response> {
     }
   }
 
-  // Check nickname uniqueness if changing
-  if (nickname !== undefined && nickname !== current.nickname && nickname?.trim()) {
-    let nickQuery = supabase
-      .from("instructors")
-      .select("id")
-      .ilike("nickname", nickname.trim())
-      .neq("id", id);
-    if (current.branch_id) {
-      nickQuery = nickQuery.eq("branch_id", current.branch_id);
-    } else {
-      nickQuery = nickQuery.is("branch_id", null);
-    }
-    const { data: existing } = await nickQuery;
-
-    if (existing && existing.length > 0) {
-      return NextResponse.json(
-        { error: "Nickname already exists for this branch" },
-        { status: 409 }
-      );
-    }
-  }
+  // Nickname uniqueness checks are not needed here because nickname is immutable.
 
   const updates: Record<string, unknown> = {};
   if (first_name !== undefined) updates.first_name = first_name.trim();
   if (last_name !== undefined) updates.last_name = last_name.trim();
-  if (nickname !== undefined) updates.nickname = nickname?.trim() || null;
+  // Do not update nickname (immutable). Keep for backward-compat if client sent it unchanged.
   if (is_active !== undefined) updates.is_active = is_active;
 
   // Update raw_name if names changed, preserving existing values as fallback

@@ -9,6 +9,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { PopoverSelect, type PopoverSelectOption } from "@/components/ui/popover-select";
 import { MonthYearPicker } from "@/components/ui/month-year-picker";
 import { InstructorAvailabilityModal } from "@/components/instructor-availability/InstructorAvailabilityModal";
 import { useThemeSettings } from "@/components/theme-settings-provider";
@@ -57,6 +58,16 @@ const DOW_ORDER: Record<string, number> = {
   SATURDAY: 5,
   SUNDAY: 6,
 };
+
+const NICKNAME_MIN_LEN = 2;
+const NICKNAME_MAX_LEN = 8;
+function sanitizeNicknameInput(input: string): string {
+  return input
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z]/g, "")
+    .slice(0, NICKNAME_MAX_LEN);
+}
 
 function getIsoMonthNow(): string {
   const d = new Date();
@@ -120,9 +131,22 @@ export function InstructorsTab() {
     branchId: string;
   } | null>(null);
 
+  const [saveResult, setSaveResult] = useState<{
+    status: "success" | "error";
+    message: string;
+    instructor?: Instructor | null;
+  } | null>(null);
+  const [showSaveModal, setShowSaveModal] = useState(false);
+
   // Nickname validation
   const [nicknameValidation, setNicknameValidation] = useState<NicknameValidation | null>(null);
   const [validatingNickname, setValidatingNickname] = useState(false);
+  const [nicknameSuggestions, setNicknameSuggestions] = useState<string[]>([]);
+  const [suggestingNicknames, setSuggestingNicknames] = useState(false);
+
+  // Branch meta for Instructor ID preview
+  const [branchShortCode, setBranchShortCode] = useState<string | null>(null);
+  const [associationCode, setAssociationCode] = useState<string | null>(null);
 
   // Instructor availability (month-scoped allow-list)
   const [availabilityMonth, setAvailabilityMonth] = useState<string>(getIsoMonthNow());
@@ -279,8 +303,13 @@ export function InstructorsTab() {
     const timeout = setTimeout(async () => {
       setValidatingNickname(true);
       try {
+        const normalizedNickname = sanitizeNicknameInput(formData.nickname);
+        if (!normalizedNickname) {
+          setNicknameValidation(null);
+          return;
+        }
         const params = new URLSearchParams({
-          check_nickname: formData.nickname.trim(),
+          check_nickname: normalizedNickname,
           first_name: formData.first_name.trim(),
           last_name: formData.last_name.trim(),
           branch_id: branch.id,
@@ -291,7 +320,8 @@ export function InstructorsTab() {
           // Do not show as duplicate if we are editing and it is our own nickname
           if (editingId) {
             const current = instructors.find((i) => i.id === editingId);
-            if (current?.nickname?.toLowerCase() === formData.nickname.trim().toLowerCase()) {
+            const currentNick = sanitizeNicknameInput(current?.nickname ?? "");
+            if (currentNick && currentNick === normalizedNickname) {
               setNicknameValidation({ exists: false, suggestions: [] });
               return;
             }
@@ -307,6 +337,70 @@ export function InstructorsTab() {
 
     return () => clearTimeout(timeout);
   }, [formData.nickname, formData.first_name, formData.last_name, editingId, instructors]);
+
+  // Fetch nickname suggestions (NEW instructor only) when first+last are present
+  useEffect(() => {
+    if (!isFormOpen) return;
+    if (editingId) return;
+    const first = formData.first_name.trim();
+    const last = formData.last_name.trim();
+    if (!first || !last) {
+      setNicknameSuggestions([]);
+      return;
+    }
+
+    const timeout = window.setTimeout(async () => {
+      setSuggestingNicknames(true);
+      try {
+        const params = new URLSearchParams({
+          suggest_nicknames: "true",
+          first_name: first,
+          last_name: last,
+          branch_id: branch.id,
+        });
+        const res = await fetch(`/api/maintenance/instructors?${params.toString()}`);
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) return;
+        const suggestions = Array.isArray(json?.suggestions)
+          ? (json.suggestions as unknown[]).filter((v): v is string => typeof v === "string")
+          : [];
+        setNicknameSuggestions(suggestions.slice(0, 5));
+        // Auto-fill the first suggestion only if nickname is empty (do not override manual input).
+        setFormData((f) => {
+          const current = sanitizeNicknameInput(f.nickname);
+          if (current) return f;
+          const firstSuggestion = suggestions[0] ? sanitizeNicknameInput(String(suggestions[0])) : "";
+          return firstSuggestion ? { ...f, nickname: firstSuggestion } : f;
+        });
+      } catch {
+        // ignore
+      } finally {
+        setSuggestingNicknames(false);
+      }
+    }, 250);
+
+    return () => window.clearTimeout(timeout);
+  }, [branch.id, editingId, formData.first_name, formData.last_name, isFormOpen]);
+
+  // Fetch association + branch short code for Instructor ID preview
+  useEffect(() => {
+    if (!branch?.id) return;
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const res = await fetch(`/api/branches/${encodeURIComponent(branch.id)}`, { signal: controller.signal });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok || controller.signal.aborted) return;
+        const assoc = typeof json?.association_code === "string" ? json.association_code : null;
+        const short = typeof json?.short_code === "string" ? json.short_code : null;
+        setAssociationCode(assoc ? assoc.toUpperCase() : null);
+        setBranchShortCode(short ? short.toUpperCase() : null);
+      } catch {
+        // ignore
+      }
+    })();
+    return () => controller.abort();
+  }, [branch.id]);
 
   const openNewForm = () => {
     setFormData({ first_name: "", last_name: "", nickname: "" });
@@ -382,6 +476,8 @@ export function InstructorsTab() {
     setShareError(null);
     setShareSearch("");
     setSharePopoverOpen(false);
+    setSaveResult(null);
+    setShowSaveModal(false);
   };
 
   const handleSave = async () => {
@@ -443,12 +539,33 @@ export function InstructorsTab() {
         }
       }
 
-      closeForm();
+      setSaveResult({
+        status: "success",
+        message: "Instructor saved successfully.",
+        instructor: saved ?? null,
+      });
+      setShowSaveModal(true);
       await loadInstructors();
     } catch (e) {
-      setFormError(e instanceof Error ? e.message : "Failed to save");
+      const friendly =
+        e instanceof Error && e.message
+          ? e.message
+          : "We couldn't save this instructor. Please check the details and try again.";
+      setFormError(friendly);
+      setSaveResult({
+        status: "error",
+        message: friendly,
+      });
+      setShowSaveModal(true);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSaveModalClose = () => {
+    setShowSaveModal(false);
+    if (saveResult?.status === "success") {
+      closeForm();
     }
   };
 
@@ -634,6 +751,8 @@ export function InstructorsTab() {
     return availabilitySummary.reduce((sum, d) => sum + d.windows.length, 0);
   }, [availabilitySummary]);
 
+  const shareDisabled = !editingId;
+
   const markScrolling = useCallback(() => {
     // When the user scrolls the table, the mouse pointer stays fixed while rows move under it.
     // That can trigger many mouseenter events for our pill tooltips, causing jank/focus issues.
@@ -656,6 +775,13 @@ export function InstructorsTab() {
     };
   }, []);
 
+  // Close branch sharing popover when not in edit mode
+  useEffect(() => {
+    if (!editingId) {
+      setSharePopoverOpen(false);
+    }
+  }, [editingId]);
+
   const handleToggleActive = async (instructor: Instructor) => {
     try {
       const res = await fetch("/api/maintenance/instructors", {
@@ -672,9 +798,46 @@ export function InstructorsTab() {
   };
 
   const selectSuggestion = (suggestion: string) => {
-    setFormData((f) => ({ ...f, nickname: suggestion }));
+    setFormData((f) => ({ ...f, nickname: sanitizeNicknameInput(suggestion) }));
     setNicknameValidation(null);
   };
+
+  const effectiveNicknameSuggestions: string[] = useMemo(() => {
+    if (editingId) return [];
+    if (nicknameValidation?.exists && nicknameValidation.suggestions.length > 0) {
+      return nicknameValidation.suggestions;
+    }
+    return nicknameSuggestions;
+  }, [editingId, nicknameSuggestions, nicknameValidation?.exists, nicknameValidation?.suggestions]);
+
+  const nicknameOptions: PopoverSelectOption[] = useMemo(() => {
+    return effectiveNicknameSuggestions.map((s) => ({ value: s, label: s }));
+  }, [effectiveNicknameSuggestions]);
+
+  const selectedNicknameOptionValue = useMemo(() => {
+    const current = sanitizeNicknameInput(formData.nickname);
+    return effectiveNicknameSuggestions.includes(current) ? current : null;
+  }, [effectiveNicknameSuggestions, formData.nickname]);
+
+  const instructorIdPreview = useMemo(() => {
+    if (editingId) {
+      return editingInstructor?.readable_id ?? null;
+    }
+    const nick = sanitizeNicknameInput(formData.nickname);
+    if (!nick) return null;
+    if (nicknameValidation?.exists) return null;
+    if (!associationCode || !branchShortCode) return null;
+    return `${associationCode}-${branchShortCode}-${nick}`;
+  }, [associationCode, branchShortCode, editingId, editingInstructor?.readable_id, formData.nickname, nicknameValidation?.exists]);
+
+  const sanitizedNickname = useMemo(() => sanitizeNicknameInput(formData.nickname), [formData.nickname]);
+  const nicknameTooShort = sanitizedNickname.length > 0 ? sanitizedNickname.length < NICKNAME_MIN_LEN : true;
+  const disableSave =
+    saving ||
+    validatingNickname ||
+    suggestingNicknames ||
+    nicknameValidation?.exists ||
+    nicknameTooShort;
 
   // Search/filter logic
   const matchesSearch = useCallback((instructor: Instructor, term: string): boolean => {
@@ -743,7 +906,8 @@ export function InstructorsTab() {
           <button
             type="button"
             onClick={openNewForm}
-            className="btn-pill inline-flex items-center gap-2 bg-[var(--cta)] px-4 py-2 text-sm font-semibold text-[var(--cta-foreground)] shadow-sm hover:opacity-90"
+            disabled={isFormOpen}
+            className="btn-pill inline-flex items-center gap-2 bg-[var(--cta)] px-4 py-2 text-sm font-semibold text-[var(--cta-foreground)] shadow-sm hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Plus className="h-4 w-4" />
             Add Instructor
@@ -753,6 +917,7 @@ export function InstructorsTab() {
               type="checkbox"
               checked={showInactive}
               onChange={(e) => setShowInactive(e.target.checked)}
+              disabled={isFormOpen}
               className="h-4 w-4 rounded border-white/20 bg-black/20"
             />
             Show inactive
@@ -770,9 +935,10 @@ export function InstructorsTab() {
               suppressHydrationWarning
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
+              disabled={isFormOpen}
               placeholder="Search..."
               autoComplete="off"
-              className="w-40 rounded-xl border border-white/15 bg-black/20 py-1.5 pl-9 pr-8 text-sm text-foreground placeholder:text-foreground/50 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/50"
+              className="w-40 rounded-xl border border-white/15 bg-black/20 py-1.5 pl-9 pr-8 text-sm text-foreground placeholder:text-foreground/50 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/50 disabled:cursor-not-allowed disabled:opacity-60"
             />
             {searchTerm && (
               <button
@@ -782,6 +948,7 @@ export function InstructorsTab() {
                   setSearchTerm("");
                   searchInputRef.current?.focus();
                 }}
+                disabled={isFormOpen}
                 className="absolute right-2 rounded p-0.5 text-muted-foreground transition hover:bg-white/10 hover:text-foreground"
                 title="Clear search"
               >
@@ -811,11 +978,12 @@ export function InstructorsTab() {
                     }}
                     onMouseEnter={() => setPopoverOpen(option.id)}
                     onMouseLeave={() => setPopoverOpen(null)}
+                    disabled={isFormOpen}
                     className={`rounded-lg px-2 py-1 text-xs font-medium transition-all ${
                       searchMode === option.id
                         ? "bg-[var(--brand)] text-white shadow-sm"
                         : "bg-black/20 text-foreground/70 hover:bg-black/30 hover:text-foreground"
-                    }`}
+                    } disabled:cursor-not-allowed disabled:opacity-50`}
                   >
                     {option.label}
                   </button>
@@ -891,45 +1059,62 @@ export function InstructorsTab() {
                     <span className="ml-2 text-xs text-foreground/50">checking...</span>
                   )}
                 </label>
+                {!editingId ? (
+                  <div className="mt-1 flex items-center gap-2">
+                    <PopoverSelect
+                      value={selectedNicknameOptionValue}
+                      options={nicknameOptions}
+                      onChange={(next) => selectSuggestion(next)}
+                      ariaLabel="Select a suggested nickname"
+                      disabled={suggestingNicknames || nicknameOptions.length === 0}
+                      placeholder={suggestingNicknames ? "Loading suggestions..." : "Suggested nicknames"}
+                      className="w-[220px]"
+                    />
+                    <span className="text-xs text-muted-foreground">
+                      {nicknameValidation?.exists
+                        ? "Nickname taken — pick a suggestion"
+                        : nicknameOptions.length
+                          ? `${nicknameOptions.length} suggestions`
+                          : "Enter first + last name for suggestions"}
+                    </span>
+                  </div>
+                ) : null}
                 <div className="relative">
                   <input
                     type="text"
                     value={formData.nickname}
-                    onChange={(e) => setFormData((f) => ({ ...f, nickname: e.target.value }))}
+                    onChange={(e) =>
+                      setFormData((f) => ({
+                        ...f,
+                        nickname: sanitizeNicknameInput(e.target.value),
+                      }))
+                    }
+                    disabled={!!editingId}
                     className={`mt-1 w-full rounded-xl border px-3 py-2 text-sm text-foreground placeholder:text-foreground/50 focus:outline-none focus:ring-2 ${
                       nicknameValidation?.exists
                         ? "border-red-400/50 bg-red-950/20 focus:ring-red-400/50"
                         : "border-white/25 bg-black/20 focus:ring-[var(--brand)]/50"
-                    }`}
-                    placeholder="JOHN S (shown on schedule)"
+                    } disabled:cursor-not-allowed disabled:opacity-60`}
+                    placeholder="JOHNS"
                   />
                   {formData.nickname && !validatingNickname && nicknameValidation && !nicknameValidation.exists && (
                     <Check className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-green-400" />
                   )}
                 </div>
 
-                {/* Nickname suggestions */}
-                {nicknameValidation?.exists && nicknameValidation.suggestions.length > 0 && (
-                  <div className="mt-2">
-                    <p className="text-xs text-red-400">Nickname already in use. Suggestions:</p>
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      {nicknameValidation.suggestions.map((s) => (
-                        <button
-                          key={s}
-                          type="button"
-                          onClick={() => selectSuggestion(s)}
-                          className="rounded-full bg-[var(--brand)]/20 px-2 py-0.5 text-xs font-medium text-[var(--brand-soft)] hover:bg-[var(--brand)]/30"
-                        >
-                          {s}
-                        </button>
-                      ))}
-                    </div>
+                {nicknameValidation?.exists ? (
+                  <div className="mt-2 text-xs text-red-400">Nickname already in use for this branch.</div>
+                ) : null}
+
+                {instructorIdPreview ? (
+                  <div className="mt-2 text-xs text-muted-foreground">
+                    Instructor ID: <span className="font-mono font-semibold text-foreground/90">{instructorIdPreview}</span>
                   </div>
-                )}
+                ) : null}
               </div>
             </div>
 
-            {isAdmin && (
+            {isAdmin && editingId && (
               <div className="rounded-2xl border border-[var(--brand-strong)]/60 bg-[rgb(var(--brand-soft-rgb)/0.18)] px-4 py-3 shadow-sm ring-1 ring-white/5">
                 <div className="flex flex-col gap-1.5">
                   <div className="flex flex-wrap items-center gap-2">
@@ -945,12 +1130,18 @@ export function InstructorsTab() {
                             <PopoverTrigger asChild>
                               <button
                                 type="button"
-                                disabled={orgLoading || shareLoading || !orgBranches.length}
+                                disabled={shareDisabled || orgLoading || shareLoading || !orgBranches.length}
                                 onMouseEnter={() => setShareManageTooltipOpen(true)}
                                 onMouseLeave={() => setShareManageTooltipOpen(false)}
                                 onFocus={() => setShareManageTooltipOpen(true)}
                                 onBlur={() => setShareManageTooltipOpen(false)}
                                 className="btn-pill inline-flex cursor-pointer items-center gap-2 bg-[var(--cta)] px-3 py-1.5 text-xs font-semibold text-[var(--cta-foreground)] shadow-sm hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                                onClick={(e) => {
+                                  if (shareDisabled) {
+                                    e.preventDefault();
+                                    return;
+                                  }
+                                }}
                               >
                                 Manage
                                 <span className="rounded-full bg-black/15 px-2 py-0.5 text-[11px] font-semibold text-[var(--cta-foreground)]/90 ring-1 ring-black/10">
@@ -1016,8 +1207,9 @@ export function InstructorsTab() {
                                 <button
                                   key={b.id}
                                   type="button"
-                                  disabled={!homeBranchId || isHome}
+                                          disabled={shareDisabled || !homeBranchId || isHome}
                                   onClick={() => {
+                                            if (shareDisabled) return;
                                     setShareBranchIds((prev) => {
                                       const current = Array.isArray(prev) ? prev : [];
                                       const home = homeBranchId;
@@ -1034,7 +1226,7 @@ export function InstructorsTab() {
                                   className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-sm transition ${
                                     isHome
                                       ? "cursor-not-allowed bg-white/5 text-foreground/70"
-                                      : !homeBranchId
+                                      : shareDisabled || !homeBranchId
                                         ? "cursor-not-allowed text-foreground/50"
                                         : "cursor-pointer text-foreground hover:bg-[var(--brand-strong)]/50"
                                   }`}
@@ -1112,6 +1304,7 @@ export function InstructorsTab() {
               </div>
             )}
 
+            {editingId && (
             <div className="rounded-2xl border border-[var(--brand-strong)]/60 bg-[rgb(var(--brand-soft-rgb)/0.18)] px-4 py-3 shadow-sm ring-1 ring-white/5">
               <div className="flex flex-col gap-2">
                 <div className="flex flex-wrap items-center gap-2">
@@ -1193,6 +1386,7 @@ export function InstructorsTab() {
                 )}
               </div>
             </div>
+            )}
 
             {formError && (
               <p className="text-sm text-red-400">{formError}</p>
@@ -1209,7 +1403,7 @@ export function InstructorsTab() {
               <button
                 type="button"
                 onClick={handleSave}
-                disabled={saving || nicknameValidation?.exists}
+                disabled={disableSave}
                 className="btn-pill bg-[var(--cta)] px-4 py-2 text-sm font-semibold text-[var(--cta-foreground)] shadow-sm hover:opacity-90 disabled:opacity-50"
               >
                 {saving ? "Saving..." : "Save"}
@@ -1218,6 +1412,66 @@ export function InstructorsTab() {
           </div>
         </div>
       )}
+
+      {showSaveModal && saveResult ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            className="w-full max-w-md rounded-2xl border border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] p-6 shadow-2xl"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3
+                  className={`text-lg font-semibold ${
+                    saveResult.status === "success" ? "text-[var(--cta)]" : "text-red-300"
+                  }`}
+                >
+                  {saveResult.status === "success" ? "Saved" : "Unable to save"}
+                </h3>
+                <p className="mt-1 text-sm text-foreground/80">{saveResult.message}</p>
+              </div>
+              <button
+                type="button"
+                aria-label="Close"
+                onClick={handleSaveModalClose}
+                className="rounded-full p-1 text-foreground/70 hover:bg-white/10 hover:text-foreground"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {saveResult.status === "success" && saveResult.instructor ? (
+              <div className="mt-4 space-y-1 rounded-xl border border-white/10 bg-black/10 p-3 text-sm text-foreground/90">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Name</span>
+                  <span className="font-semibold">
+                    {saveResult.instructor.first_name} {saveResult.instructor.last_name}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Nickname</span>
+                  <span className="font-mono font-semibold">{saveResult.instructor.nickname}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Instructor ID</span>
+                  <span className="font-mono font-semibold">{saveResult.instructor.readable_id}</span>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="mt-6 flex justify-end">
+              <button
+                type="button"
+                onClick={handleSaveModalClose}
+                className="btn-pill bg-[var(--cta)] px-4 py-2 text-sm font-semibold text-[var(--cta-foreground)] shadow-sm hover:opacity-90"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {availabilityModalOpen && editingId ? (
         <InstructorAvailabilityModal
@@ -1242,14 +1496,19 @@ export function InstructorsTab() {
         ) : displayedInstructors.length === 0 ? (
           <div className="text-sm text-muted-foreground">No instructors match your search.</div>
         ) : (
-          <div
-            ref={tableContainerRef}
-            onScroll={markScrolling}
-            onWheel={markScrolling}
-            onTouchMove={markScrolling}
-            className="report-scroll max-h-96 overflow-auto rounded-lg border border-border"
-          >
-            <table className="min-w-full divide-y divide-border text-sm">
+          <div className="relative">
+            <div
+              ref={tableContainerRef}
+              onScroll={markScrolling}
+              onWheel={markScrolling}
+              onTouchMove={markScrolling}
+              aria-disabled={isFormOpen}
+              data-testid="instructors-table-container"
+              className={`report-scroll max-h-96 overflow-auto rounded-lg border border-border transition-opacity ${
+                isFormOpen ? "opacity-50" : ""
+              }`}
+            >
+              <table className="min-w-full divide-y divide-border text-sm">
               <thead className="sticky top-0 z-10">
                 <tr>
                   <th className="bg-[rgb(16,37,37)] px-4 py-2 text-left font-semibold">Name</th>
@@ -1275,6 +1534,7 @@ export function InstructorsTab() {
                       key={instructor.id}
                       ref={isHighlighted ? highlightedRowRef : null}
                       onClick={(e) => {
+                        if (isFormOpen) return;
                         const target = e.target as HTMLElement | null;
                         // Avoid triggering row-edit when user clicks interactive controls within the row.
                         if (target?.closest("button, a, input, select, textarea, [role='button']")) return;
@@ -1404,6 +1664,15 @@ export function InstructorsTab() {
                 })}
               </tbody>
             </table>
+            </div>
+
+            {isFormOpen ? (
+              <div
+                className="absolute inset-0 cursor-not-allowed"
+                data-testid="instructors-table-disabled-overlay"
+                aria-hidden="true"
+              />
+            ) : null}
           </div>
         )}
       </div>

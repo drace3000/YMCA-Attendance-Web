@@ -988,6 +988,14 @@ export function ClassesTab() {
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-t-2xl bg-muted px-5 py-3">
         <div className="flex items-center gap-3">
           <h2 className="text-base font-semibold">Classes</h2>
+          <button
+            type="button"
+            onClick={openNewForm}
+            className="btn-pill inline-flex items-center gap-2 bg-[var(--cta)] px-4 py-2 text-sm font-semibold text-[var(--cta-foreground)] shadow-sm hover:opacity-90"
+          >
+            <Plus className="h-4 w-4" />
+            Add Class
+          </button>
           <label className="flex items-center gap-2 text-sm text-muted-foreground">
             <input
               type="checkbox"
@@ -1026,7 +1034,6 @@ export function ClassesTab() {
             )}
           </div>
         </div>
-
         {/* Search and Filter Options */}
         <div className="flex flex-1 items-center justify-center gap-3">
           <div className="relative z-10 flex items-center">
@@ -1101,15 +1108,6 @@ export function ClassesTab() {
             ))}
           </div>
         </div>
-
-        <button
-          type="button"
-          onClick={openNewForm}
-          className="btn-pill inline-flex items-center gap-2 bg-[var(--cta)] px-4 py-2 text-sm font-semibold text-[var(--cta-foreground)] shadow-sm hover:opacity-90"
-        >
-          <Plus className="h-4 w-4" />
-          Add Class
-        </button>
       </div>
 
       {/* Form Modal */}
@@ -1684,11 +1682,17 @@ export function ClassesTab() {
                     <tr
                       key={classItem.id}
                       ref={isHighlighted ? highlightedRowRef : null}
+                      onClick={(e) => {
+                        if (isFormOpen) return;
+                        const target = e.target as HTMLElement | null;
+                        if (target?.closest("button, a, input, select, textarea, [role='button']")) return;
+                        openEditForm(classItem);
+                      }}
                       className={`transition-colors ${
                         isHighlighted
                           ? "bg-[var(--brand)]/20 ring-2 ring-[var(--brand)]/50 ring-inset"
                           : "hover:bg-muted/50"
-                      } ${!classItem.is_active ? "opacity-50" : ""}`}
+                      } ${!classItem.is_active ? "opacity-50" : ""} cursor-pointer`}
                     >
                       <td className="px-4 py-2 text-foreground">
                         {classItem.name}
