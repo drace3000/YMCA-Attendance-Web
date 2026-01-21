@@ -585,6 +585,9 @@ export function SessionsTab({
   const slotHelperAutoLocateHydratedRef = useRef(false);
   const slotHelperAutoLocateBranchRef = useRef<string | null>(null);
   const slotHelperAutoLocatePersistKey = "slot_helper_auto_locate";
+  const slotHelperInstructorMultiSelectHydratedRef = useRef(false);
+  const slotHelperInstructorMultiSelectPrevRef = useRef<boolean | null>(null);
+  const slotHelperInstructorMultiSelectPersistKey = "slot_helper_instructor_multiselect";
   const slotHelperDragStorageKey = useMemo(
     () => `ymca:scheduling:${branchId ?? "unknown"}:slot-helper-modal:offset`,
     [branchId],
@@ -599,6 +602,7 @@ export function SessionsTab({
   const [slotHelperClosing, setSlotHelperClosing] = useState(false);
   const slotHelperCloseSeq = useRef(0);
   const slotHelperSlotsScrollRef = useRef<HTMLDivElement | null>(null);
+  const slotHelperAutoLocateAcceptedRef = useRef(false);
   const [slotHelperReviewOpen, setSlotHelperReviewOpen] = useState(false);
   const [slotHelperDurationMinutes, setSlotHelperDurationMinutes] = useState<number | null>(null);
   const [slotHelperTransitionMinutes, setSlotHelperTransitionMinutes] = useState(0);
@@ -621,6 +625,7 @@ export function SessionsTab({
   const [slotHelperDateFilterOpen, setSlotHelperDateFilterOpen] = useState(false);
   const [slotHelperAutoLocateEnabled, setSlotHelperAutoLocateEnabled] = useState(true);
   const slotHelperAutoLocatePrevRef = useRef<boolean | null>(null);
+  const [slotHelperInstructorMultiSelect, setSlotHelperInstructorMultiSelect] = useState(false);
   const [slotHelperMultiDayOpen, setSlotHelperMultiDayOpen] = useState(false);
   const [slotHelperMultiDayDays, setSlotHelperMultiDayDays] = useState<SlotHelperDayValue[]>([]);
   const [slotHelperMultiDayOptions, setSlotHelperMultiDayOptions] = useState<
@@ -656,6 +661,8 @@ export function SessionsTab({
     slotHelperDateStateBranchRef.current = branchId ?? null;
     slotHelperAutoLocateHydratedRef.current = false;
     slotHelperAutoLocateBranchRef.current = branchId ?? null;
+    slotHelperInstructorMultiSelectHydratedRef.current = false;
+    slotHelperInstructorMultiSelectPrevRef.current = null;
   }, [branchId]);
 
   // Slot helper multi-day popup position: load from DB on-demand if localStorage doesn't have it yet.
@@ -756,6 +763,7 @@ useEffect(() => {
         slotHelperDateFilter?: unknown;
         slotHelperDateCollapse?: unknown;
         slotHelperAutoLocate?: unknown;
+        slotHelperInstructorMultiSelect?: unknown;
       };
       if (cancelled) return;
       const normalized = Array.isArray(json.slotHelperWeekdays)
@@ -791,6 +799,14 @@ useEffect(() => {
         slotHelperAutoLocateHydratedRef.current = true;
         slotHelperAutoLocateBranchRef.current = branchId;
       }
+
+      if (!slotHelperInstructorMultiSelectHydratedRef.current) {
+        const raw = json.slotHelperInstructorMultiSelect;
+        const next = typeof raw === "boolean" ? raw : false;
+        slotHelperInstructorMultiSelectPrevRef.current = next;
+        setSlotHelperInstructorMultiSelect(next);
+        slotHelperInstructorMultiSelectHydratedRef.current = true;
+      }
     } catch {
       // best effort; fallback remains current state
     }
@@ -824,6 +840,30 @@ useEffect(() => {
     }
   })();
 }, [branchId, slotHelperAutoLocateEnabled, slotHelperAutoLocatePersistKey, slotHelperOpen]);
+useEffect(() => {
+  if (!slotHelperOpen) return;
+  if (!branchId) return;
+  if (process.env.NODE_ENV === "test") return;
+  if (!slotHelperInstructorMultiSelectHydratedRef.current) return;
+  const prev = slotHelperInstructorMultiSelectPrevRef.current;
+  if (prev !== null && prev === slotHelperInstructorMultiSelect) return;
+  slotHelperInstructorMultiSelectPrevRef.current = slotHelperInstructorMultiSelect;
+  void (async () => {
+    try {
+      await fetch("/api/scheduling/ui-state", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          branch_id: branchId,
+          key: slotHelperInstructorMultiSelectPersistKey,
+          value: slotHelperInstructorMultiSelect,
+        }),
+      });
+    } catch {
+      // best effort
+    }
+  })();
+}, [branchId, slotHelperInstructorMultiSelect, slotHelperInstructorMultiSelectPersistKey, slotHelperOpen]);
 useEffect(() => {
   if (!slotHelperOpen) return;
   if (!branchId) return;
@@ -894,6 +934,8 @@ useEffect(() => {
   const [slotHelperRefreshing, setSlotHelperRefreshing] = useState(false);
   const [slotHelperClassDropdownOpen, setSlotHelperClassDropdownOpen] = useState(false);
   const [slotHelperLocationDropdownOpen, setSlotHelperLocationDropdownOpen] = useState(false);
+  const slotHelperLocationDropdownOpenRef = useRef(false);
+  const slotHelperWasRefreshingRef = useRef(false);
   const [slotHelperInstructorDropdownOpen, setSlotHelperInstructorDropdownOpen] = useState(false);
   const [slotHelperMappingRows, setSlotHelperMappingRows] = useState<InstructorClassLocationDetail[]>([]);
   const [slotHelperMappingLoading, setSlotHelperMappingLoading] = useState(false);
@@ -3278,6 +3320,17 @@ useEffect(() => {
   const slotHelperShowRefreshPrompt = !slotHelperUsingRequestHolds && slotHelperRefreshNeeded;
   const slotHelperShowSelectionPrompt = !slotHelperUsingRequestHolds && !slotHelperSelectionsReady;
 
+  useEffect(() => {
+    const wasOpen = slotHelperLocationDropdownOpenRef.current;
+    slotHelperLocationDropdownOpenRef.current = slotHelperLocationDropdownOpen;
+    if (!wasOpen || slotHelperLocationDropdownOpen) return;
+    if (!slotHelperSelectedLocationId) return;
+    if (!slotHelperSelectionsReady) return;
+    if (!slotHelperRefreshNeeded) return;
+    if (slotHelperRefreshing || slotHelperUsingRequestHolds) return;
+    void handleSlotHelperRefresh();
+  });
+
   const slotHelperDateOptions = useMemo(() => {
     const seen = new Set<string>();
     const options: Array<{ value: string; label: string }> = [];
@@ -3363,11 +3416,11 @@ useEffect(() => {
   }, [slotHelperDisplayResults, slotHelperSelectedDates]);
 
   useEffect(() => {
-    // Ensure we keep collapse state for all known dates, defaulting to expanded.
+    // Ensure we keep collapse state for all known dates, defaulting to collapsed.
     setSlotHelperCollapsedDates((prev) => {
       const next: Record<string, boolean> = {};
       for (const opt of slotHelperDateOptions) {
-        next[opt.value] = prev[opt.value] ?? false;
+        next[opt.value] = prev[opt.value] ?? true;
       }
       return next;
     });
@@ -3382,30 +3435,98 @@ useEffect(() => {
     count: slotHelperFilteredResults.length,
     getItemKey: (index) => slotHelperFilteredResults[index]?.date ?? index,
     getScrollElement: () => slotHelperSlotsScrollRef.current,
-    estimateSize: () => 170,
-    overscan: 3,
+    estimateSize: () => 96,
+    overscan: 6,
   });
   const slotHelperSlotsVirtualizerItems =
     process.env.NODE_ENV === "test"
       ? slotHelperFilteredResults.map((_, index) => ({
           index,
-          start: index * 170,
-          size: 170,
+          start: index * 96,
+          size: 96,
           key: index,
         }))
       : slotHelperSlotsVirtualizer.getVirtualItems();
 
   const slotHelperSlotsVirtualizerTotalSize =
     process.env.NODE_ENV === "test"
-      ? slotHelperFilteredResults.length * 170
+      ? slotHelperFilteredResults.length * 96
       : slotHelperSlotsVirtualizer.getTotalSize();
+
+  useEffect(() => {
+    const wasRefreshing = slotHelperWasRefreshingRef.current;
+    slotHelperWasRefreshingRef.current = slotHelperRefreshing;
+    if (!wasRefreshing || slotHelperRefreshing) return;
+    if (slotHelperRefreshNeeded) return;
+    if (slotHelperFilteredResults.length === 0) return;
+
+    const earliest = slotHelperFilteredResults[0]?.date ?? null;
+    if (!earliest) return;
+
+    setSlotHelperCollapsedDates((prev) => {
+      const next: Record<string, boolean> = {};
+      for (const opt of slotHelperDateOptions) {
+        next[opt.value] = opt.value !== earliest;
+      }
+      return next;
+    });
+
+    if (slotHelperSlotsScrollRef.current) {
+      slotHelperSlotsScrollRef.current.scrollTop = 0;
+    }
+
+    if (process.env.NODE_ENV !== "test") {
+      requestAnimationFrame(() => {
+        slotHelperSlotsVirtualizer.measure();
+      });
+    }
+  }, [
+    slotHelperDateOptions,
+    slotHelperFilteredResults,
+    slotHelperRefreshNeeded,
+    slotHelperRefreshing,
+    slotHelperSlotsVirtualizer,
+  ]);
 
   useLayoutEffect(() => {
     // Collapse/expand changes row heights; re-measure before paint to avoid a brief "jump" frame.
     if (process.env.NODE_ENV === "test") return;
     if (!slotHelperOpen) return;
-    slotHelperSlotsVirtualizer.measure();
-  }, [slotHelperOpen, slotHelperCollapsedDates, slotHelperFilteredResults.length, slotHelperSlotsVirtualizer]);
+    const raf = window.requestAnimationFrame(() => {
+      slotHelperSlotsVirtualizer.measure();
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, [
+    slotHelperOpen,
+    slotHelperCollapsedDates,
+    slotHelperFilteredResults.length,
+    slotHelperSlotsVirtualizer,
+  ]);
+
+  useLayoutEffect(() => {
+    if (process.env.NODE_ENV === "test") return;
+    if (!slotHelperOpen) return;
+    if (!slotHelperAutoLocateAcceptedRef.current) return;
+    slotHelperAutoLocateAcceptedRef.current = false;
+    const expandedDate =
+      slotHelperFilteredResults.find((d) => !(slotHelperCollapsedDates[d.date] ?? false))?.date ?? null;
+    const expandedEl =
+      expandedDate && slotHelperSlotsScrollRef.current
+        ? slotHelperSlotsScrollRef.current.querySelector(`[data-day-date="${expandedDate}"]`)
+        : null;
+    const raf = window.requestAnimationFrame(() => {
+      if (expandedEl instanceof HTMLElement) {
+        slotHelperSlotsVirtualizer.measureElement(expandedEl);
+      }
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, [
+    slotHelperOpen,
+    slotHelperSelectedSlotKeys.length,
+    slotHelperCollapsedDates,
+    slotHelperFilteredResults,
+    slotHelperSlotsVirtualizer,
+  ]);
 
   const slotHelperSlotMap = useMemo(() => {
     const map = new Map<string, { date: string; start_time: string; end_time: string; availableLocationIds: string[]; availableInstructorIds: string[] }>();
@@ -3426,6 +3547,38 @@ useEffect(() => {
 
   const slotHelperSelectedSlotCount = slotHelperSelectedSlotKeys.length;
   const slotHelperSelectedSlotKeySet = useMemo(() => new Set(slotHelperSelectedSlotKeys), [slotHelperSelectedSlotKeys]);
+  const slotHelperSelectedSlotRows = useMemo(() => {
+    const weekdayOrder = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
+    const rows = slotHelperSelectedSlotKeys
+      .map((key) => {
+        const slot = slotHelperSlotMap.get(key);
+        if (!slot) return null;
+        const dayLabel = dayOfWeekFromIsoDateUtc(slot.date)?.slice(0, 3).toUpperCase() ?? "";
+        const dateLabel = formatIsoDateMMDDYYYY(slot.date);
+        const timeLabel = `${formatTimeAmPm(slot.start_time)}–${formatTimeAmPm(slot.end_time)}`;
+        const weekdayIndex = weekdayOrder.includes(dayLabel) ? weekdayOrder.indexOf(dayLabel) : weekdayOrder.length;
+        const startMinutes = parseHHmmToMinutes(slot.start_time) ?? 0;
+        return {
+          key,
+          dayLabel,
+          dateLabel,
+          timeLabel,
+          weekdayIndex,
+          startMinutes,
+        };
+      })
+      .filter((row): row is NonNullable<typeof row> => row !== null);
+
+    rows.sort((a, b) => {
+      if (a.weekdayIndex !== b.weekdayIndex) return a.weekdayIndex - b.weekdayIndex;
+      if (a.startMinutes !== b.startMinutes) return a.startMinutes - b.startMinutes;
+      const dateCompare = a.dateLabel.localeCompare(b.dateLabel);
+      if (dateCompare !== 0) return dateCompare;
+      return a.timeLabel.localeCompare(b.timeLabel);
+    });
+
+    return rows;
+  }, [slotHelperSelectedSlotKeys, slotHelperSlotMap]);
 
   const onSlotHelperSlotGridClick = useCallback((e: React.MouseEvent<HTMLDivElement>): void => {
     const target = e.target as HTMLElement | null;
@@ -3673,20 +3826,16 @@ useEffect(() => {
         const label = instLabel || String(slotHelperLabelMaps.instructorLabelById.get(id) ?? "").trim() || id;
         return { id, label };
       })
+      .filter((opt) => opt.label.trim().toUpperCase() !== "UNASSIGNED")
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [slotHelperSelectedClassId, slotHelperMappingIndexByClass, instructorById, slotHelperLabelMaps.instructorLabelById]);
 
   const slotHelperSelectedInstructorDisplay = useMemo((): string => {
     const ids = slotHelperSelectedInstructorIds;
     if (ids.length === 0) return "";
-    if (ids.length === 1) {
-      const id = ids[0] ?? "";
-      const label = slotHelperInstructorOptions.find((x) => x.id === id)?.label ?? id;
-      return label;
-    }
-    const firstId = ids[0] ?? "";
-    const firstLabel = slotHelperInstructorOptions.find((x) => x.id === firstId)?.label ?? firstId;
-    return `${firstLabel} + ${ids.length - 1} more`;
+    return ids
+      .map((id) => slotHelperInstructorOptions.find((x) => x.id === id)?.label ?? id)
+      .join(", ");
   }, [slotHelperSelectedInstructorIds, slotHelperInstructorOptions]);
 
   const slotHelperReviewRequestOptions = useMemo(() => {
@@ -7008,61 +7157,63 @@ function buildAvailabilityVm(opts: {
                               }`}
                             />
                           </button>
-                          <Popover modal open={slotHelperClearSelectedOpen} onOpenChange={setSlotHelperClearSelectedOpen}>
-                            <PopoverTrigger asChild>
-                              <button
-                                type="button"
-                                disabled={slotHelperSelectedSlotCount === 0}
-                                className="rounded-lg border border-white/15 bg-card/70 px-2 py-1 text-xs font-semibold text-[var(--cta)] shadow-sm ring-1 ring-white/10 transition hover:bg-card hover:ring-white/15 disabled:cursor-not-allowed disabled:opacity-50"
-                              >
-                                Clear
-                              </button>
-                            </PopoverTrigger>
-                            <PopoverContent
-                              align="end"
-                              sideOffset={6}
-                              className="z-[150] w-[260px] rounded-2xl border border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] p-3 shadow-xl backdrop-blur-md"
-                            >
-                              <div className="text-sm font-semibold text-foreground">Clear selected time slots?</div>
-                              <div className="mt-1 text-xs text-muted-foreground">
-                                This will release the selected slots back to available.
-                              </div>
-                              <div className="mt-3 flex items-center justify-end gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-semibold text-muted-foreground">
+                              Selected: {slotHelperSelectedSlotCount > 0 ? slotHelperSelectedSlotCount : "(none)"}
+                            </span>
+                            <Popover modal open={slotHelperClearSelectedOpen} onOpenChange={setSlotHelperClearSelectedOpen}>
+                              <PopoverTrigger asChild>
                                 <button
                                   type="button"
-                                  onClick={() => setSlotHelperClearSelectedOpen(false)}
-                                  className="rounded-lg border border-white/10 bg-black/20 px-2.5 py-1.5 text-xs font-semibold text-foreground transition hover:bg-black/30"
-                                >
-                                  Cancel
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setSlotHelperSelectedSlotKeys([]);
-                                    setSlotHelperClearSelectedOpen(false);
-                                  }}
-                                  className="rounded-lg border border-[var(--cta)] bg-[var(--cta)] px-2.5 py-1.5 text-xs font-semibold text-[var(--cta-foreground)] transition hover:brightness-95"
+                                  disabled={slotHelperSelectedSlotCount === 0}
+                                  className="rounded-lg border border-white/15 bg-card/70 px-2 py-1 text-xs font-semibold text-[var(--cta)] shadow-sm ring-1 ring-white/10 transition hover:bg-card hover:ring-white/15 disabled:cursor-not-allowed disabled:opacity-50"
                                 >
                                   Clear
                                 </button>
-                              </div>
-                            </PopoverContent>
-                          </Popover>
+                              </PopoverTrigger>
+                              <PopoverContent
+                                align="end"
+                                sideOffset={6}
+                                className="z-[150] w-[260px] rounded-2xl border border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] p-3 shadow-xl backdrop-blur-md"
+                              >
+                                <div className="text-sm font-semibold text-foreground">Clear selected time slots?</div>
+                                <div className="mt-1 text-xs text-muted-foreground">
+                                  This will release the selected slots back to available.
+                                </div>
+                                <div className="mt-3 flex items-center justify-end gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => setSlotHelperClearSelectedOpen(false)}
+                                    className="rounded-lg border border-white/10 bg-black/20 px-2.5 py-1.5 text-xs font-semibold text-foreground transition hover:bg-black/30"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSlotHelperSelectedSlotKeys([]);
+                                      setSlotHelperClearSelectedOpen(false);
+                                    }}
+                                    className="rounded-lg border border-[var(--cta)] bg-[var(--cta)] px-2.5 py-1.5 text-xs font-semibold text-[var(--cta-foreground)] transition hover:brightness-95"
+                                  >
+                                    Clear
+                                  </button>
+                                </div>
+                              </PopoverContent>
+                            </Popover>
+                          </div>
                         </div>
                         {slotHelperSelectedSlotsExpanded ? (
                           <div className="mt-1 space-y-1 font-semibold">
-                            {slotHelperSelectedSlotKeys.map((key) => {
-                              const slot = slotHelperSlotMap.get(key);
-                              if (!slot) return null;
-                              const dayLabel = dayOfWeekFromIsoDateUtc(slot.date)?.slice(0, 3) ?? "";
-                              return (
-                                <div key={key}>
-                                  {dayLabel ? `${dayLabel} ` : ""}
-                                  {formatIsoDateMMDDYYYY(slot.date)} • {formatTimeAmPm(slot.start_time)}–
-                                  {formatTimeAmPm(slot.end_time)}
-                                </div>
-                              );
-                            })}
+                            {slotHelperSelectedSlotRows.map((row) => (
+                              <div key={row.key} className="grid grid-cols-[140px_1fr] gap-2">
+                                <span className="truncate">
+                                  {row.dayLabel ? `${row.dayLabel} ` : ""}
+                                  {row.dateLabel}
+                                </span>
+                                <span className="truncate">{row.timeLabel}</span>
+                              </div>
+                            ))}
                           </div>
                         ) : null}
                       </div>
@@ -7183,7 +7334,11 @@ function buildAvailabilityVm(opts: {
                           }}
                           ariaLabel="Select duration"
                           disabled={slotHelperRefreshing}
-                          className="mt-2 w-full"
+                          className={
+                            slotHelperSelectedClassId && slotHelperDurationMinutes === null
+                              ? "mt-2 ymca-select w-full text-sm font-semibold"
+                              : "mt-2 w-full"
+                          }
                           contentClassName="z-[140] w-[220px]"
                           placeholder="Select a duration..."
                         />
@@ -7213,7 +7368,15 @@ function buildAvailabilityVm(opts: {
                           }
                             aria-expanded={slotHelperInstructorDropdownOpen}
                           >
-                            <span className="truncate">
+                            <span
+                              className={`truncate ${
+                                slotHelperSelectedClassId &&
+                                slotHelperDurationMinutes !== null &&
+                                slotHelperSelectedInstructorIds.length === 0
+                                  ? "text-white"
+                                  : ""
+                              }`}
+                            >
                               {slotHelperSelectedInstructorIds.length > 0
                                 ? slotHelperSelectedInstructorDisplay
                                 : slotHelperSelectedClassId
@@ -7243,6 +7406,11 @@ function buildAvailabilityVm(opts: {
                                   type="button"
                                   data-selected={checked ? "true" : undefined}
                                   onClick={() => {
+                                    if (!slotHelperInstructorMultiSelect) {
+                                      setSlotHelperSelectedInstructorIds([inst.id]);
+                                      setSlotHelperInstructorDropdownOpen(false);
+                                      return;
+                                    }
                                     setSlotHelperSelectedInstructorIds((prev) => {
                                       const has = prev.includes(inst.id);
                                       return has ? prev.filter((x) => x !== inst.id) : [...prev, inst.id];
@@ -7262,11 +7430,27 @@ function buildAvailabilityVm(opts: {
                               );
                             })}
                           </div>
-                          <div className="mt-2 flex items-center justify-end border-t border-white/10 pt-2">
+                          <div className="mt-2 flex items-center justify-between border-t border-white/10 pt-2">
+                            <label className="flex items-center gap-2 text-xs font-semibold text-foreground">
+                              <input
+                                type="checkbox"
+                                checked={slotHelperInstructorMultiSelect}
+                                onChange={(e) => {
+                                  const next = e.target.checked;
+                                  setSlotHelperInstructorMultiSelect(next);
+                                  if (!next && slotHelperSelectedInstructorIds.length > 1) {
+                                    setSlotHelperSelectedInstructorIds((prev) => prev.slice(0, 1));
+                                  }
+                                }}
+                                className="h-4 w-4 cursor-pointer accent-[var(--cta)]"
+                              />
+                              Multiselect
+                            </label>
                             <button
                               type="button"
+                              disabled={!slotHelperInstructorMultiSelect}
                               onClick={() => setSlotHelperInstructorDropdownOpen(false)}
-                              className="rounded-lg border border-white/10 bg-black/20 px-3 py-1.5 text-sm font-semibold text-foreground transition hover:bg-black/30"
+                              className="rounded-lg border border-white/10 bg-black/20 px-3 py-1.5 text-sm font-semibold text-foreground transition hover:bg-black/30 disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               Done
                             </button>
@@ -7287,10 +7471,22 @@ function buildAvailabilityVm(opts: {
                               slotHelperLocationOptions.length === 0 ||
                               slotHelperLocationOptions.length === 1
                             }
-                            className="mt-2 flex w-full items-center justify-between gap-2 rounded-lg border border-white/15 bg-card/70 px-3 py-2 text-sm shadow-sm ring-1 ring-white/10 transition hover:bg-card hover:ring-white/15 disabled:cursor-not-allowed disabled:opacity-50"
+                            className={
+                              slotHelperSelectedClassId && !slotHelperSelectedLocationId
+                                ? "mt-2 ymca-select flex w-full items-center justify-between gap-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+                                : "mt-2 flex w-full items-center justify-between gap-2 rounded-lg border border-white/15 bg-card/70 px-3 py-2 text-sm shadow-sm ring-1 ring-white/10 transition hover:bg-card hover:ring-white/15 disabled:cursor-not-allowed disabled:opacity-50"
+                            }
                             aria-expanded={slotHelperLocationDropdownOpen}
                           >
-                            <span className="truncate">
+                            <span
+                              className={`truncate ${
+                                slotHelperSelectedClassId &&
+                                slotHelperSelectedInstructorIds.length > 0 &&
+                                !slotHelperSelectedLocationId
+                                  ? "text-white"
+                                  : ""
+                              }`}
+                            >
                               {slotHelperSelectedLocationId
                                 ? (slotHelperLocationOptions.find((l) => l.id === slotHelperSelectedLocationId)?.label ??
                                   slotHelperSelectedLocationId)
@@ -7298,7 +7494,13 @@ function buildAvailabilityVm(opts: {
                                   ? "Select location..."
                                   : "Select Class first..."}
                             </span>
-                            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                            <ChevronDown
+                              className={
+                                slotHelperSelectedClassId && !slotHelperSelectedLocationId
+                                  ? "h-4 w-4 text-[var(--brand-ink)]/70"
+                                  : "h-4 w-4 text-muted-foreground"
+                              }
+                            />
                           </button>
                         </PopoverTrigger>
                         <PopoverContent
@@ -7372,7 +7574,7 @@ function buildAvailabilityVm(opts: {
                                 <PopoverTrigger asChild>
                                   <button
                                     type="button"
-                                    aria-label="See rules defining an available time slot"
+                                    aria-label="Click for rules determining available time slots"
                                     className="rounded-md p-1 text-[var(--cta)] hover:bg-black/20"
                                     onClick={() => {
                                       setSlotHelperRulesPopoverOpen(true);
@@ -7430,9 +7632,9 @@ function buildAvailabilityVm(opts: {
                             align="center"
                             side="top"
                             sideOffset={6}
-                            className="pointer-events-none z-[160] w-[240px] rounded-2xl border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] px-3 py-2 text-xs text-foreground shadow-lg backdrop-blur-md"
+                            className="pointer-events-none z-[160] w-auto whitespace-nowrap rounded-2xl border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] px-3 py-2 text-xs text-foreground shadow-lg backdrop-blur-md"
                           >
-                            See rules defining an available time slot
+                            Click for rules determining available time slots
                           </PopoverContent>
                         </Popover>
 
@@ -7615,22 +7817,47 @@ function buildAvailabilityVm(opts: {
                       {slotHelperSlotsVirtualizerItems.map((virtualRow) => {
                         const day = slotHelperFilteredResults[virtualRow.index];
                         if (!day) return null;
+                        const daySelectedSlots = day.slots.filter((s) =>
+                          slotHelperSelectedSlotKeySet.has(`${s.date}|${s.start_time}|${s.end_time}`),
+                        );
+                        const selectedCount = daySelectedSlots.length;
                         const collapsed = slotHelperCollapsedDates[day.date] ?? false;
                         return (
                           <div
                             key={day.date}
                             ref={slotHelperSlotsVirtualizer.measureElement}
                             data-index={virtualRow.index}
-                            className="absolute left-0 right-0 pb-4"
+                            data-day-date={day.date}
+                            className="absolute left-0 right-0 pb-[5px]"
                             style={{ transform: `translateY(${virtualRow.start}px)` }}
                           >
-                            <div className="rounded-xl border border-white/10 bg-black/10 p-3">
+                            <div
+                              className={`rounded-xl border border-white/10 p-3 ${
+                                collapsed ? "h-[80px] bg-black/10" : "bg-black/20"
+                              }`}
+                            >
                               <div className="mb-2 flex items-center justify-between">
-                                <div className="text-sm font-semibold text-foreground">
-                                  {day.day_of_week.slice(0, 3)} {formatIsoDateMMDDYYYY(day.date)}
+                                <div className="flex min-w-0 flex-1 items-center gap-3 text-sm font-semibold text-foreground">
+                                  <span className="inline-block w-[130px]">
+                                    {day.day_of_week.slice(0, 3)} {formatIsoDateMMDDYYYY(day.date)}
+                                  </span>
+                                  {collapsed && daySelectedSlots.length > 0 ? (
+                                    <div className="max-h-[48px] flex-1 overflow-y-auto ymca-scrollbar">
+                                      <div className="flex flex-wrap gap-2">
+                                        {daySelectedSlots.map((s) => (
+                                          <span
+                                            key={`${s.date}|${s.start_time}|${s.end_time}`}
+                                            className="rounded-full border border-white/15 bg-black/20 px-2.5 py-1 text-xs font-semibold text-foreground"
+                                          >
+                                            {formatTimeAmPm(s.start_time)}–{formatTimeAmPm(s.end_time)}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  ) : null}
                                 </div>
                                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                  <span>{day.slots.length} slot(s)</span>
+                                  <span>{`Selected: ${selectedCount} of ${day.slots.length}`}</span>
                                   <button
                                     type="button"
                                     onClick={() =>
@@ -7922,6 +8149,7 @@ function buildAvailabilityVm(opts: {
                             return Array.from(next);
                           });
                         }
+                        slotHelperAutoLocateAcceptedRef.current = true;
                         setSlotHelperMultiDayOpen(false);
                         setSlotHelperMultiDayOptions([]);
                         setSlotHelperMultiDayDays([]);
