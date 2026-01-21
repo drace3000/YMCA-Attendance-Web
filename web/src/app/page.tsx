@@ -670,10 +670,23 @@ function HomeInner() {
   }
 
   // Always show the splash image - auth forms only when not logged in
+  const showAuthCard = !user || isRegistering;
+  const centerSplashOnly = !!user && !isRegistering;
+
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
+    <div
+      className={
+        centerSplashOnly
+          ? "mx-auto flex min-h-[calc(100vh-8rem)] max-w-6xl items-center justify-center"
+          : "mx-auto max-w-2xl space-y-6"
+      }
+    >
       {/* Splash Image - Always Visible */}
-      <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-lg">
+      <div
+        className={`overflow-hidden rounded-2xl border border-border bg-card shadow-lg ${
+          centerSplashOnly ? "w-full max-w-4xl" : ""
+        }`}
+      >
         <Image
           src="/assets/images/ymca-attendance-splash-image.png"
           alt="YMCA Attendance & Scheduling"
@@ -685,7 +698,7 @@ function HomeInner() {
       </div>
 
       {/* Auth Card - Shown when NOT logged in OR during registration flow */}
-      {(!user || isRegistering) && (
+      {showAuthCard && (
         <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
           {/* Tab Headers */}
           <div className="flex border-b border-border">
