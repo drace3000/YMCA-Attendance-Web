@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { within } from "@testing-library/react";
 
 import { SessionsTab } from "@/app/scheduling/sessions-tab";
@@ -26,6 +26,7 @@ describe("SessionsTab conflicts UI", () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
   it("shows conflict badges for overlapping sessions and disables save on HIGH conflicts", async () => {
@@ -878,6 +879,8 @@ describe("SessionsTab conflicts UI", () => {
   }, 15000);
 
   it("enables Review when time slots are checked and shows a review modal list", async () => {
+    let bulkAddBody: any = null;
+    let bulkAddResolve: ((value: FetchResponse) => void) | null = null;
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.includes("/api/maintenance/classes")) {
@@ -912,6 +915,12 @@ describe("SessionsTab conflicts UI", () => {
       if (url.includes("/api/scheduling/conflicts")) {
         return mockJson(true, { summary: { high: 0, medium: 0, low: 0, total: 0 }, conflicts: [] });
       }
+      if (url.includes("/api/scheduling/bulk-add-sessions")) {
+        bulkAddBody = init?.body ? JSON.parse(String(init.body)) : null;
+        return new Promise((resolve) => {
+          bulkAddResolve = resolve;
+        });
+      }
       if (url.includes("/api/branches/")) return mockJson(true, { name: "Eastside Family YMCA" });
       return mockJson(true, {});
     });
@@ -933,7 +942,7 @@ describe("SessionsTab conflicts UI", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Add session" }));
     const helper = await screen.findByRole("dialog", { name: "Add session helper" });
 
-    const reviewBtn = within(helper).getByRole("button", { name: "Review" });
+    const reviewBtn = within(helper).getByRole("button", { name: /Submit/i });
     expect(reviewBtn).toBeDisabled();
 
     fireEvent.click(within(helper).getByRole("button", { name: "Select Class" }));
@@ -948,12 +957,42 @@ describe("SessionsTab conflicts UI", () => {
     fireEvent.click(slotBtn);
 
     await waitFor(() => {
-      expect(within(helper).getByRole("button", { name: "Review" })).toBeEnabled();
+      expect(within(helper).getByRole("button", { name: /Submit/i })).toBeEnabled();
     });
 
-    fireEvent.click(within(helper).getByRole("button", { name: "Review" }));
-    const reviewDialog = await screen.findByRole("dialog", { name: "Review selected time slots" });
+    fireEvent.click(within(helper).getByRole("button", { name: /Submit/i }));
+    const reviewDialog = await screen.findByRole("dialog", { name: "Submit selected time slots" });
     expect(within(reviewDialog).getByText(/01\/01\/2026/i)).toBeInTheDocument();
+
+    const submitButton = within(reviewDialog).getByRole("button", { name: "Submit" });
+    fireEvent.mouseEnter(submitButton);
+    expect(await screen.findByText(/add new class session now/i)).toBeInTheDocument();
+    fireEvent.mouseLeave(submitButton);
+
+    fireEvent.click(submitButton);
+    expect(within(reviewDialog).getByTestId("slot-helper-submit-progress")).toBeInTheDocument();
+
+    await act(async () => {
+      bulkAddResolve?.(
+        mockJson(true, {
+          created_session_ids: ["sess-1"],
+          email: { ok: true, recipients: ["julie@ymca.org"] },
+        }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(submitButton).toBeDisabled();
+      expect(within(reviewDialog).getByRole("button", { name: "Close" })).toBeInTheDocument();
+    });
+
+    expect(bulkAddBody).toMatchObject({
+      schedule_id: "sch-1",
+      class_id: "cls-1",
+      location_id: "loc-1",
+      instructor_ids: ["inst-1"],
+      slots: [{ date: "2026-01-01", start_time: "06:00", end_time: "07:00" }],
+    });
   }, 15000);
 
   it.skip("shows slot review email/response status + response summary in the Review popup", async () => {
@@ -1085,16 +1124,16 @@ describe("SessionsTab conflicts UI", () => {
       expect(within(helper).queryByText(/Searching\.\.\./i)).not.toBeInTheDocument();
     });
 
-    // Select a request so Review popup shows email/response details.
+    // Select a request so Submit popup shows email/response details.
     fireEvent.click(within(helper).getByRole("button", { name: "Select slot helper request" }));
     fireEvent.click(await screen.findByRole("button", { name: /Responded/i }));
 
-    // Select the first slot (06–07) so Review becomes enabled.
+    // Select the first slot (06–07) so Submit becomes enabled.
     const firstSlot = (await within(helper).findAllByRole("button", { name: /06:00 AM–07:00 AM/i }))[0];
     fireEvent.click(firstSlot);
-    fireEvent.click(within(helper).getByRole("button", { name: "Review" }));
+    fireEvent.click(within(helper).getByRole("button", { name: /Submit/i }));
 
-    const reviewDialog = await screen.findByRole("dialog", { name: "Review selected time slots" });
+    const reviewDialog = await screen.findByRole("dialog", { name: "Submit selected time slots" });
     expect(within(reviewDialog).getByText(/Sent/i)).toBeInTheDocument();
     expect(within(reviewDialog).getByText(/Received/i)).toBeInTheDocument();
     expect(within(reviewDialog).getByText(/Please avoid 7am\./i)).toBeInTheDocument();
@@ -1574,6 +1613,78 @@ describe("SessionsTab conflicts UI", () => {
 
     expect(await screen.findByText(/print schedule conflicts/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /close print conflicts modal/i })).toBeInTheDocument();
+  });
+
+  it("shows orange star for sessions created within 24 hours", async () => {
+    const now = new Date("2026-01-10T12:00:00Z").getTime();
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(now);
+
+    const sessions = [
+      {
+        id: "sess-1",
+        branch_id: "br-1",
+        schedule_id: "sch-1",
+        class_id: "cls-1",
+        location_id: "loc-1",
+        day_of_week: "MONDAY",
+        start_time: "08:00:00",
+        end_time: "09:00:00",
+        session_date: "2025-12-01",
+        created_at: new Date(now - 2 * 60 * 60 * 1000).toISOString(),
+        headcount: null,
+        class: { id: "cls-1", name: "ACTIVE YOGA" },
+        location: { id: "loc-1", code: "A", name: "Room A" },
+        instructors: [{ id: "inst-1", nickname: "JULIE", first_name: "Julie", last_name: "S", readable_id: "I001" }],
+      },
+      {
+        id: "sess-2",
+        branch_id: "br-1",
+        schedule_id: "sch-1",
+        class_id: "cls-1",
+        location_id: "loc-1",
+        day_of_week: "TUESDAY",
+        start_time: "10:00:00",
+        end_time: "11:00:00",
+        session_date: "2025-12-02",
+        created_at: new Date(now - 26 * 60 * 60 * 1000).toISOString(),
+        headcount: null,
+        class: { id: "cls-1", name: "ACTIVE YOGA" },
+        location: { id: "loc-1", code: "A", name: "Room A" },
+        instructors: [{ id: "inst-1", nickname: "JULIE", first_name: "Julie", last_name: "S", readable_id: "I001" }],
+      },
+    ];
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/scheduling/sessions")) return mockJson(true, { sessions });
+      if (url.includes("/api/maintenance/classes")) return mockJson(true, { classes: [{ id: "cls-1", name: "ACTIVE YOGA" }] });
+      if (url.includes("/api/maintenance/locations")) return mockJson(true, { locations: [{ id: "loc-1", code: "A", name: "Room A" }] });
+      if (url.includes("/api/maintenance/instructors")) return mockJson(true, {
+        instructors: [{ id: "inst-1", nickname: "JULIE", first_name: "Julie", last_name: "S", readable_id: "I001" }],
+      });
+      if (url.includes("/api/maintenance/holidays")) return mockJson(true, []);
+      if (url.includes("/api/scheduling/conflicts")) {
+        return mockJson(true, { summary: { high: 0, medium: 0, low: 0, total: 0 }, conflicts: [] });
+      }
+      if (url.includes("/api/branches/")) return mockJson(true, { name: "Eastside Family YMCA" });
+      return mockJson(true, {});
+    });
+
+    vi.stubGlobal("fetch", fetchMock as any);
+
+    render(
+      <SessionsTab
+        scheduleId="sch-1"
+        branchId="br-1"
+        programGroupId="pg-1"
+        refreshKey={1}
+        scheduleMonthYear={{ year: 2025, month: 12 }}
+      />,
+    );
+
+    await screen.findAllByText("ACTIVE YOGA");
+    expect(screen.getAllByLabelText("New session")).toHaveLength(1);
+    nowSpy.mockRestore();
   });
 
   it("populates selections and slots from Email Requests Sent selection", async () => {

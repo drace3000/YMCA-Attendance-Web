@@ -27,6 +27,7 @@ import {
   ArrowUp,
   ArrowDown,
   CalendarClock,
+  Star,
   Users,
 } from "lucide-react";
 import { useVirtualizer } from "@tanstack/react-virtual";
@@ -54,6 +55,7 @@ import {
 } from "@/components/ui/popover";
 import { PopoverSelect } from "@/components/ui/popover-select";
 import { PrintScheduleConflictsReportModal } from "@/components/scheduling-conflicts-report/PrintScheduleConflictsReportModal";
+import { useAuth } from "@/components/auth-provider";
 
 function ModalPortal({ children }: { children: React.ReactNode }): React.ReactPortal | null {
   if (typeof document === "undefined") return null;
@@ -93,6 +95,7 @@ export type Session = {
   start_time: string;
   end_time: string;
   session_date: string;
+  created_at?: string | null;
   headcount: number | null;
   class: { id: string; name: string } | null;
   location: { id: string; code: string; name: string } | null;
@@ -482,6 +485,11 @@ type SortDirection = "asc" | "desc";
 type MediumConfirmContext =
   | { kind: "edit"; conflicts: ScheduleConflict[] }
   | { kind: "add"; conflicts: ScheduleConflict[] };
+type SlotHelperSubmitStatus = "idle" | "submitting" | "success" | "error";
+type SlotHelperSubmitResult = {
+  sessions: { ok: boolean; createdIds: string[]; error?: string };
+  email: { ok: boolean; recipients: string[]; error?: string };
+};
 
 export function SessionsTab({
   scheduleId,
@@ -501,6 +509,7 @@ export function SessionsTab({
   availabilityTimeStart = "06:00",
   availabilityTimeEnd = "23:00",
 }: SessionsTabProps) {
+  const { user } = useAuth();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [classes, setClasses] = useState<ClassOption[]>([]);
   const [locations, setLocations] = useState<LocationOption[]>([]);
@@ -532,7 +541,8 @@ export function SessionsTab({
         | "reschedule_preview_modal_offset"
         | "reschedule_email_modal_offset"
         | "slot_helper_modal_offset"
-        | "slot_helper_review_email_modal_offset",
+        | "slot_helper_review_email_modal_offset"
+        | "slot_helper_review_modal_offset",
       offset: DragOffset,
     ) => {
       if (!branchId) return;
@@ -604,11 +614,21 @@ export function SessionsTab({
     () => `ymca:scheduling:${branchId ?? "unknown"}:slot-helper-multi-day-modal:offset`,
     [branchId],
   );
+  const slotHelperReviewDragStorageKey = useMemo(
+    () => `ymca:scheduling:${branchId ?? "unknown"}:slot-helper-review-modal:offset`,
+    [branchId],
+  );
   const [slotHelperClosing, setSlotHelperClosing] = useState(false);
   const slotHelperCloseSeq = useRef(0);
   const slotHelperSlotsScrollRef = useRef<HTMLDivElement | null>(null);
   const slotHelperAutoLocateAcceptedRef = useRef(false);
   const [slotHelperReviewOpen, setSlotHelperReviewOpen] = useState(false);
+  const [slotHelperSubmitTooltipOpen, setSlotHelperSubmitTooltipOpen] = useState(false);
+  const [slotHelperSubmitStatus, setSlotHelperSubmitStatus] = useState<SlotHelperSubmitStatus>("idle");
+  const [slotHelperSubmitProgress, setSlotHelperSubmitProgress] = useState(0);
+  const [slotHelperSubmitResult, setSlotHelperSubmitResult] = useState<SlotHelperSubmitResult | null>(null);
+  const [slotHelperSubmitEmailInstructors, setSlotHelperSubmitEmailInstructors] = useState(true);
+  const [slotHelperSubmitEmailManager, setSlotHelperSubmitEmailManager] = useState(false);
   const [slotHelperDurationMinutes, setSlotHelperDurationMinutes] = useState<number | null>(null);
   const [slotHelperTransitionMinutes, setSlotHelperTransitionMinutes] = useState(0);
   const [slotHelperTurnoverMinutes, setSlotHelperTurnoverMinutes] = useState(0);
@@ -638,6 +658,9 @@ export function SessionsTab({
   >([]);
   const slotHelperMultiDayDrag = useDraggableModal(slotHelperMultiDayOpen, slotHelperMultiDayDragStorageKey, (offset) =>
     persistUiOffset("slot_helper_multi_day_modal_offset", offset),
+  );
+  const slotHelperReviewDrag = useDraggableModal(slotHelperReviewOpen, slotHelperReviewDragStorageKey, (offset) =>
+    persistUiOffset("slot_helper_review_modal_offset", offset),
   );
 
   const slotHelperMultiDayCheckedCount = useMemo(() => {
@@ -1870,7 +1893,7 @@ useEffect(() => {
         }
         throw new Error(json?.error || "Failed to update session");
       }
-      await fetchSessions();
+      // Skip full refresh; new sessions are already represented in the UI.
       closeEditModal();
     } catch (err) {
       const errorObj = err instanceof Error ? err : new Error(String(err));
@@ -2385,6 +2408,168 @@ useEffect(() => {
   const scheduleMonthLabel = useMemo((): string | null => {
     return scheduleMonth ? formatMonthShortYear(scheduleMonth) : null;
   }, [scheduleMonth]);
+
+  const slotHelperScheduleLabel = useMemo((): string => {
+    if (!scheduleMonthYear?.year || !scheduleMonthYear?.month) return "—";
+    const iso = `${scheduleMonthYear.year}-${String(scheduleMonthYear.month).padStart(2, "0")}-01T00:00:00Z`;
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "—";
+    const monthName = d.toLocaleDateString("en-US", { month: "long", timeZone: "UTC" });
+    return `${monthName} / ${scheduleMonthYear.year}`;
+  }, [scheduleMonthYear]);
+
+  const slotHelperSelectedClassName = useMemo((): string => {
+    if (!slotHelperSelectedClassId) return "—";
+    return classes.find((c) => c.id === slotHelperSelectedClassId)?.name ?? "—";
+  }, [classes, slotHelperSelectedClassId]);
+
+  const slotHelperSelectedInstructor = useMemo((): InstructorOption | null => {
+    if (slotHelperSelectedInstructorIds.length === 0) return null;
+    const firstId = slotHelperSelectedInstructorIds[0];
+    return instructors.find((i) => i.id === firstId) ?? null;
+  }, [instructors, slotHelperSelectedInstructorIds]);
+
+  const slotHelperSelectedInstructorNickname = useMemo((): string => {
+    return slotHelperSelectedInstructor?.nickname ?? "—";
+  }, [slotHelperSelectedInstructor]);
+
+  const slotHelperSelectedInstructorEmail = useMemo((): string => {
+    const selected = slotHelperSelectedInstructor as (InstructorOption & { email?: string | null }) | null;
+    const email = selected?.email;
+    return typeof email === "string" && email.trim().length > 0 ? email : "don.race@outlook.com (Temporary)";
+  }, [slotHelperSelectedInstructor]);
+
+  const slotHelperManagerEmail = useMemo((): string => {
+    const email = typeof user?.email === "string" ? user.email.trim() : "";
+    return email.length > 0 ? email : "—";
+  }, [user?.email]);
+
+  const slotHelperSubmitComplete = slotHelperSubmitStatus === "success" || slotHelperSubmitStatus === "error";
+  const recentCreatedMaxAgeMs = 24 * 60 * 60 * 1000;
+  const isRecentSession = useCallback(
+    (createdAt?: string | null): boolean => {
+      if (!createdAt) return false;
+      const ts = Date.parse(createdAt);
+      if (Number.isNaN(ts)) return false;
+      return Date.now() - ts <= recentCreatedMaxAgeMs;
+    },
+    [recentCreatedMaxAgeMs],
+  );
+
+  const handleSlotHelperSubmit = useCallback(async (): Promise<void> => {
+    if (slotHelperSelectedSlotKeys.length === 0) return;
+    if (slotHelperSubmitStatus === "submitting") return;
+    if (slotHelperSubmitComplete) return;
+
+    const slots = slotHelperSelectedSlotKeys
+      .map((key) => {
+        const [date, start_time, end_time] = String(key).split("|");
+        if (!date || !start_time || !end_time) return null;
+        return { date, start_time, end_time };
+      })
+      .filter((slot): slot is { date: string; start_time: string; end_time: string } => !!slot);
+
+    if (slots.length === 0 || !scheduleId || !branchId || !slotHelperSelectedClassId || !slotHelperSelectedLocationId) {
+      setSlotHelperSubmitStatus("error");
+      setSlotHelperSubmitResult({
+        sessions: { ok: false, createdIds: [], error: "Missing required selections to submit." },
+        email: { ok: false, recipients: [], error: "No email sent." },
+      });
+      return;
+    }
+
+    setSlotHelperSubmitStatus("submitting");
+    setSlotHelperSubmitProgress(15);
+    setSlotHelperSubmitResult(null);
+
+    try {
+      const res = await fetch("/api/scheduling/bulk-add-sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          branch_id: branchId,
+          schedule_id: scheduleId,
+          schedule_year: scheduleMonthYear?.year ?? null,
+          schedule_month: scheduleMonthYear?.month ?? null,
+          class_id: slotHelperSelectedClassId,
+          location_id: slotHelperSelectedLocationId,
+          instructor_ids: slotHelperSelectedInstructorIds,
+          slots,
+          email: {
+            send_to_instructors: slotHelperSubmitEmailInstructors,
+            send_to_manager: slotHelperSubmitEmailManager,
+            manager_email: slotHelperManagerEmail,
+          },
+        }),
+      });
+
+      setSlotHelperSubmitProgress(70);
+
+      const json = (await res.json()) as {
+        created_session_ids?: string[];
+        email?: { ok?: boolean; recipients?: string[]; error?: string };
+        error?: string;
+      };
+
+      if (!res.ok) {
+        setSlotHelperSubmitStatus("error");
+        setSlotHelperSubmitProgress(100);
+        setSlotHelperSubmitResult({
+          sessions: { ok: false, createdIds: [], error: json?.error ?? "Failed to add sessions." },
+          email: { ok: false, recipients: [], error: json?.email?.error ?? "No email sent." },
+        });
+        return;
+      }
+
+      const createdIds = Array.isArray(json?.created_session_ids) ? json.created_session_ids : [];
+      setSlotHelperSubmitProgress(100);
+      setSlotHelperSubmitStatus("success");
+      setSlotHelperSubmitResult({
+        sessions: { ok: true, createdIds },
+        email: {
+          ok: Boolean(json?.email?.ok),
+          recipients: Array.isArray(json?.email?.recipients) ? json.email.recipients : [],
+          error: json?.email?.error,
+        },
+      });
+      // Skip full refresh after submit completion.
+    } catch (err) {
+      setSlotHelperSubmitProgress(100);
+      setSlotHelperSubmitStatus("error");
+      setSlotHelperSubmitResult({
+        sessions: { ok: false, createdIds: [], error: err instanceof Error ? err.message : "Failed to add sessions." },
+        email: { ok: false, recipients: [], error: "No email sent." },
+      });
+    }
+  }, [
+    branchId,
+    fetchSessions,
+    scheduleId,
+    scheduleMonthYear?.month,
+    scheduleMonthYear?.year,
+    slotHelperManagerEmail,
+    slotHelperSelectedClassId,
+    slotHelperSelectedInstructorIds,
+    slotHelperSelectedLocationId,
+    slotHelperSelectedSlotKeys,
+    slotHelperSubmitComplete,
+    slotHelperSubmitEmailInstructors,
+    slotHelperSubmitEmailManager,
+    slotHelperSubmitStatus,
+  ]);
+
+  const closeSlotHelperSubmit = useCallback((): void => {
+    const wasComplete = slotHelperSubmitComplete;
+    setSlotHelperReviewOpen(false);
+    setSlotHelperSubmitStatus("idle");
+    setSlotHelperSubmitProgress(0);
+    setSlotHelperSubmitResult(null);
+    setSlotHelperSubmitTooltipOpen(false);
+    if (wasComplete) {
+      openAddSession();
+      void fetchSessions();
+    }
+  }, [fetchSessions, openAddSession, slotHelperSubmitComplete]);
 
   const slotHelperAvailabilityRangeLabel = useMemo((): string => {
     return `${formatTimeAmPm(availabilityTimeStart)}–${formatTimeAmPm(availabilityTimeEnd)}`;
@@ -4139,7 +4324,7 @@ useEffect(() => {
     [localConflictsBySessionId],
   );
 
-  type RiskPillId = "RESET" | "HIGH" | "MED" | "LOW" | "ALL" | "PRINT";
+  type RiskPillId = "RESET" | "HIGH" | "MED" | "LOW" | "NEW" | "ALL" | "PRINT";
   type RiskFilter = Exclude<RiskPillId, "PRINT">;
   const [riskFilter, setRiskFilter] = useState<RiskFilter>("RESET");
   const [riskPillTooltipOpen, setRiskPillTooltipOpen] = useState<RiskPillId | null>(null);
@@ -4148,25 +4333,28 @@ useEffect(() => {
 
   // Counts are per-session (not per-conflict) within the current grid filters/search.
   const riskCounts = useMemo(() => {
-    const counts = { high: 0, medium: 0, low: 0, any: 0 };
+    const counts = { high: 0, medium: 0, low: 0, any: 0, new: 0 };
     for (const s of filteredSessions) {
       const sev = getSessionSeverity(s.id);
-      if (!sev) continue;
-      counts.any += 1;
-      if (sev === "HIGH") counts.high += 1;
-      if (sev === "MEDIUM") counts.medium += 1;
-      if (sev === "LOW") counts.low += 1;
+      if (sev) {
+        counts.any += 1;
+        if (sev === "HIGH") counts.high += 1;
+        if (sev === "MEDIUM") counts.medium += 1;
+        if (sev === "LOW") counts.low += 1;
+      }
+      if (isRecentSession(s.created_at)) counts.new += 1;
     }
     return counts;
-  }, [filteredSessions, getSessionSeverity]);
+  }, [filteredSessions, getSessionSeverity, isRecentSession]);
 
   const riskFilteredSessions = useMemo(() => {
     if (riskFilter === "RESET") return filteredSessions;
+    if (riskFilter === "NEW") return filteredSessions.filter((s) => isRecentSession(s.created_at));
     if (riskFilter === "ALL") return filteredSessions.filter((s) => getSessionSeverity(s.id) !== null);
     if (riskFilter === "HIGH") return filteredSessions.filter((s) => getSessionSeverity(s.id) === "HIGH");
     if (riskFilter === "MED") return filteredSessions.filter((s) => getSessionSeverity(s.id) === "MEDIUM");
     return filteredSessions.filter((s) => getSessionSeverity(s.id) === "LOW");
-  }, [filteredSessions, getSessionSeverity, riskFilter]);
+  }, [filteredSessions, getSessionSeverity, isRecentSession, riskFilter]);
 
   const conflictsForPrintModal = useMemo(() => {
     const idSet = new Set(riskFilteredSessions.map((s) => s.id));
@@ -4853,6 +5041,13 @@ function buildAvailabilityVm(opts: {
         <td className="px-3 py-2">
           <div className="flex items-center gap-2">
             {renderConflictBadge(session.id, localConflictsBySessionId[session.id] ?? null)}
+            {isRecentSession(session.created_at) ? (
+              <Star
+                aria-label="New session"
+                className="h-4 w-4 text-orange-400"
+                fill="currentColor"
+              />
+            ) : null}
             <span>{session.day_of_week.slice(0, 3)}</span>
           </div>
         </td>
@@ -4906,6 +5101,7 @@ function buildAvailabilityVm(opts: {
     handleDelete,
     handleEdit,
     localConflictsBySessionId,
+    isRecentSession,
     renderConflictBadge,
     sortedSessions,
   ]);
@@ -5177,6 +5373,49 @@ function buildAvailabilityVm(opts: {
             </Popover>
 
             <div className="mx-1 h-5 w-px bg-white/10" />
+
+            <Popover open={riskPillTooltipOpen === "NEW"} onOpenChange={() => {}}>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  aria-label="Show only newly added sessions"
+                  onClick={() => {
+                    setRiskFilter("NEW");
+                    setRiskPillTooltipOpen(null);
+                  }}
+                  onMouseEnter={() => setRiskPillTooltipOpen("NEW")}
+                  onMouseLeave={() => setRiskPillTooltipOpen(null)}
+                  onFocus={() => setRiskPillTooltipOpen("NEW")}
+                  onBlur={() => setRiskPillTooltipOpen(null)}
+                  className={`btn-pill inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-semibold transition ${
+                    riskFilter === "NEW"
+                      ? "border-orange-400/60 bg-orange-400/20 text-foreground"
+                      : "border-white/15 bg-card/40 text-foreground/90 hover:bg-card/60"
+                  }`}
+                >
+                  <Star className="h-3.5 w-3.5 text-orange-400" />
+                  <span>NEW</span>
+                  <span className="rounded-full bg-white/10 px-1.5 py-0.5 font-mono text-[10px]">
+                    {riskCounts.new}
+                  </span>
+                </button>
+              </PopoverTrigger>
+              <PopoverContent
+                side="top"
+                align="center"
+                sideOffset={8}
+                onOpenAutoFocus={(e) => e.preventDefault()}
+                onCloseAutoFocus={(e) => e.preventDefault()}
+                className="pointer-events-none w-auto rounded-2xl border-[var(--brand-strong)] bg-[rgb(var(--brand-soft-rgb)/0.35)] px-3 py-2 text-xs text-foreground shadow-lg backdrop-blur-md"
+              >
+                <PopoverArrow
+                  width={12}
+                  height={8}
+                  className="fill-[rgb(var(--brand-soft-rgb)/0.35)] stroke-[var(--brand-strong)] stroke-1"
+                />
+                show only newly added sessions
+              </PopoverContent>
+            </Popover>
 
             <Popover open={riskPillTooltipOpen === "ALL"} onOpenChange={() => {}}>
               <PopoverTrigger asChild>
@@ -6879,6 +7118,12 @@ function buildAvailabilityVm(opts: {
               onPointerUp={slotHelperDrag.handlePointerUp}
               style={{ transform: `translate(${slotHelperDrag.offset.x}px, ${slotHelperDrag.offset.y}px)` }}
             >
+              {slotHelperReviewOpen || slotHelperMultiDayOpen ? (
+                <div
+                  aria-hidden="true"
+                  className="absolute inset-0 z-20 bg-transparent pointer-events-auto"
+                />
+              ) : null}
               <div className="mb-4 flex items-start justify-between gap-4 cursor-grab select-none active:cursor-grabbing">
                 <div className="min-w-0">
                   <div className="mt-0.5 text-lg font-semibold text-[var(--brand-ink)]">Add Session Helper</div>
@@ -8009,7 +8254,7 @@ function buildAvailabilityVm(opts: {
                       : "border border-white/10 bg-black/20 text-foreground hover:bg-black/30"
                   }`}
                 >
-                  Review
+                  Submit ({slotHelperSelectedSlotKeys.length})
                 </button>
                 <button
                   type="button"
@@ -8219,272 +8464,188 @@ function buildAvailabilityVm(opts: {
       {/* Slot Helper Review Modal (view-only) */}
       {slotHelperReviewOpen && slotHelperOpen && (
         <ModalPortal>
-          <div className="fixed inset-0 z-[120] flex items-center justify-center">
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setSlotHelperReviewOpen(false)} />
+          <div className="fixed inset-0 z-[120] flex items-center justify-center pointer-events-none">
             <div
               role="dialog"
-              aria-modal="true"
-              aria-label="Review selected time slots"
-              className="relative z-10 w-full max-w-3xl rounded-2xl border border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] p-6 shadow-2xl backdrop-blur-md"
+              aria-modal="false"
+              aria-label="Submit selected time slots"
+              className="pointer-events-auto relative z-10 w-full max-w-md rounded-2xl border border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] p-6 shadow-2xl backdrop-blur-md"
+              onPointerDown={(e) => {
+                if (!shouldStartModalDrag(e.target)) return;
+                slotHelperReviewDrag.handlePointerDown(e);
+              }}
+              onPointerMove={slotHelperReviewDrag.handlePointerMove}
+              onPointerUp={slotHelperReviewDrag.handlePointerUp}
+              style={{ transform: `translate(${slotHelperReviewDrag.offset.x}px, ${slotHelperReviewDrag.offset.y}px)` }}
             >
               <div className="mb-4 flex items-start justify-between gap-4">
                 <div className="min-w-0">
-                  <div className="text-lg font-semibold text-[var(--brand-ink)]">Review Selected Time Slots</div>
-                  <div className="mt-1 text-sm text-[var(--brand-ink)]/70">
-                    View-only list of the currently checked time slots.
-                  </div>
-                  <div className="mt-3 rounded-xl border border-white/10 bg-black/10 p-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <div className="text-sm font-semibold text-foreground">Email Requests</div>
-                        <div className="text-xs text-muted-foreground">
-                          Track responses and select a slot to prefill.
-                        </div>
-                      </div>
-                      {slotHelperReviewRequestsLoading ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> : null}
-                    </div>
-
-                    {slotHelperReviewRequestsError ? (
-                      <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">
-                        {slotHelperReviewRequestsError}
-                      </div>
-                    ) : null}
-
-                    {slotHelperReviewRequestDetail ? (
-                      <div className="mt-3 space-y-3">
-                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                          <div className="text-xs font-semibold text-muted-foreground">Email</div>
-                          <div className="text-xs font-semibold text-foreground">
-                            {slotHelperReviewRequestDetail.email?.sent_at
-                              ? `Sent ${new Date(slotHelperReviewRequestDetail.email.sent_at).toLocaleString()}`
-                              : "Not yet sent"}
-                          </div>
-                          <div className="text-xs font-semibold text-muted-foreground">Instructor response</div>
-                          <div className="text-xs font-semibold text-foreground">
-                            {slotHelperReviewRequestDetail.request.responded_at
-                              ? `Received ${new Date(slotHelperReviewRequestDetail.request.responded_at).toLocaleString()}`
-                              : "Not yet received"}
-                          </div>
-                          <div className="text-xs font-semibold text-muted-foreground">Expires</div>
-                          <div className="text-xs font-semibold text-foreground">
-                            {slotHelperReviewRequestDetail.expired
-                              ? "Expired"
-                              : new Date(slotHelperReviewRequestDetail.request.expires_at).toLocaleString()}
-                          </div>
-                          <div className="text-xs font-semibold text-muted-foreground">Status</div>
-                          <div className="text-xs font-semibold text-foreground">
-                            {slotHelperReviewRequestDetail.request.completed_at
-                              ? "Completed"
-                              : slotHelperReviewRequestDetail.request.overridden_at
-                                ? "Overridden"
-                                : slotHelperReviewRequestDetail.request.responded_at
-                                  ? "Response received"
-                                  : slotHelperReviewRequestDetail.request.sent_at
-                                    ? "Sent"
-                                    : "Draft"}
-                          </div>
-                        </div>
-
-                        {slotHelperReviewRequestActionError ? (
-                          <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">
-                            {slotHelperReviewRequestActionError}
-                          </div>
-                        ) : null}
-
-                        <div className="space-y-2">
-                          {(slotHelperReviewRequestDetail.holds ?? []).length === 0 ? (
-                            <div className="text-xs font-semibold text-muted-foreground">No holds found.</div>
-                          ) : (
-                            slotHelperReviewRequestDetail.holds.map((hold) => {
-                              const selectedIds = new Set(
-                                slotHelperReviewRequestDetail.request.response_selected_hold_ids ?? [],
-                              );
-                              const isSelected = selectedIds.has(hold.id);
-                              const isConsumed = !!hold.consumed_at;
-                              const isReleased = !!hold.released_at;
-                              const isExpired = slotHelperReviewRequestDetail.expired;
-                              const isActive = !isConsumed && !isReleased && !isExpired;
-                              const hasRequestContext =
-                                !!slotHelperReviewRequestDetail.request.class_id &&
-                                !!slotHelperReviewRequestDetail.request.location_id &&
-                                (slotHelperReviewRequestDetail.request.instructor_ids ?? []).length > 0;
-
-                              return (
-                                <div key={hold.id} className="rounded-lg border border-white/10 bg-black/20 p-3">
-                                  <div className="flex flex-wrap items-center justify-between gap-3">
-                                    <div className="text-sm font-semibold text-foreground">
-                                      {formatIsoDateMMDDYYYY(hold.slot_date)} • {formatTimeAmPm(hold.start_time)}–
-                                      {formatTimeAmPm(hold.end_time)}
-                                    </div>
-                                    <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
-                                      {isSelected ? (
-                                        <span className="rounded-full border border-[var(--cta)]/60 bg-[var(--cta)]/20 px-2 py-0.5 text-[var(--cta-foreground)]">
-                                          Selected
-                                        </span>
-                                      ) : null}
-                                      {isConsumed ? (
-                                        <span className="rounded-full border border-emerald-400/40 bg-emerald-400/20 px-2 py-0.5 text-emerald-100">
-                                          Consumed
-                                        </span>
-                                      ) : isReleased ? (
-                                        <span className="rounded-full border border-yellow-400/40 bg-yellow-400/20 px-2 py-0.5 text-yellow-100">
-                                          Released
-                                        </span>
-                                      ) : isExpired ? (
-                                        <span className="rounded-full border border-red-400/40 bg-red-400/20 px-2 py-0.5 text-red-100">
-                                          Expired
-                                        </span>
-                                      ) : (
-                                        <span className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-muted-foreground">
-                                          Active
-                                        </span>
-                                      )}
-                                    </div>
-                                  </div>
-                                  <div className="mt-2 flex items-center justify-end">
-                                    <button
-                                      type="button"
-                                      disabled={
-                                        !isActive ||
-                                        !hasRequestContext ||
-                                        slotHelperReviewRequestActionLoading ||
-                                        !!slotHelperReviewRequestDetail.request.completed_at ||
-                                        !!slotHelperReviewRequestDetail.request.overridden_at
-                                      }
-                                      onClick={() => {
-                                        if (!isActive) return;
-                                        if (!hasRequestContext) return;
-                                        closeSlotHelper();
-                                        openAddSessionDirect({
-                                          session_date: hold.slot_date,
-                                          start_time: hold.start_time,
-                                          end_time: hold.end_time,
-                                          class_id: slotHelperReviewRequestDetail.request.class_id ?? "",
-                                          location_id: slotHelperReviewRequestDetail.request.location_id ?? "",
-                                          instructor_ids: slotHelperReviewRequestDetail.request.instructor_ids ?? [],
-                                          hold_id: hold.id,
-                                        });
-                                      }}
-                                      className="rounded-lg border border-[var(--cta)] bg-[var(--cta)] px-3 py-1.5 text-xs font-semibold text-[var(--cta-foreground)] transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
-                                    >
-                                      Prefill Add Session
-                                    </button>
-                                  </div>
-                                </div>
-                              );
-                            })
-                          )}
-                        </div>
-
-                        {slotHelperReviewRequestDetail.request.response_comment ? (
-                          <div className="rounded-lg border border-white/10 bg-black/20 p-3">
-                            <div className="text-xs font-semibold text-muted-foreground">Comment</div>
-                            <div className="mt-1 whitespace-pre-wrap text-sm text-foreground">
-                              {slotHelperReviewRequestDetail.request.response_comment}
-                            </div>
-                          </div>
-                        ) : null}
-
-                        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-white/10 pt-3">
-                          <button
-                            type="button"
-                            onClick={() => void completeSlotHelperReviewRequest()}
-                            disabled={
-                              slotHelperReviewRequestActionLoading ||
-                              slotHelperReviewRequestDetail.expired ||
-                              !!slotHelperReviewRequestDetail.request.completed_at ||
-                              !!slotHelperReviewRequestDetail.request.overridden_at
-                            }
-                            className="rounded-lg border border-white/15 bg-black/20 px-3 py-1.5 text-xs font-semibold text-foreground transition hover:bg-black/30 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            Mark complete
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void overrideSlotHelperReviewRequest()}
-                            disabled={
-                              slotHelperReviewRequestActionLoading ||
-                              slotHelperReviewRequestDetail.expired ||
-                              !!slotHelperReviewRequestDetail.request.completed_at ||
-                              !!slotHelperReviewRequestDetail.request.overridden_at
-                            }
-                            className="rounded-lg border border-white/15 bg-black/20 px-3 py-1.5 text-xs font-semibold text-foreground transition hover:bg-black/30 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            Override
-                          </button>
-                        </div>
-                      </div>
-                    ) : slotHelperReviewRequestDetailLoading ? (
-                      <div className="mt-3 text-xs text-muted-foreground">Loading request details…</div>
-                    ) : (
-                      <div className="mt-3 text-xs font-semibold text-muted-foreground">No request selected.</div>
-                    )}
-                  </div>
+                  <div className="text-lg font-semibold text-[var(--brand-ink)]">Submit Selected Time Slots</div>
+                  <div className="mt-1 text-sm text-white">Review &amp; Submit requested new class session</div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setSlotHelperReviewEmailModalOpen(true)}
-                    disabled={slotHelperSelectedSlotKeys.length === 0}
-                    className="inline-flex items-center gap-2 rounded-xl border border-[var(--cta)] bg-[var(--cta)] px-3 py-2 text-sm font-semibold text-[var(--cta-foreground)] transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <Mail className="h-4 w-4" />
-                    Email
-                  </button>
-                  <button
-                    type="button"
-                    aria-label="Close review"
-                    onClick={() => setSlotHelperReviewOpen(false)}
-                    className="rounded-full p-1.5 text-[var(--brand-ink)]/70 hover:bg-[var(--brand-strong)] hover:text-white"
-                  >
-                    <X className="h-5 w-5" />
-                  </button>
+                <button
+                  type="button"
+                  aria-label="Close submit modal"
+                  onClick={() => setSlotHelperReviewOpen(false)}
+                  className="rounded-full p-1.5 text-[var(--brand-ink)]/70 hover:bg-[var(--brand-strong)] hover:text-white"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="mb-4 rounded-xl border border-white/10 bg-black/10 p-3 text-sm text-foreground">
+                <div className="text-center text-sm font-semibold">New Class Session Details</div>
+                <div className="mt-2 grid grid-cols-[150px_1fr] gap-x-3 gap-y-1 text-xs font-semibold text-foreground">
+                  <div>Schedule:</div>
+                  <div className="text-left">{slotHelperScheduleLabel}</div>
+                  <div>Class Name:</div>
+                  <div className="text-left">{slotHelperSelectedClassName}</div>
+                  <div>Instructor Nickname:</div>
+                  <div className="text-left">{slotHelperSelectedInstructorNickname}</div>
+                  <div>Instructor Email:</div>
+                  <div className="text-left">{slotHelperSelectedInstructorEmail}</div>
+                  <div>Manager Email:</div>
+                  <div className="text-left">{slotHelperManagerEmail}</div>
+                  <div>New sessions to add:</div>
+                  <div className="text-left">{slotHelperSelectedSlotKeys.length}</div>
                 </div>
               </div>
 
-              <div className="max-h-[60vh] space-y-3 overflow-y-auto rounded-xl border border-white/10 bg-black/10 p-4">
-                {slotHelperSelectedSlotKeys.length === 0 ? (
-                  <div className="text-sm font-semibold text-muted-foreground">No time slots selected.</div>
+              <div className="mb-4 rounded-xl border border-white/10 bg-black/10 p-3 text-sm text-foreground">
+                <div className="mb-[5px] text-center text-sm font-semibold text-foreground">
+                  Session Time(s) Selected
+                </div>
+                {slotHelperSelectedSlotRows.length === 0 ? (
+                  <div className="text-sm text-muted-foreground">No time slots selected.</div>
                 ) : (
-                  (() => {
-                    const byDate = new Map<string, { start: string; end: string }[]>();
-                    for (const key of slotHelperSelectedSlotKeys) {
-                      const [date, start, end] = String(key).split("|");
-                      if (!date || !start || !end) continue;
-                      const list = byDate.get(date) ?? [];
-                      list.push({ start, end });
-                      byDate.set(date, list);
-                    }
-                    const dates = Array.from(byDate.keys()).sort();
-                    return dates.map((date) => {
-                      const rows = (byDate.get(date) ?? []).slice().sort((a, b) => a.start.localeCompare(b.start));
-                      return (
-                        <div key={date} className="rounded-xl border border-white/10 bg-black/10 p-3">
-                          <div className="text-sm font-semibold text-foreground">{formatIsoDateMMDDYYYY(date)}</div>
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            {rows.map((r, idx) => (
-                              <div
-                                key={`${date}-${r.start}-${r.end}-${idx}`}
-                                className="rounded-lg border border-white/10 bg-black/20 px-3 py-1.5 text-sm font-semibold text-foreground"
-                              >
-                                {formatTimeAmPm(r.start)}–{formatTimeAmPm(r.end)}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    });
-                  })()
+                  <div className="space-y-1 font-semibold">
+                    {slotHelperSelectedSlotRows.map((row) => (
+                      <div key={row.key} className="grid grid-cols-[140px_1fr] gap-2">
+                        <span className="truncate">
+                          {row.dayLabel ? `${row.dayLabel} ` : ""}
+                          {row.dateLabel}
+                        </span>
+                        <span className="truncate">{row.timeLabel}</span>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
 
-              <div className="mt-4 flex items-center justify-end gap-2 border-t border-white/10 pt-4">
+              <div className="rounded-xl border border-white/10 bg-black/10 p-3">
+                <div className="text-xs font-semibold text-foreground">Confirmation email to:</div>
+                <div className="mt-2 flex flex-wrap items-center gap-4 text-xs font-semibold text-foreground">
+                  <label className="inline-flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      className="h-3.5 w-3.5 accent-[var(--cta)]"
+                      checked={slotHelperSubmitEmailInstructors}
+                      disabled={slotHelperSubmitStatus === "submitting" || slotHelperSubmitComplete}
+                      onChange={(e) => setSlotHelperSubmitEmailInstructors(e.target.checked)}
+                    />
+                    Instructor(s)
+                  </label>
+                  <label className="inline-flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      className="h-3.5 w-3.5 accent-[var(--cta)]"
+                      checked={slotHelperSubmitEmailManager}
+                      disabled={slotHelperSubmitStatus === "submitting" || slotHelperSubmitComplete}
+                      onChange={(e) => setSlotHelperSubmitEmailManager(e.target.checked)}
+                    />
+                    cc Branch Manager
+                  </label>
+                </div>
+              </div>
+
+              {slotHelperSubmitStatus === "submitting" ? (
+                <div className="mt-4">
+                  <div className="h-2 w-full rounded-full bg-black/20">
+                    <div
+                      data-testid="slot-helper-submit-progress"
+                      className="h-2 rounded-full bg-[var(--cta)] transition-all"
+                      style={{ width: `${slotHelperSubmitProgress}%` }}
+                    />
+                  </div>
+                </div>
+              ) : null}
+
+              {slotHelperSubmitResult ? (
+                <div className="mt-4 rounded-xl border border-white/10 bg-black/10 p-3 text-xs font-semibold text-foreground">
+                  <div className="flex items-center justify-between gap-2">
+                    <span>Sessions:</span>
+                    <span
+                      className={
+                        slotHelperSubmitResult.sessions.ok ? "text-emerald-200" : "text-red-200"
+                      }
+                    >
+                      {slotHelperSubmitResult.sessions.ok
+                        ? `Added (${slotHelperSubmitResult.sessions.createdIds.length})`
+                        : `Failed${slotHelperSubmitResult.sessions.error ? `: ${slotHelperSubmitResult.sessions.error}` : ""}`}
+                    </span>
+                  </div>
+                  <div className="mt-1 flex items-center justify-between gap-2">
+                    <span>Email:</span>
+                    <span
+                      className={
+                        slotHelperSubmitResult.email.ok ? "text-emerald-200" : "text-red-200"
+                      }
+                    >
+                      {slotHelperSubmitResult.email.ok
+                        ? `Sent (${slotHelperSubmitResult.email.recipients.length})`
+                        : `Failed${slotHelperSubmitResult.email.error ? `: ${slotHelperSubmitResult.email.error}` : ""}`}
+                    </span>
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="mt-4 flex items-center justify-between gap-2 border-t border-white/10 pt-4">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void handleSlotHelperSubmit()}
+                    disabled={slotHelperSelectedSlotKeys.length === 0 || slotHelperSubmitStatus === "submitting" || slotHelperSubmitComplete}
+                    className="inline-flex items-center gap-2 rounded-xl border border-[var(--cta)] bg-[var(--cta)] px-3 py-2 text-sm font-semibold text-[var(--cta-foreground)] transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Submit
+                  </button>
+                  <Popover open={slotHelperSubmitTooltipOpen} onOpenChange={() => {}}>
+                    <PopoverTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label="Submit info"
+                        onMouseEnter={() => setSlotHelperSubmitTooltipOpen(true)}
+                        onMouseLeave={() => setSlotHelperSubmitTooltipOpen(false)}
+                        onFocus={() => setSlotHelperSubmitTooltipOpen(true)}
+                        onBlur={() => setSlotHelperSubmitTooltipOpen(false)}
+                        className="rounded-full p-1.5 text-[var(--cta)] transition hover:bg-black/20"
+                      >
+                        <Info className="h-4 w-4" />
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent
+                      side="top"
+                      align="start"
+                      sideOffset={8}
+                      onOpenAutoFocus={(e) => e.preventDefault()}
+                      onCloseAutoFocus={(e) => e.preventDefault()}
+                      className="pointer-events-none z-[160] w-auto rounded-2xl border-[var(--brand-strong)] bg-[rgb(var(--brand-soft-rgb)/0.35)] px-3 py-2 text-xs text-foreground shadow-lg backdrop-blur-md"
+                    >
+                      <PopoverArrow
+                        width={12}
+                        height={8}
+                        className="fill-[rgb(var(--brand-soft-rgb)/0.35)] stroke-[var(--brand-strong)] stroke-1"
+                      />
+                      add new class session now
+                    </PopoverContent>
+                  </Popover>
+                </div>
                 <button
                   type="button"
-                  onClick={() => setSlotHelperReviewOpen(false)}
+                  onClick={closeSlotHelperSubmit}
                   className="rounded-xl border border-white/10 bg-black/20 px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-black/30"
                 >
-                  OK
+                  {slotHelperSubmitComplete ? "Close" : "Cancel"}
                 </button>
               </div>
             </div>

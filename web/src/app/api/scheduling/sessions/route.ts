@@ -44,6 +44,7 @@ type SessionRow = {
   start_time: string;
   end_time: string;
   session_date: string;
+  created_at?: string | null;
   headcount: number | null;
   class: { id: string; name: string } | { id: string; name: string }[] | null;
   location: { id: string; code: string; name: string } | { id: string; code: string; name: string }[] | null;
@@ -395,6 +396,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       start_time,
       end_time,
       session_date,
+      created_at,
       headcount,
       class:class_id(id, name),
       location:locations!class_sessions_branch_location_fkey(id, code, name)
