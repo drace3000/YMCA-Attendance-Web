@@ -413,5 +413,174 @@ describe("POST /api/maintenance/holidays/import-us", () => {
     // Both behaviors are acceptable for the new UX requirement (button disablement is driven by latestYear presence).
     expect(typeof didMarkUpdate).toBe("boolean")
   })
+
+  it("allows GET /api/maintenance/holidays/import-us in production (no 404 gate)", async () => {
+    process.env.NODE_ENV = "production"
+    const GET_IMPORT_US = await importStatusRoute()
+
+    const supabase = createMockSupabaseClient({
+      holidays: (state) => {
+        if (state.action === "select") return { data: [], error: null }
+        return { data: null, error: null }
+      },
+    })
+    mockCreateSupabaseServerClient.mockReturnValue(supabase)
+
+    mockLoadUsFederalHolidaysJson.mockResolvedValue({
+      holidays: [{ name: "Test", dates: { "2028": { date: "2028-01-01" } } }],
+    })
+
+    const req = new NextRequest(
+      "http://localhost/api/maintenance/holidays/import-us?branch_id=11111111-1111-1111-1111-111111111111&year=2028",
+      { method: "GET" },
+    )
+
+    const res = await GET_IMPORT_US(req)
+    const json = await res.json()
+    expect(res.status).toBe(200)
+    expect(json?.requestedYear).toBe(2028)
+    expect(json?.requestedYearMissing).toBe(true)
+  })
+
+  it("GET /api/maintenance/holidays/import-us returns 400 for invalid year", async () => {
+    const GET_IMPORT_US = await importStatusRoute()
+
+    const supabase = createMockSupabaseClient({
+      holidays: () => ({ data: [], error: null }),
+    })
+    mockCreateSupabaseServerClient.mockReturnValue(supabase)
+
+    mockLoadUsFederalHolidaysJson.mockResolvedValue({
+      holidays: [{ name: "Test", dates: { "2028": { date: "2028-01-01" } } }],
+    })
+
+    const req = new NextRequest(
+      "http://localhost/api/maintenance/holidays/import-us?branch_id=11111111-1111-1111-1111-111111111111&year=20xx",
+      { method: "GET" },
+    )
+
+    const res = await GET_IMPORT_US(req)
+    expect(res.status).toBe(400)
+  })
+
+  it("POST /api/maintenance/holidays/import-us supports importing a requested year even if latestYear is already loaded", async () => {
+    const POST_IMPORT_US = await importRoute()
+    const inserted: any[] = []
+
+    const supabase = createMockSupabaseClient({
+      holidays: (state) => {
+        if (state.action === "select") {
+          const isInDates = state.filters.some((f) => f.op === "in" && f.column === "holiday_date")
+          if (isInDates) return { data: [], error: null }
+          // base computeMissingYears select: claim latest year row exists (so latestYearMissing=false)
+          return { data: [{ holiday_date: "2027-01-01" }], error: null }
+        }
+        if (state.action === "insert") {
+          const payload = Array.isArray(state.payload) ? state.payload : []
+          inserted.push(...payload)
+          return { data: payload.map((_r: any, idx: number) => ({ id: `i${idx}` })), error: null }
+        }
+        return { data: null, error: null }
+      },
+    })
+    mockCreateSupabaseServerClient.mockReturnValue(supabase)
+
+    mockLoadUsFederalHolidaysJson.mockResolvedValue({
+      holidays: [
+        { name: "Latest", dates: { "2027": { date: "2027-01-01" } } },
+        { name: "Requested", dates: { "2028": { date: "2028-01-01", observed: "2028-01-02" } } },
+      ],
+    })
+
+    const req = new NextRequest("http://localhost/api/maintenance/holidays/import-us", {
+      method: "POST",
+      body: JSON.stringify({ branch_id: "11111111-1111-1111-1111-111111111111", year: 2028 }),
+    })
+
+    const res = await POST_IMPORT_US(req)
+    const json = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(json?.requestedYear).toBe(2028)
+    expect(json?.insertedCount).toBe(1)
+    expect(inserted).toHaveLength(1)
+    expect(inserted[0].holiday_date).toBe("2028-01-01")
+  })
+
+  it("POST /api/maintenance/holidays/import-us returns 400 when requested year is not in source JSON", async () => {
+    const POST_IMPORT_US = await importRoute()
+    const supabase = createMockSupabaseClient({
+      holidays: () => ({ data: [], error: null }),
+    })
+    mockCreateSupabaseServerClient.mockReturnValue(supabase)
+
+    mockLoadUsFederalHolidaysJson.mockResolvedValue({
+      holidays: [{ name: "Test", dates: { "2028": { date: "2028-01-01" } } }],
+    })
+
+    const req = new NextRequest("http://localhost/api/maintenance/holidays/import-us", {
+      method: "POST",
+      body: JSON.stringify({ branch_id: "11111111-1111-1111-1111-111111111111", year: 2099 }),
+    })
+
+    const res = await POST_IMPORT_US(req)
+    expect(res.status).toBe(400)
+  })
+
+  it("POST /api/maintenance/holidays/import-us is idempotent for a requested year", async () => {
+    const POST_IMPORT_US = await importRoute()
+
+    const existingDates = new Set<string>()
+    const supabase = createMockSupabaseClient({
+      holidays: (state) => {
+        if (state.action === "select") {
+          const inFilter = state.filters.find((f) => f.op === "in" && f.column === "holiday_date")
+          const dates = Array.isArray(inFilter?.value) ? (inFilter?.value as string[]) : []
+          const rows = dates
+            .filter((d) => existingDates.has(d))
+            .map((d, idx) => ({
+              id: `e${idx}`,
+              holiday_date: d,
+              observed_date: null,
+              name: "Test Holiday",
+              import_source: "US_FEDERAL",
+            }))
+          return { data: rows, error: null }
+        }
+        if (state.action === "insert") {
+          const payload = Array.isArray(state.payload) ? state.payload : []
+          for (const r of payload as any[]) {
+            if (typeof r?.holiday_date === "string") existingDates.add(r.holiday_date)
+          }
+          return { data: payload.map((_r: any, idx: number) => ({ id: `i${idx}` })), error: null }
+        }
+        return { data: null, error: null }
+      },
+    })
+    mockCreateSupabaseServerClient.mockReturnValue(supabase)
+
+    mockLoadUsFederalHolidaysJson.mockResolvedValue({
+      holidays: [{ name: "Test Holiday", dates: { "2028": { date: "2028-01-01" } } }],
+    })
+
+    const req1 = new NextRequest("http://localhost/api/maintenance/holidays/import-us", {
+      method: "POST",
+      body: JSON.stringify({ branch_id: "11111111-1111-1111-1111-111111111111", year: 2028 }),
+    })
+    const res1 = await POST_IMPORT_US(req1)
+    const json1 = await res1.json()
+    expect(res1.status).toBe(200)
+    expect(json1?.insertedCount).toBe(1)
+
+    const req2 = new NextRequest("http://localhost/api/maintenance/holidays/import-us", {
+      method: "POST",
+      body: JSON.stringify({ branch_id: "11111111-1111-1111-1111-111111111111", year: 2028 }),
+    })
+    const res2 = await POST_IMPORT_US(req2)
+    const json2 = await res2.json()
+    expect(res2.status).toBe(200)
+    expect(json2?.insertedCount).toBe(0)
+    expect(json2?.requestedYearMissing).toBe(false)
+  })
 })
 

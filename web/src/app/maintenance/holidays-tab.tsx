@@ -1008,8 +1008,8 @@ export function HolidaysTab() {
           <div className="relative z-10 w-full max-w-xl rounded-2xl border border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] p-6 shadow-2xl backdrop-blur-md">
             <div className="mb-6 flex items-start justify-between">
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--brand-strong)]/20">
-                  <CalendarDays className="h-5 w-5 text-[var(--brand-ink)]" />
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-orange-400/40 bg-orange-400/15">
+                  <CalendarDays className="h-5 w-5 text-orange-400/90" />
                 </div>
                 <div>
                   <h2 className="text-lg font-semibold text-[var(--brand-ink)]">

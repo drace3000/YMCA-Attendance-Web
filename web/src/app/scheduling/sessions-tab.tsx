@@ -45,6 +45,7 @@ import {
   type SlotHelperDayFilter,
   type SlotHelperHolidayClosure,
 } from "@/lib/scheduling/slot-helper";
+import { sortAutoLocateRows, type SlotHelperWeekday } from "@/lib/scheduling/slot-helper-auto-locate-utils";
 import {
   Popover,
   PopoverArrow,
@@ -581,6 +582,10 @@ export function SessionsTab({
   const slotHelperWeekdaysHydratedRef = useRef(false);
   const slotHelperWeekdaysBranchRef = useRef<string | null>(null);
   const slotHelperWeekdaysPersistKey = "slot_helper_weekdays";
+  const slotHelperWeekdaysLocalStorageKey = useMemo(
+    () => `ymca:scheduling:${branchId ?? "unknown"}:slot-helper-weekdays`,
+    [branchId],
+  );
   const slotHelperDateCollapsePersistKey = "slot_helper_date_collapse";
   const slotHelperAutoLocateHydratedRef = useRef(false);
   const slotHelperAutoLocateBranchRef = useRef<string | null>(null);
@@ -755,6 +760,25 @@ useEffect(() => {
   slotHelperWeekdaysBranchRef.current = branchId;
   let cancelled = false;
   void (async () => {
+    let hydrated = false;
+    // Try localStorage first for quicker restore.
+    try {
+      const raw = window.localStorage.getItem(slotHelperWeekdaysLocalStorageKey);
+      if (raw) {
+        const parsed = JSON.parse(raw) as unknown;
+        if (Array.isArray(parsed)) {
+          const normalized = normalizeSlotHelperWeekdays(parsed as string[]);
+          if (normalized.length > 0) {
+            slotHelperWeekdaysPrevRef.current = normalized;
+            setSlotHelperSelectedDays(normalized);
+            hydrated = true;
+          }
+        }
+      }
+    } catch {
+      // ignore and fall back to server
+    }
+
     try {
       const res = await fetch(`/api/scheduling/ui-state?branch_id=${encodeURIComponent(branchId)}`);
       if (!res.ok) return;
@@ -769,10 +793,16 @@ useEffect(() => {
       const normalized = Array.isArray(json.slotHelperWeekdays)
         ? normalizeSlotHelperWeekdays(json.slotHelperWeekdays as string[])
         : [];
-      const nextDays =
-        normalized.length > 0 ? normalized : (SLOT_HELPER_DAY_PILLS.map((d) => d.value) as SlotHelperDayValue[]);
-      slotHelperWeekdaysPrevRef.current = nextDays;
-      setSlotHelperSelectedDays(nextDays);
+      if (!hydrated) {
+        const nextDays =
+          normalized.length > 0 ? normalized : (SLOT_HELPER_DAY_PILLS.map((d) => d.value) as SlotHelperDayValue[]);
+        slotHelperWeekdaysPrevRef.current = nextDays;
+        setSlotHelperSelectedDays(nextDays);
+      } else if (normalized.length > 0) {
+        // If localStorage had a value but server has a newer one, prefer server.
+        slotHelperWeekdaysPrevRef.current = normalized;
+        setSlotHelperSelectedDays(normalized);
+      }
 
       if (!slotHelperDateStateHydratedRef.current) {
         const rawCollapse =
@@ -873,6 +903,11 @@ useEffect(() => {
   const prev = slotHelperWeekdaysPrevRef.current;
   if (prev && prev.length === normalized.length && prev.every((v, i) => v === normalized[i])) return;
   slotHelperWeekdaysPrevRef.current = normalized;
+  try {
+    window.localStorage.setItem(slotHelperWeekdaysLocalStorageKey, JSON.stringify(normalized));
+  } catch {
+    // ignore
+  }
   void (async () => {
     try {
       await fetch("/api/scheduling/ui-state", {
@@ -3605,6 +3640,7 @@ useEffect(() => {
         const matches: Array<{
           key: string;
           date: string;
+          day_of_week: SlotHelperWeekday;
           start_time: string;
           end_time: string;
           label: string;
@@ -3624,14 +3660,21 @@ useEffect(() => {
             const startLabel = formatTimeAmPm(s.start_time);
             const endLabel = formatTimeAmPm(s.end_time);
             const label = `${dayLabel} ${dateLabel} @ ${startLabel}-${endLabel}`;
-            matches.push({ key: matchKey, date: day.date, start_time: s.start_time, end_time: s.end_time, label });
+            matches.push({
+              key: matchKey,
+              date: day.date,
+              day_of_week: (dow || dayOfWeekFromIsoDateUtc(day.date) || "SATURDAY") as SlotHelperWeekday,
+              start_time: s.start_time,
+              end_time: s.end_time,
+              label,
+            });
           }
         }
 
         if (matches.length > 0) {
-          matches.sort((a, b) => a.date.localeCompare(b.date));
+          const sorted = sortAutoLocateRows(matches);
           setSlotHelperMultiDayDays(selectedDays);
-          setSlotHelperMultiDayOptions(matches.map((m) => ({ ...m, checked: false })));
+          setSlotHelperMultiDayOptions(sorted.map((m) => ({ ...m, checked: false })));
           setSlotHelperMultiDayOpen(true);
         }
       }
@@ -8106,7 +8149,14 @@ function buildAvailabilityVm(opts: {
                         }
                         className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-sm font-semibold text-foreground transition hover:bg-black/20"
                       >
-                        <span className="truncate">{opt.label}</span>
+                        <span className="grid min-w-0 flex-1 grid-cols-[140px_1fr] gap-2">
+                          <span className="truncate">
+                            {String(opt.day_of_week ?? "").slice(0, 3)} {formatIsoDateMMDDYYYY(opt.date)}
+                          </span>
+                          <span className="truncate">
+                            {formatTimeAmPm(opt.start_time)}–{formatTimeAmPm(opt.end_time)}
+                          </span>
+                        </span>
                         <span
                           className={`flex h-4 w-4 items-center justify-center rounded border ${
                             opt.checked

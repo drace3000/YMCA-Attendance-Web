@@ -10,10 +10,36 @@ const IMPORT_SOURCE = "US_FEDERAL" as const;
 
 type ImportPayload = {
   branch_id?: string;
+  year?: number | string;
 };
 
 function isIsoDate(value: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test((value ?? "").trim());
+}
+
+function parseYear(value: unknown): number | null {
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) return null;
+    const y = Math.trunc(value);
+    if (y < 1900 || y > 3000) return null;
+    return y;
+  }
+  if (typeof value !== "string") return null;
+  const s = value.trim();
+  if (!/^\d{4}$/.test(s)) return null;
+  const y = Number(s);
+  if (!Number.isFinite(y) || y < 1900 || y > 3000) return null;
+  return y;
+}
+
+function assertYearSupported(year: number, availableYears: number[]): { ok: true } | { ok: false; error: string } {
+  if (!availableYears.includes(year)) {
+    const min = availableYears.length > 0 ? availableYears[0] : null;
+    const max = availableYears.length > 0 ? availableYears[availableYears.length - 1] : null;
+    const range = min && max ? `${min}–${max}` : "no years available";
+    return { ok: false, error: `Unsupported year ${year} (available: ${range})` };
+  }
+  return { ok: true };
 }
 
 function extractAvailableYears(json: UsHolidaysJson): number[] {
@@ -141,13 +167,15 @@ async function resolveBranchIdFromRequest(req: NextRequest): Promise<{
 }
 
 export async function GET(req: NextRequest): Promise<Response> {
-  if (process.env.NODE_ENV !== "development") {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
-
   const { branchId, errorResponse } = await resolveBranchIdFromRequest(req);
   if (errorResponse) return errorResponse;
   if (!branchId) return NextResponse.json({ error: "branch_id is required" }, { status: 400 });
+
+  const { searchParams } = new URL(req.url);
+  const requestedYear = parseYear(searchParams.get("year"));
+  if (searchParams.has("year") && requestedYear === null) {
+    return NextResponse.json({ error: "Invalid year (expected YYYY)" }, { status: 400 });
+  }
 
   let json: UsHolidaysJson;
   try {
@@ -161,6 +189,13 @@ export async function GET(req: NextRequest): Promise<Response> {
   try {
     const { availableYears, latestYear, missingYears } = await computeMissingYears({ supabase, branchId, json });
     const latestYearMissing = latestYear ? missingYears.includes(latestYear) : false;
+
+    if (requestedYear !== null) {
+      const supported = assertYearSupported(requestedYear, availableYears);
+      if (!supported.ok) return NextResponse.json({ error: supported.error }, { status: 400 });
+    }
+
+    const requestedYearMissing = requestedYear !== null ? missingYears.includes(requestedYear) : null;
     return NextResponse.json({
       ok: true,
       branchId,
@@ -170,6 +205,8 @@ export async function GET(req: NextRequest): Promise<Response> {
       latestYearMissing,
       upToDate: !latestYearMissing,
       importSource: IMPORT_SOURCE,
+      requestedYear: requestedYear,
+      requestedYearMissing,
     });
   } catch (err: any) {
     return NextResponse.json({ error: err?.message ?? "Failed to compute import status" }, { status: 500 });
@@ -177,11 +214,6 @@ export async function GET(req: NextRequest): Promise<Response> {
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
-  // Importing from a local file is intended for local development.
-  if (process.env.NODE_ENV !== "development") {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
-
   const required = await requireRecipientAccess(req, { allowDevPassthrough: true });
   if (!required.ok) return required.response;
 
@@ -224,17 +256,48 @@ export async function POST(req: NextRequest): Promise<Response> {
     return NextResponse.json({ error: err?.message ?? "Failed to compute import status" }, { status: 500 });
   }
 
+  const requestedYear = parseYear(body.year);
+  if (body.year !== undefined && requestedYear === null) {
+    return NextResponse.json({ error: "Invalid year (expected YYYY)" }, { status: 400 });
+  }
+  if (requestedYear !== null) {
+    const supported = assertYearSupported(requestedYear, availableYears);
+    if (!supported.ok) return NextResponse.json({ error: supported.error }, { status: 400 });
+  }
+
   const latestYearMissing = latestYear ? missingYears.includes(latestYear) : false;
-  if (!latestYearMissing) {
+  const requestedYearMissing = requestedYear !== null ? missingYears.includes(requestedYear) : null;
+
+  if (requestedYear !== null && requestedYearMissing === false) {
+    return NextResponse.json({
+      ok: true,
+      upToDate: !latestYearMissing,
+      latestYear,
+      missingYears,
+      insertedCount: 0,
+      updatedCount: 0,
+      importSource: IMPORT_SOURCE,
+      requestedYear,
+      requestedYearMissing: false,
+    });
+  }
+
+  // Back-compat behavior: without an explicit year, only import when the latest year is missing.
+  if (requestedYear === null && !latestYearMissing) {
     return NextResponse.json({
       ok: true,
       upToDate: true,
       latestYear,
       missingYears,
       insertedCount: 0,
+      updatedCount: 0,
       importSource: IMPORT_SOURCE,
+      requestedYear: null,
+      requestedYearMissing: null,
     });
   }
+
+  const yearsToImport = requestedYear !== null ? [requestedYear] : missingYears;
 
   const rowsToInsert: Array<{
     branch_id: string;
@@ -253,7 +316,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     const name = (h?.name ?? "").trim();
     if (!name) continue;
     const dates = h?.dates ?? {};
-    for (const y of missingYears) {
+    for (const y of yearsToImport) {
       const entry = dates[String(y)];
       if (!entry) continue;
       const date = String(entry.date ?? "").trim();
@@ -380,6 +443,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   try {
     const recomputed = await computeMissingYears({ supabase, branchId, json });
     const nextLatestMissing = recomputed.latestYear ? recomputed.missingYears.includes(recomputed.latestYear) : false;
+    const nextRequestedYearMissing = requestedYear !== null ? recomputed.missingYears.includes(requestedYear) : null;
     return NextResponse.json({
       ok: true,
       upToDate: !nextLatestMissing,
@@ -388,6 +452,8 @@ export async function POST(req: NextRequest): Promise<Response> {
       insertedCount: inserted?.length ?? 0,
       updatedCount,
       importSource: IMPORT_SOURCE,
+      requestedYear,
+      requestedYearMissing: nextRequestedYearMissing,
     });
   } catch {
     return NextResponse.json({
@@ -398,6 +464,8 @@ export async function POST(req: NextRequest): Promise<Response> {
       insertedCount: inserted?.length ?? 0,
       updatedCount,
       importSource: IMPORT_SOURCE,
+      requestedYear,
+      requestedYearMissing,
     });
   }
 }

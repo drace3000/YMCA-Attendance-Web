@@ -63,6 +63,9 @@ describe("SchedulingPage publish confirmation", () => {
       if (url.includes("/api/maintenance/instructors")) return mockJson(true, []);
       if (url.includes("/api/scheduling/sessions")) return mockJson(true, { sessions: [] });
       if (url.includes("/api/scheduling/instructor-availability")) return mockJson(true, { availability: [] });
+      if (url.includes("/api/maintenance/holidays/import-us?")) {
+        return mockJson(true, { requestedYear: 2026, requestedYearMissing: false });
+      }
       if (url.includes("/api/maintenance/holidays")) return mockJson(true, []);
 
       // Publish preflight verify
@@ -179,6 +182,9 @@ describe("SchedulingPage publish confirmation", () => {
         });
       }
       if (url.includes("/api/scheduling/instructor-availability")) return mockJson(true, { availability: [] });
+      if (url.includes("/api/maintenance/holidays/import-us?")) {
+        return mockJson(true, { requestedYear: 2026, requestedYearMissing: false });
+      }
       if (url.includes("/api/maintenance/holidays")) return mockJson(true, []);
 
       // Any other scheduling endpoints

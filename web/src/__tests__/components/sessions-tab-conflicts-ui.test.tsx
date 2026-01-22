@@ -1577,38 +1577,59 @@ describe("SessionsTab conflicts UI", () => {
   });
 
   it("populates selections and slots from Email Requests Sent selection", async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url.includes("/api/maintenance/classes")) {
-        return mockJson(true, { classes: [{ id: "cls-2", name: "BODYCOMBAT™" }] });
-      }
-      if (url.includes("/api/maintenance/locations")) {
-        return mockJson(true, { locations: [{ id: "loc-2", code: "MB", name: "Mind Body" }] });
-      }
-      if (url.includes("/api/maintenance/instructors")) {
-        return mockJson(true, {
-          instructors: [{ id: "inst-2", nickname: "VANESSA", first_name: "Vanessa", last_name: "V" }],
-        });
-      }
-      if (url.includes("/api/scheduling/instructor-class-location-details")) {
-        return mockJson(true, {
-          rows: [
-            {
-              class_id: "cls-2",
-              class_name: "BODYCOMBAT™",
-              instructor_id: "inst-2",
-              instructor_nickname: "VANESSA",
-              location_id: "loc-2",
-              location_name: "Mind Body",
-              minutes: 45,
-            },
-          ],
-        });
-      }
-      if (url.includes("/api/scheduling/slot-helper-review/requests")) {
-        return mockJson(true, {
-          requests: [
-            {
+    // Deterministic: avoid time-sensitive "Expired" labels in options.
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(new Date("2026-01-17T21:00:00Z").getTime());
+    try {
+      const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes("/api/maintenance/classes")) {
+          return mockJson(true, { classes: [{ id: "cls-2", name: "BODYCOMBAT™" }] });
+        }
+        if (url.includes("/api/maintenance/locations")) {
+          return mockJson(true, { locations: [{ id: "loc-2", code: "MB", name: "Mind Body" }] });
+        }
+        if (url.includes("/api/maintenance/instructors")) {
+          return mockJson(true, {
+            instructors: [{ id: "inst-2", nickname: "VANESSA", first_name: "Vanessa", last_name: "V" }],
+          });
+        }
+        if (url.includes("/api/scheduling/instructor-class-location-details")) {
+          return mockJson(true, {
+            rows: [
+              {
+                class_id: "cls-2",
+                class_name: "BODYCOMBAT™",
+                instructor_id: "inst-2",
+                instructor_nickname: "VANESSA",
+                location_id: "loc-2",
+                location_name: "Mind Body",
+                minutes: 45,
+              },
+            ],
+          });
+        }
+        if (url.includes("/api/scheduling/slot-helper-review/requests")) {
+          return mockJson(true, {
+            requests: [
+              {
+                id: "req-1",
+                created_at: "2026-01-17T19:59:00Z",
+                expires_at: "2026-01-19T19:59:00Z",
+                sent_at: "2026-01-17T20:02:00Z",
+                responded_at: null,
+                completed_at: null,
+                overridden_at: null,
+                class_id: "cls-2",
+                location_id: "loc-2",
+                instructor_ids: ["inst-2"],
+              },
+            ],
+          });
+        }
+        if (url.includes("/api/scheduling/slot-helper-review/request-detail")) {
+          return mockJson(true, {
+            expired: false,
+            request: {
               id: "req-1",
               created_at: "2026-01-17T19:59:00Z",
               expires_at: "2026-01-19T19:59:00Z",
@@ -1620,93 +1641,78 @@ describe("SessionsTab conflicts UI", () => {
               location_id: "loc-2",
               instructor_ids: ["inst-2"],
             },
-          ],
-        });
-      }
-      if (url.includes("/api/scheduling/slot-helper-review/request-detail")) {
-        return mockJson(true, {
-          expired: false,
-          request: {
-            id: "req-1",
-            created_at: "2026-01-17T19:59:00Z",
-            expires_at: "2026-01-19T19:59:00Z",
-            sent_at: "2026-01-17T20:02:00Z",
-            responded_at: null,
-            completed_at: null,
-            overridden_at: null,
-            class_id: "cls-2",
-            location_id: "loc-2",
-            instructor_ids: ["inst-2"],
-          },
-          email: {
-            sent_at: "2026-01-17T20:02:00Z",
-            from_email: "noreply@example.com",
-            to_email: "vanessa@example.com",
-            subject: "Slot helper",
-            message_id: "msg-1",
-          },
-          holds: [
-            {
-              id: "hold-1",
-              request_id: "req-1",
-              class_id: "cls-2",
-              location_id: "loc-2",
-              instructor_ids: ["inst-2"],
-              slot_date: "2026-01-17",
-              start_time: "20:00",
-              end_time: "20:45",
+            email: {
+              sent_at: "2026-01-17T20:02:00Z",
+              from_email: "noreply@example.com",
+              to_email: "vanessa@example.com",
+              subject: "Slot helper",
+              message_id: "msg-1",
             },
-          ],
-        });
-      }
-      if (url.includes("/api/scheduling/slot-helper-review/holds")) {
-        return mockJson(true, { holds: [] });
-      }
-      if (url.includes("/api/scheduling/sessions") && (!init || init.method === "GET")) {
-        return mockJson(true, { sessions: [] });
-      }
-      if (url.includes("/api/scheduling/instructor-availability")) return mockJson(true, { availability: [] });
-      if (url.includes("/api/maintenance/holidays")) return mockJson(true, []);
-      if (url.includes("/api/scheduling/conflicts")) {
-        return mockJson(true, { summary: { high: 0, medium: 0, low: 0, total: 0 }, conflicts: [] });
-      }
-      if (url.includes("/api/branches/")) return mockJson(true, { name: "Eastside Family YMCA" });
-      return mockJson(true, {});
-    });
+            holds: [
+              {
+                id: "hold-1",
+                request_id: "req-1",
+                class_id: "cls-2",
+                location_id: "loc-2",
+                instructor_ids: ["inst-2"],
+                slot_date: "2026-01-17",
+                start_time: "20:00",
+                end_time: "20:45",
+              },
+            ],
+          });
+        }
+        if (url.includes("/api/scheduling/slot-helper-review/holds")) {
+          return mockJson(true, { holds: [] });
+        }
+        if (url.includes("/api/scheduling/sessions") && (!init || init.method === "GET")) {
+          return mockJson(true, { sessions: [] });
+        }
+        if (url.includes("/api/scheduling/instructor-availability")) return mockJson(true, { availability: [] });
+        if (url.includes("/api/maintenance/holidays")) return mockJson(true, []);
+        if (url.includes("/api/scheduling/conflicts")) {
+          return mockJson(true, { summary: { high: 0, medium: 0, low: 0, total: 0 }, conflicts: [] });
+        }
+        if (url.includes("/api/branches/")) return mockJson(true, { name: "Eastside Family YMCA" });
+        return mockJson(true, {});
+      });
 
-    vi.stubGlobal("fetch", fetchMock as any);
+      vi.stubGlobal("fetch", fetchMock as any);
 
-    render(
-      <SessionsTab
-        scheduleId="sch-1"
-        branchId="br-1"
-        programGroupId="pg-1"
-        refreshKey={1}
-        scheduleMonthYear={{ year: 2026, month: 1 }}
-        availabilityTimeStart="06:00"
-        availabilityTimeEnd="23:00"
-      />,
-    );
+      render(
+        <SessionsTab
+          scheduleId="sch-1"
+          branchId="br-1"
+          programGroupId="pg-1"
+          refreshKey={1}
+          scheduleMonthYear={{ year: 2026, month: 1 }}
+          availabilityTimeStart="06:00"
+          availabilityTimeEnd="23:00"
+        />,
+      );
 
-    fireEvent.click(await screen.findByRole("button", { name: "Add session" }));
-    const helper = await screen.findByRole("dialog", { name: "Add session helper" });
+      fireEvent.click(await screen.findByRole("button", { name: "Add session" }));
+      const helper = await screen.findByRole("dialog", { name: "Add session helper" });
 
-    fireEvent.click(within(helper).getByRole("button", { name: "Select slot helper request" }));
-    fireEvent.click(await screen.findByRole("button", { name: /Sent 01\/17\/2026 @/i }));
+      fireEvent.click(within(helper).getByRole("button", { name: "Select slot helper request" }));
+      fireEvent.click(await screen.findByRole("button", { name: /Sent 01\/17\/2026 @/i }));
 
-    await waitFor(() => {
-      expect(within(helper).getByRole("button", { name: "Select Class" })).toHaveTextContent("BODYCOMBAT™");
-    });
+      await waitFor(() => {
+        expect(within(helper).getByRole("button", { name: "Select Class" })).toHaveTextContent("BODYCOMBAT™");
+      });
 
-    const durationControl = within(helper).getByLabelText("Select duration");
-    expect(durationControl).toHaveTextContent(/45 minutes/i);
-    expect(durationControl).toBeDisabled();
-    expect(within(helper).getByRole("button", { name: "VANESSA" })).toBeInTheDocument();
-    expect(within(helper).getByRole("button", { name: "MB - Mind Body" })).toBeInTheDocument();
+      const durationControl = within(helper).getByLabelText("Select duration");
+      expect(durationControl).toHaveTextContent(/45 minutes/i);
+      expect(durationControl).toBeDisabled();
+      expect(within(helper).getByRole("button", { name: "VANESSA" })).toBeInTheDocument();
+      expect(within(helper).getByRole("button", { name: "MB - Mind Body" })).toBeInTheDocument();
 
-    await waitFor(() => {
-      expect(within(helper).getByRole("button", { name: /08:00 PM–08:45 PM/i })).toBeInTheDocument();
-    });
+      await waitFor(() => {
+        expect(within(helper).getByRole("button", { name: /08:00 PM–08:45 PM/i })).toBeInTheDocument();
+      });
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 });
 

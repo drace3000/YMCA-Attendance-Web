@@ -342,6 +342,110 @@ export default function SchedulingPage() {
     return { year, month };
   }, [selectedSchedule]);
 
+  type HolidayYearImportStatus = {
+    loading: boolean;
+    error: string | null;
+    requestedYear: number | null;
+    requestedYearMissing: boolean | null;
+  };
+
+  const [holidayYearStatus, setHolidayYearStatus] = useState<HolidayYearImportStatus>({
+    loading: false,
+    error: null,
+    requestedYear: null,
+    requestedYearMissing: null,
+  });
+
+  const fetchHolidayYearStatus = useCallback(async (): Promise<void> => {
+    if (!branch?.id || !selectedScheduleId || !scheduleMonthYear?.year) {
+      setHolidayYearStatus({ loading: false, error: null, requestedYear: null, requestedYearMissing: null });
+      return;
+    }
+
+    setHolidayYearStatus((s) => ({ ...s, loading: true, error: null, requestedYear: scheduleMonthYear.year }));
+    try {
+      const params = new URLSearchParams();
+      params.set("branch_id", branch.id);
+      params.set("year", String(scheduleMonthYear.year));
+
+      const res = await fetch(`/api/maintenance/holidays/import-us?${params.toString()}`);
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.error || "Failed to check holiday status");
+
+      setHolidayYearStatus({
+        loading: false,
+        error: null,
+        requestedYear: typeof json?.requestedYear === "number" ? json.requestedYear : scheduleMonthYear.year,
+        requestedYearMissing: json?.requestedYearMissing === true,
+      });
+    } catch (err) {
+      setHolidayYearStatus({
+        loading: false,
+        error: err instanceof Error ? err.message : "Failed to check holiday status",
+        requestedYear: scheduleMonthYear.year,
+        requestedYearMissing: null,
+      });
+    }
+  }, [branch?.id, selectedScheduleId, scheduleMonthYear?.year]);
+
+  useEffect(() => {
+    void fetchHolidayYearStatus();
+  }, [fetchHolidayYearStatus]);
+
+  const scheduleYearHolidaysMissing = holidayYearStatus.requestedYearMissing === true;
+
+  const [holidayImportOpen, setHolidayImportOpen] = useState(false);
+  const [holidayImportStage, setHolidayImportStage] = useState<"confirm" | "progress" | "result">("confirm");
+  const [holidayImportError, setHolidayImportError] = useState<string | null>(null);
+  const [holidayImportResult, setHolidayImportResult] = useState<{ insertedCount: number; updatedCount: number } | null>(
+    null,
+  );
+  const [holidayImporting, setHolidayImporting] = useState(false);
+
+  const openHolidayImport = useCallback(() => {
+    if (!selectedScheduleId || !scheduleMonthYear?.year) return;
+    setHolidayImportError(null);
+    setHolidayImportResult(null);
+    setHolidayImportStage("confirm");
+    setHolidayImportOpen(true);
+  }, [scheduleMonthYear?.year, selectedScheduleId]);
+
+  const closeHolidayImport = useCallback(() => {
+    if (holidayImporting || holidayImportStage === "progress") return;
+    setHolidayImportOpen(false);
+  }, [holidayImportStage, holidayImporting]);
+
+  const runHolidayImport = useCallback(async (): Promise<void> => {
+    if (!branch?.id || !scheduleMonthYear?.year) return;
+    setHolidayImporting(true);
+    setHolidayImportError(null);
+    setHolidayImportResult(null);
+    setHolidayImportStage("progress");
+    try {
+      const res = await fetch("/api/maintenance/holidays/import-us", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ branch_id: branch.id, year: scheduleMonthYear.year }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.error || "Failed to import holidays");
+
+      setHolidayImportResult({
+        insertedCount: Number(json?.insertedCount ?? 0),
+        updatedCount: Number(json?.updatedCount ?? 0),
+      });
+
+      await fetchHolidayYearStatus();
+      handleRefresh();
+      setHolidayImportStage("result");
+    } catch (err) {
+      setHolidayImportError(err instanceof Error ? err.message : "Failed to import holidays");
+      setHolidayImportStage("result");
+    } finally {
+      setHolidayImporting(false);
+    }
+  }, [branch?.id, fetchHolidayYearStatus, scheduleMonthYear?.year]);
+
   // Compute week start options (Saturday of each week that has sessions in the schedule month)
   const weekStarts = useMemo(() => {
     if (!scheduleMonthYear) return [];
@@ -799,6 +903,20 @@ export default function SchedulingPage() {
             <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
             Publish
           </button>
+          {/* Load Holidays Button (only when selected schedule year is missing) */}
+          {selectedScheduleId && scheduleMonthYear?.year && scheduleYearHolidaysMissing ? (
+            <button
+              type="button"
+              onClick={openHolidayImport}
+              disabled={holidayYearStatus.loading || holidayImporting}
+              className="btn-pill flex items-center gap-2 rounded-full border border-orange-400/90 bg-orange-400/10 px-4 py-2 text-sm font-medium text-foreground shadow-sm ring-1 ring-white/5 transition hover:bg-orange-400/15 disabled:cursor-not-allowed disabled:opacity-50"
+              title={`Load US federal holidays for ${scheduleMonthYear.year}`}
+              aria-label="Load holidays"
+            >
+              <Calendar className="h-4 w-4 text-orange-400/90" />
+              Load holidays
+            </button>
+          ) : null}
           {/* Helper Button (Popup) */}
           <button
             type="button"
@@ -1699,6 +1817,106 @@ export default function SchedulingPage() {
                   </button>
                 </div>
               </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Load Holidays Modal */}
+      {holidayImportOpen && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => {
+              closeHolidayImport();
+            }}
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Load holidays"
+            className="relative z-10 w-full max-w-xl rounded-2xl border border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] p-6 shadow-2xl backdrop-blur-md"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <h2 className="text-lg font-semibold text-[var(--brand-ink)]">Load holidays</h2>
+                <p className="text-sm text-[var(--brand-ink)]/70">
+                  Load US federal holidays for <span className="font-semibold">{scheduleMonthYear?.year ?? "—"}</span>.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeHolidayImport}
+                disabled={holidayImporting || holidayImportStage === "progress"}
+                className="rounded-full p-1.5 text-[var(--brand-ink)]/70 hover:bg-[var(--brand-strong)] hover:text-white disabled:opacity-50"
+                aria-label="Close load holidays modal"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {holidayImportStage === "confirm" ? (
+              <>
+                <div className="rounded-xl border border-white/10 bg-black/20 p-4 text-sm text-foreground">
+                  No holidays are loaded yet for this schedule year. Loading will add the year’s US federal holidays for
+                  this branch.
+                </div>
+                <div className="mt-5 flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={closeHolidayImport}
+                    disabled={holidayImporting}
+                    className="rounded-xl border border-white/10 bg-black/20 px-4 py-2 text-sm text-foreground transition hover:bg-black/30 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void runHolidayImport()}
+                    disabled={holidayImporting}
+                    className="btn-pill flex items-center justify-center gap-2 bg-[var(--cta)] px-4 py-2 text-sm font-medium text-[var(--cta-foreground)] shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Calendar className="h-4 w-4" />
+                    Load
+                  </button>
+                </div>
+              </>
+            ) : holidayImportStage === "progress" ? (
+              <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-foreground/80">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading holidays…
+              </div>
+            ) : (
+              <>
+                {holidayImportError ? (
+                  <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                    {holidayImportError}
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-green-500/30 bg-green-500/10 px-4 py-3 text-sm text-green-100">
+                    Holidays loaded successfully.
+                    <div className="mt-1 text-xs text-green-100/90">
+                      Inserted {holidayImportResult?.insertedCount ?? 0}
+                      {typeof holidayImportResult?.updatedCount === "number"
+                        ? `, updated ${holidayImportResult.updatedCount}`
+                        : ""}
+                      .
+                    </div>
+                  </div>
+                )}
+
+                <div className="mt-5 flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={closeHolidayImport}
+                    disabled={holidayImporting}
+                    className="btn-pill flex items-center justify-center gap-2 bg-[var(--cta)] px-4 py-2 text-sm font-medium text-[var(--cta-foreground)] shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    OK
+                  </button>
+                </div>
+              </>
             )}
           </div>
         </div>

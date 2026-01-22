@@ -75,12 +75,13 @@ export function PopoverSelect({
       <PopoverContent
         align="start"
         sideOffset={sideOffset ?? 6}
+        onCloseAutoFocus={(e) => e.preventDefault()}
         className={cn(
           "w-[240px] rounded-2xl border border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] p-1 shadow-xl backdrop-blur-md",
           contentClassName,
         )}
       >
-        <div className="max-h-[280px] overflow-y-auto p-1">
+        <div className="ymca-scrollbar max-h-[280px] overflow-y-auto p-1">
           {options.map((opt) => {
             const isSelected = opt.value === value;
             return (
