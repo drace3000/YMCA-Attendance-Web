@@ -23,6 +23,12 @@ vi.mock("@/components/theme-settings-provider", () => ({
   }),
 }));
 
+vi.mock("@/components/auth-provider", () => ({
+  useAuth: () => ({
+    user: { id: "user-1" },
+  }),
+}));
+
 vi.mock("@/lib/error-logger", () => ({
   logError: vi.fn(async () => "E_TEST"),
 }));

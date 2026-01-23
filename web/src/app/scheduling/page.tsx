@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   AlertTriangle,
   Calendar,
@@ -26,6 +26,14 @@ import {
 } from "@/components/ui/popover";
 import { SessionsTab, Session } from "./sessions-tab";
 import { useThemeSettings } from "@/components/theme-settings-provider";
+import { useAuth } from "@/components/auth-provider";
+import {
+  getPersistedScheduleSelectionStorageKey,
+  isPersistedScheduleSelection,
+  parsePersistedScheduleSelection,
+  serializePersistedScheduleSelection,
+  type PersistedScheduleSelection,
+} from "@/lib/persisted-schedule-selection";
 
 function normalizeHm(value: unknown, fallback: string): string {
   const raw = typeof value === "string" ? value.trim() : "";
@@ -84,6 +92,7 @@ type ProgramGroup = {
 
 export default function SchedulingPage() {
   const { branch } = useThemeSettings();
+  const { user } = useAuth();
 
   const [refreshKey, setRefreshKey] = useState(0);
   const [refreshPopoverOpen, setRefreshPopoverOpen] = useState(false);
@@ -114,6 +123,12 @@ export default function SchedulingPage() {
   const [branchAssociationName, setBranchAssociationName] = useState<string>("");
   const [availabilityTimeStart, setAvailabilityTimeStart] = useState<string>("06:00");
   const [availabilityTimeEnd, setAvailabilityTimeEnd] = useState<string>("23:00");
+
+  // Selected schedule persistence (per user + branch)
+  const restoredSelectionKeyRef = useRef<string | null>(null);
+  const desiredSelectionRef = useRef<PersistedScheduleSelection | null>(null);
+  const pendingPersistScheduleIdRef = useRef<string | null>(null);
+  const shouldPersistDefaultRef = useRef(false);
 
   // Phase 6: Clone most recent schedule → next month
   const [cloneOpen, setCloneOpen] = useState(false);
@@ -213,9 +228,38 @@ export default function SchedulingPage() {
         if (Array.isArray(data.schedules)) {
           setSelectedScheduleId((prev) => {
             if (data.schedules.length === 0) return "";
-            if (!prev) return data.schedules[0].id;
+            const desired = desiredSelectionRef.current;
+            const desiredMonthStart = desired?.month_start ?? null;
+
+            // No selection yet => default to first schedule (most current month/year).
+            if (!prev) {
+              const next = data.schedules[0].id;
+              if (shouldPersistDefaultRef.current) {
+                pendingPersistScheduleIdRef.current = next;
+                shouldPersistDefaultRef.current = false;
+              }
+              return next;
+            }
+
+            // Selection exists and is valid => keep.
             const stillValid = data.schedules.some((s: Schedule) => s.id === prev);
-            return stillValid ? prev : data.schedules[0].id;
+            if (stillValid) return prev;
+
+            // If the stored schedule_id is missing, try to restore by month_start.
+            if (desiredMonthStart) {
+              const byMonth = data.schedules.find((s: Schedule) => s.month_start === desiredMonthStart);
+              const next = byMonth?.id ?? data.schedules[0].id;
+              if (desired && desired.schedule_id === prev && next !== prev) {
+                pendingPersistScheduleIdRef.current = next;
+              }
+              return next;
+            }
+
+            const next = data.schedules[0].id;
+            if (desired && desired.schedule_id === prev && next !== prev) {
+              pendingPersistScheduleIdRef.current = next;
+            }
+            return next;
           });
         } else {
           setSelectedScheduleId("");
@@ -277,13 +321,121 @@ export default function SchedulingPage() {
 
   useEffect(() => {
     void fetchProgramGroups();
-    // Reset schedule selection when branch changes
-    setSelectedScheduleId("");
-  }, [fetchProgramGroups]);
+
+    // Restore persisted selection (per user + branch) when entering Smart Scheduler.
+    // If nothing is stored, keep existing default behavior (schedule defaults to most current month/year).
+    if (!branch?.id) return;
+    const storageKey = getPersistedScheduleSelectionStorageKey({ userId: user?.id, branchId: branch.id });
+    if (!storageKey) {
+      // User not available yet; keep existing behavior (schedule selection remains driven by fetchSchedules default).
+      return;
+    }
+    if (restoredSelectionKeyRef.current === storageKey) {
+      return; // already attempted for this user+branch
+    }
+    restoredSelectionKeyRef.current = storageKey;
+
+    if (typeof window === "undefined" || typeof window.localStorage?.getItem !== "function") {
+      return;
+    }
+    const raw = window.localStorage.getItem(storageKey);
+    const restored = parsePersistedScheduleSelection(raw);
+    if (restored) {
+      desiredSelectionRef.current = restored;
+      setSelectedProgramGroupId(restored.program_group_id);
+      setSelectedScheduleId(restored.schedule_id);
+      return;
+    }
+
+    // No localStorage selection => fallback to server (once) for cross-device restore.
+    const controller = new AbortController();
+    const loadFromServer = async (): Promise<void> => {
+      try {
+        const params = new URLSearchParams();
+        params.set("branch_id", branch.id);
+        const res = await fetch(`/api/scheduling/ui-state?${params.toString()}`, { signal: controller.signal });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok || controller.signal.aborted) {
+          return;
+        }
+
+        const fromServer = (json as Record<string, unknown>).selectedSchedule;
+        if (isPersistedScheduleSelection(fromServer)) {
+          desiredSelectionRef.current = fromServer;
+          setSelectedProgramGroupId(fromServer.program_group_id);
+          setSelectedScheduleId(fromServer.schedule_id);
+          // Populate localStorage so future loads avoid the network.
+          try {
+            window.localStorage.setItem(storageKey, serializePersistedScheduleSelection(fromServer));
+          } catch {
+            // ignore
+          }
+          return;
+        }
+
+        // No server selection either => default schedule, and persist it once we know what it is.
+        desiredSelectionRef.current = null;
+        shouldPersistDefaultRef.current = true;
+        setSelectedScheduleId("");
+      } catch {
+        // If server fallback fails, do not force-write a default; keep existing behavior.
+        setSelectedScheduleId("");
+      }
+    };
+
+    void loadFromServer();
+    return () => controller.abort();
+  }, [branch?.id, fetchProgramGroups, user?.id]);
 
   useEffect(() => {
     void fetchSchedules();
   }, [fetchSchedules]);
+
+  const persistSelectedSchedule = useCallback(
+    (schedule: Schedule): void => {
+      if (!branch?.id) return;
+      const storageKey = getPersistedScheduleSelectionStorageKey({ userId: user?.id, branchId: branch.id });
+      if (!storageKey) return;
+
+      const value = {
+        program_group_id: selectedProgramGroupId,
+        schedule_id: schedule.id,
+        month_start: schedule.month_start,
+      };
+
+      if (typeof window !== "undefined" && typeof window.localStorage?.setItem === "function") {
+        try {
+          window.localStorage.setItem(storageKey, serializePersistedScheduleSelection(value));
+        } catch {
+          // ignore
+        }
+      }
+
+      // Server write-through for cross-device persistence.
+      void fetch("/api/scheduling/ui-state", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ branch_id: branch.id, key: "selected_schedule", value }),
+      }).catch(() => {
+        // ignore: localStorage is the primary restore path to reduce network traffic
+      });
+    },
+    [branch?.id, selectedProgramGroupId, user?.id],
+  );
+
+  useEffect(() => {
+    const pendingId = pendingPersistScheduleIdRef.current;
+    if (!pendingId) return;
+    if (!selectedProgramGroupId) return;
+    if (pendingId !== selectedScheduleId) return;
+
+    const schedule = schedules.find((s) => s.id === pendingId);
+    if (!schedule) return;
+
+    pendingPersistScheduleIdRef.current = null;
+    desiredSelectionRef.current = null;
+    persistSelectedSchedule(schedule);
+  }, [persistSelectedSchedule, schedules, selectedProgramGroupId, selectedScheduleId]);
 
   const handleRefresh = () => {
     setRefreshKey((k) => k + 1);
@@ -1085,6 +1237,7 @@ export default function SchedulingPage() {
                       key={schedule.id}
                       onClick={() => {
                         setSelectedScheduleId(schedule.id);
+                        persistSelectedSchedule(schedule);
                         setScheduleDropdownOpen(false);
                       }}
                       className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition ${

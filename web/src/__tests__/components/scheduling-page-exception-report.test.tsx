@@ -23,6 +23,12 @@ vi.mock("@/components/theme-settings-provider", () => ({
   }),
 }));
 
+vi.mock("@/components/auth-provider", () => ({
+  useAuth: () => ({
+    user: { id: "user-1" },
+  }),
+}));
+
 vi.mock("@/lib/error-logger", () => ({
   logError: vi.fn(async () => "E_TEST"),
 }));
@@ -83,9 +89,9 @@ describe("SchedulingPage exception report", () => {
 
     render(<SchedulingPage />);
 
-    // Pending approval badge should appear and the Exception Report button should be visible.
+    // Pending schedule badge should appear and the Exception Report button should be visible.
     await waitFor(() => {
-      expect(screen.getByText("Pending approval")).toBeInTheDocument();
+      expect(screen.getByText("Pending")).toBeInTheDocument();
     });
 
     const btn = await screen.findByRole("button", { name: "Exception Report" });

@@ -6,6 +6,7 @@ import { createSupabaseAuthRouteClient } from "@/lib/supabaseAuthRouteClient";
 export const runtime = "nodejs";
 
 type ModalOffset = { x: number; y: number };
+type SelectedScheduleValue = { program_group_id: string; schedule_id: string; month_start: string };
 
 const SCOPE = "smart_scheduler";
 const KEY_ADD = "add_session_modal_offset";
@@ -18,6 +19,7 @@ const KEY_SLOT_HELPER_WEEKDAYS = "slot_helper_weekdays";
 const KEY_SLOT_HELPER_AUTO_LOCATE = "slot_helper_auto_locate";
 const KEY_SLOT_HELPER_DATE_FILTER = "slot_helper_date_filter";
 const KEY_SLOT_HELPER_DATE_COLLAPSE = "slot_helper_date_collapse";
+const KEY_SELECTED_SCHEDULE = "selected_schedule";
 const ALLOWED_KEYS = new Set<string>([
   KEY_ADD,
   KEY_EDIT,
@@ -29,6 +31,7 @@ const ALLOWED_KEYS = new Set<string>([
   KEY_SLOT_HELPER_AUTO_LOCATE,
   KEY_SLOT_HELPER_DATE_FILTER,
   KEY_SLOT_HELPER_DATE_COLLAPSE,
+  KEY_SELECTED_SCHEDULE,
 ]);
 
 function isModalOffset(value: unknown): value is ModalOffset {
@@ -42,6 +45,17 @@ function isModalOffset(value: unknown): value is ModalOffset {
     Number.isFinite((value as { x: number }).x) &&
     Number.isFinite((value as { y: number }).y)
   );
+}
+
+function isSelectedScheduleValue(value: unknown): value is SelectedScheduleValue {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
+  const programGroupId = typeof v.program_group_id === "string" ? v.program_group_id.trim() : "";
+  const scheduleId = typeof v.schedule_id === "string" ? v.schedule_id.trim() : "";
+  const monthStart = typeof v.month_start === "string" ? v.month_start.trim() : "";
+  if (!programGroupId || !scheduleId) return false;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(monthStart)) return false;
+  return true;
 }
 
 function resolveBranchId(opts: {
@@ -69,6 +83,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       slotHelperAutoLocate: null,
       slotHelperDateFilter: null,
       slotHelperDateCollapse: null,
+      selectedSchedule: null,
       dev_passthrough: true,
     });
   }
@@ -107,6 +122,7 @@ export async function GET(req: NextRequest): Promise<Response> {
         KEY_SLOT_HELPER_AUTO_LOCATE,
         KEY_SLOT_HELPER_DATE_FILTER,
         KEY_SLOT_HELPER_DATE_COLLAPSE,
+        KEY_SELECTED_SCHEDULE,
       ]);
 
     if (error) {
@@ -125,9 +141,16 @@ export async function GET(req: NextRequest): Promise<Response> {
     const mapDateFilter = new Map<string, string[]>();
     const mapDateCollapse = new Map<string, Record<string, boolean>>();
     const mapBooleans = new Map<string, boolean>();
+    let selectedSchedule: SelectedScheduleValue | null = null;
     for (const row of (rows ?? []) as Array<{ key: string; value: unknown }>) {
       if (!row?.key) continue;
       if (!ALLOWED_KEYS.has(row.key)) continue;
+      if (row.key === KEY_SELECTED_SCHEDULE) {
+        if (isSelectedScheduleValue(row.value)) {
+          selectedSchedule = row.value;
+        }
+        continue;
+      }
       if (row.key === KEY_SLOT_HELPER_WEEKDAYS) {
         if (Array.isArray(row.value) && row.value.every((v) => typeof v === "string")) {
           mapWeekdays.set(row.key, row.value as string[]);
@@ -171,6 +194,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       slotHelperAutoLocate: mapBooleans.get(KEY_SLOT_HELPER_AUTO_LOCATE) ?? null,
       slotHelperDateFilter: mapDateFilter.get(KEY_SLOT_HELPER_DATE_FILTER) ?? null,
       slotHelperDateCollapse: mapDateCollapse.get(KEY_SLOT_HELPER_DATE_COLLAPSE) ?? null,
+      selectedSchedule,
     });
   } catch (err) {
     return await serverErrorResponse({
@@ -189,6 +213,7 @@ type UpsertBody =
   | { branch_id?: string; key: typeof KEY_SLOT_HELPER_AUTO_LOCATE; value: boolean }
   | { branch_id?: string; key: typeof KEY_SLOT_HELPER_DATE_FILTER; value: string[] }
   | { branch_id?: string; key: typeof KEY_SLOT_HELPER_DATE_COLLAPSE; value: Record<string, boolean> }
+  | { branch_id?: string; key: typeof KEY_SELECTED_SCHEDULE; value: SelectedScheduleValue }
   | { branch_id?: string; key: string; value: ModalOffset };
 
 export async function POST(req: NextRequest): Promise<Response> {
@@ -227,6 +252,10 @@ export async function POST(req: NextRequest): Promise<Response> {
       }
     } else if (key === KEY_SLOT_HELPER_AUTO_LOCATE) {
       if (typeof body.value !== "boolean") {
+        return NextResponse.json({ error: "Invalid value" }, { status: 400 });
+      }
+    } else if (key === KEY_SELECTED_SCHEDULE) {
+      if (!isSelectedScheduleValue(body.value)) {
         return NextResponse.json({ error: "Invalid value" }, { status: 400 });
       }
     } else if (key === KEY_SLOT_HELPER_DATE_COLLAPSE) {

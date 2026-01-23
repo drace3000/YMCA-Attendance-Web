@@ -1923,13 +1923,14 @@ useEffect(() => {
     }
   }, [branchId, programGroupId]);
 
-  const fetchSessions = useCallback(async () => {
+  const fetchSessions = useCallback(async (opts?: { forceFresh?: boolean }): Promise<void> => {
     if (!scheduleId || !branchId) return;
     setLoading(true);
     setError(null);
     try {
       const url = "/api/scheduling/sessions?schedule_id=" + scheduleId + "&branch_id=" + branchId;
-      const res = await fetch(url);
+      const init: RequestInit | undefined = opts?.forceFresh ? { cache: "no-store" } : undefined;
+      const res = await fetch(url, init);
       if (!res.ok) throw new Error("Failed to fetch sessions");
       const data = await res.json();
       const loadedSessions = data.sessions || [];
@@ -2773,7 +2774,7 @@ useEffect(() => {
     setSlotHelperSubmitTooltipOpen(false);
     if (wasComplete) {
       openAddSession();
-      void fetchSessions();
+      void fetchSessions({ forceFresh: true });
     }
   }, [fetchSessions, openAddSession, slotHelperSubmitComplete]);
 
