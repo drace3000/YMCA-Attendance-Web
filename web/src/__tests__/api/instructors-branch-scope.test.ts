@@ -162,7 +162,8 @@ describe("Phase X - /api/maintenance/instructors branch scoping", () => {
 
     const req = new NextRequest("http://localhost:3000/api/maintenance/instructors", {
       method: "PUT",
-      body: JSON.stringify({ id: "inst-1", nickname: "NEW" }),
+      // nickname is immutable; use a mutable field to reach the permission check
+      body: JSON.stringify({ id: "inst-1", first_name: "NEW" }),
     });
     const res = await PUT(req);
     const json = await res.json();

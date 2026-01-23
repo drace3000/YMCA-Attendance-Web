@@ -155,6 +155,7 @@ describe("API - /api/scheduling/sessions location branch validation", () => {
 
     mockCreateSupabaseServerClient.mockReturnValue(
       createMockSupabaseClient({
+        schedules: async () => ({ data: { id: "sch-1", is_approved: true }, error: null }),
         classes: async (state) => {
           // class validation query
           expect(state.action).toBe("select")

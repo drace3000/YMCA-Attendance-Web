@@ -72,21 +72,38 @@ export async function requireRecipientAccess(
   const allowDevPassthrough =
     opts?.allowDevPassthrough === true && process.env.NODE_ENV === "development";
 
+  const authHeader = req.headers.get("authorization");
+  const bearer =
+    authHeader?.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : null;
+
   const authClient = createSupabaseAuthRouteClient(req);
   const {
     data: { user },
     error: userError,
   } = await authClient.auth.getUser();
 
-  if (userError || !user?.email) {
+  const supabase = createSupabaseServerClient();
+  let email = user?.email?.trim().toLowerCase() ?? null;
+
+  // Fallback (pilot): if cookie-based auth isn't available, allow a bearer access token.
+  // This helps confirm that the 401s are session-propagation related on Vercel.
+  if ((!email || userError) && bearer) {
+    const {
+      data: { user: bearerUser },
+      error: bearerError,
+    } = await supabase.auth.getUser(bearer);
+
+    if (!bearerError && bearerUser?.email) {
+      email = bearerUser.email.trim().toLowerCase();
+    }
+  }
+
+  if (!email) {
     if (allowDevPassthrough) {
       return { ok: true, access: null, devPassthrough: true };
     }
     return { ok: false, response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
   }
-
-  const supabase = createSupabaseServerClient();
-  const email = user.email.trim().toLowerCase();
 
   const { data: rawRecipient, error: recipientError } = await supabase
     .from("branch_schedule_recipients")

@@ -14,6 +14,7 @@ import { MonthYearPicker } from "@/components/ui/month-year-picker";
 import { InstructorAvailabilityModal } from "@/components/instructor-availability/InstructorAvailabilityModal";
 import { useThemeSettings } from "@/components/theme-settings-provider";
 import { useBranchAccess } from "@/hooks/useBranchAccess";
+import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
 
 type Instructor = {
   id: string;
@@ -103,6 +104,18 @@ export function InstructorsTab() {
   const [error, setError] = useState<string | null>(null);
   const [showInactive, setShowInactive] = useState(false);
 
+  const getAuthHeaders = useCallback(async (): Promise<Record<string, string>> => {
+    try {
+      if (!isSupabaseConfigured()) return {};
+      const { data } = await supabase.auth.getSession();
+      const token = data?.session?.access_token ?? null;
+      return token ? { Authorization: `Bearer ${token}` } : {};
+    } catch {
+      // Best-effort: if auth isn't configured (tests) or session isn't available, omit the header.
+      return {};
+    }
+  }, []);
+
   // Form state
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -174,7 +187,9 @@ export function InstructorsTab() {
       const params = new URLSearchParams();
       if (showInactive) params.set("include_inactive", "true");
       params.set("branch_id", branch.id);
-      const res = await fetch(`/api/maintenance/instructors?${params}`);
+      const res = await fetch(`/api/maintenance/instructors?${params}`, {
+        headers: await getAuthHeaders(),
+      });
       if (!res.ok) throw new Error("Failed to load instructors");
       const data = await res.json();
       setInstructors(data);
@@ -183,7 +198,7 @@ export function InstructorsTab() {
     } finally {
       setLoading(false);
     }
-  }, [showInactive, branch.id]);
+  }, [showInactive, branch.id, getAuthHeaders]);
 
   useEffect(() => {
     void loadInstructors();
@@ -314,7 +329,9 @@ export function InstructorsTab() {
           last_name: formData.last_name.trim(),
           branch_id: branch.id,
         });
-        const res = await fetch(`/api/maintenance/instructors?${params}`);
+        const res = await fetch(`/api/maintenance/instructors?${params}`, {
+          headers: await getAuthHeaders(),
+        });
         if (res.ok) {
           const data = await res.json();
           // Do not show as duplicate if we are editing and it is our own nickname
@@ -358,7 +375,9 @@ export function InstructorsTab() {
           last_name: last,
           branch_id: branch.id,
         });
-        const res = await fetch(`/api/maintenance/instructors?${params.toString()}`);
+        const res = await fetch(`/api/maintenance/instructors?${params.toString()}`, {
+          headers: await getAuthHeaders(),
+        });
         const json = await res.json().catch(() => ({}));
         if (!res.ok) return;
         const suggestions = Array.isArray(json?.suggestions)
@@ -440,7 +459,9 @@ export function InstructorsTab() {
 
     if (isAdmin) {
       setShareLoading(true);
-      void fetch(`/api/maintenance/instructors/${instructor.id}/branches`)
+      void getAuthHeaders().then((authHeaders) =>
+        fetch(`/api/maintenance/instructors/${instructor.id}/branches`, { headers: authHeaders }),
+      )
         .then(async (res) => {
           const json = (await res.json().catch(() => [])) as any;
           if (!res.ok) throw new Error(json?.error ?? "Failed to load instructor branches");
@@ -504,9 +525,10 @@ export function InstructorsTab() {
         ? { id: editingId, ...formData }
         : { ...formData, branch_id: branch.id };
 
+      const authHeaders = await getAuthHeaders();
       const res = await fetch("/api/maintenance/instructors", {
         method,
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders },
         body: JSON.stringify(body),
       });
 
@@ -528,7 +550,7 @@ export function InstructorsTab() {
         if (home) {
           const shareRes = await fetch(`/api/maintenance/instructors/${savedId}/branches`, {
             method: "PUT",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", ...authHeaders },
             body: JSON.stringify({ branch_ids: desired }),
           });
 
@@ -784,9 +806,10 @@ export function InstructorsTab() {
 
   const handleToggleActive = async (instructor: Instructor) => {
     try {
+      const authHeaders = await getAuthHeaders();
       const res = await fetch("/api/maintenance/instructors", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders },
         body: JSON.stringify({ id: instructor.id, is_active: !instructor.is_active }),
       });
 

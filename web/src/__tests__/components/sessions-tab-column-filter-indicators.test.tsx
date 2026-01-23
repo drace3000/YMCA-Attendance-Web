@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 import { SessionsTab } from "@/app/scheduling/sessions-tab";
 
@@ -88,7 +88,11 @@ describe("SessionsTab column filter indicators", () => {
     fireEvent.click(screen.getByRole("button", { name: "Filter Class" }));
 
     // Click a single class checkbox (narrowing)
-    const targetLabel = screen.getByText("AQUAFIT").closest("label");
+    const selectAll = screen.getByText("Select All");
+    const popover = selectAll.closest('[data-slot="popover-content"]') as HTMLElement | null;
+    expect(popover).toBeTruthy();
+
+    const targetLabel = within(popover!).getByText("AQUAFIT").closest("label");
     expect(targetLabel).toBeTruthy();
     const checkbox = targetLabel?.querySelector("input[type='checkbox']") as HTMLInputElement | null;
     expect(checkbox).toBeTruthy();
@@ -172,7 +176,7 @@ describe("SessionsTab column filter indicators", () => {
     expect(popover!).not.toHaveTextContent("JENN W, ROBERT");
 
     // Select JENN W (narrowing)
-    const jennLabel = screen.getByText("JENN W").closest("label");
+    const jennLabel = within(popover!).getByText("JENN W").closest("label");
     expect(jennLabel).toBeTruthy();
     const checkbox = jennLabel?.querySelector("input[type='checkbox']") as HTMLInputElement | null;
     expect(checkbox).toBeTruthy();
