@@ -208,7 +208,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <div className="h-10 w-px bg-white/20" />
           <div className="flex flex-col leading-tight">
             <p className="pt-0.5 text-xs font-bold uppercase tracking-[0.22em] text-foreground/85">
-              EZ-ATTENDANCE
+              EZ-ATTENDANCE v2
             </p>
           </div>
         </div>
