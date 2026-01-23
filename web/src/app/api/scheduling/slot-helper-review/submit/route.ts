@@ -175,7 +175,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       if (!primaryInstructorId) {
         return NextResponse.json({ success: true, responded_at: now.toISOString(), selected_count: uniqueSelected.length });
       }
-      const { error: logErr } = await supabase.from("schedule_reschedule_submit_notify_log").insert({
+      await supabase.from("schedule_reschedule_submit_notify_log").insert({
         branch_id: row.branch_id,
         schedule_id: row.schedule_id,
         instructor_id: primaryInstructorId,
@@ -184,13 +184,9 @@ export async function POST(req: NextRequest): Promise<Response> {
         subject: notify.subject,
         message_id: sendRes.messageId ?? null,
       });
-      if (logErr) {
-        // Best-effort; don't fail instructor UX.
-        console.error("[slot-helper-review] notify log insert failed:", logErr);
-      }
+      // Best-effort; don't fail instructor UX if logging fails.
     } else {
-      // Best-effort; don't fail instructor UX.
-      console.error("[slot-helper-review] notify email failed:", sendRes);
+      // Best-effort; don't fail instructor UX if email fails.
     }
 
     return NextResponse.json({ success: true, responded_at: now.toISOString(), selected_count: uniqueSelected.length });

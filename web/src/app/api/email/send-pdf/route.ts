@@ -104,7 +104,6 @@ export async function POST(req: Request): Promise<Response> {
     });
 
     if (error) {
-      console.error("Resend error:", error);
       return NextResponse.json(
         { error: error.message || "Failed to send email" },
         { status: 500 }
@@ -117,7 +116,6 @@ export async function POST(req: Request): Promise<Response> {
       recipientCount: to.length + (cc?.length || 0) + (bcc?.length || 0),
     });
   } catch (err) {
-    console.error("Email send error:", err);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Failed to send email" },
       { status: 500 }

@@ -2,11 +2,12 @@
 
 import { createContext, useContext, useEffect, useState, useCallback } from "react";
 import type { AuthChangeEvent, Session, User } from "@supabase/supabase-js";
-import { supabase, signOut as supabaseSignOut } from "@/lib/supabaseClient";
+import { supabase, isSupabaseConfigured, signOut as supabaseSignOut } from "@/lib/supabaseClient";
 
 // Dev bypass - skip Supabase entirely
 // Set NEXT_PUBLIC_DEV_AUTH_BYPASS=true in .env.local ONLY if you explicitly want to bypass auth
-const DEV_AUTH_BYPASS = process.env.NEXT_PUBLIC_DEV_AUTH_BYPASS === 'true';
+const DEV_AUTH_BYPASS =
+  process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_DEV_AUTH_BYPASS === "true";
 
 // Mock user for dev bypass
 const DEV_MOCK_USER: User = {
@@ -81,7 +82,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Dev bypass: start with null user, use devSignIn to emulate login
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
-  const [loading, setLoading] = useState(!DEV_AUTH_BYPASS); // Not loading if dev bypass
+  const [loading, setLoading] = useState(() => !DEV_AUTH_BYPASS && isSupabaseConfigured());
   const [recipientContext, setRecipientContextState] = useState<RecipientContext>(() =>
     readStoredRecipientContext()
   );
@@ -99,21 +100,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const refreshSession = useCallback(async () => {
     if (DEV_AUTH_BYPASS) return; // Skip Supabase in dev mode
+    if (!isSupabaseConfigured()) return;
 
-    const auth = (supabase as any)?.auth;
-    if (!auth) {
-      // Avoid hard crash if env vars are missing / Supabase client is not configured.
-      // This can happen if NEXT_PUBLIC_SUPABASE_* vars are missing at runtime.
-      console.error(
-        "[AuthProvider] Supabase client not configured. Check NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY (or NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY)."
-      );
-      setSession(null);
-      setUser(null);
-      setLoading(false);
-      return;
-    }
-
-    const { data } = await auth.getSession();
+    const { data } = await supabase.auth.getSession();
     setSession(data.session);
     setUser(data.session?.user ?? null);
   }, []);
@@ -123,19 +112,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (DEV_AUTH_BYPASS) {
       return;
     }
-
-    const auth = (supabase as any)?.auth;
-    if (!auth) {
-      console.error(
-        "[AuthProvider] Supabase client not configured. Check NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY (or NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY)."
-      );
-      setLoading(false);
-      return;
-    }
+    if (!isSupabaseConfigured()) return;
 
     // Get initial session
     const initSession = async () => {
-      const { data } = await auth.getSession();
+      const { data } = await supabase.auth.getSession();
       setSession(data.session);
       setUser(data.session?.user ?? null);
       setLoading(false);
@@ -144,7 +125,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     initSession();
 
     // Listen for auth changes
-    const { data: { subscription } } = auth.onAuthStateChange(
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (_event: AuthChangeEvent, session: Session | null) => {
         setSession(session);
         setUser(session?.user ?? null);
@@ -171,7 +152,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // ignore
       }
     }
-  }, []);
+  }, [setRecipientContext]);
 
   // Dev bypass sign-in - sets mock user without Supabase
   const devSignIn = useCallback((email?: string) => {

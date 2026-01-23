@@ -439,8 +439,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   };
 
     return NextResponse.json(payload);
-  } catch (e) {
-    console.error("[Reports API] Error", e);
+  } catch {
     return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }
 }

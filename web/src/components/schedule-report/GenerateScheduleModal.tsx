@@ -248,7 +248,6 @@ export function GenerateScheduleModal({
           break;
       }
     } catch (err) {
-      console.error("PDF generation error:", err);
       setError(err instanceof Error ? err.message : "Failed to generate PDF");
     } finally {
       setLoading(null);
@@ -269,7 +268,6 @@ export function GenerateScheduleModal({
       excelWorkbookRef.current = wb;
       setExcelPreviewOpen(true);
     } catch (err) {
-      console.error("Excel preview error:", err);
       setExcelError(err instanceof Error ? err.message : "Failed to generate Excel preview");
     } finally {
       setExcelLoading(false);
@@ -282,7 +280,6 @@ export function GenerateScheduleModal({
       const wb = excelWorkbookRef.current ?? buildExcelWorkbook();
       XLSX.writeFile(wb, excelFilename);
     } catch (err) {
-      console.error("Excel download error:", err);
       setExcelError(err instanceof Error ? err.message : "Failed to download Excel file");
     }
   };

@@ -38,7 +38,6 @@ export async function GET(request: NextRequest): Promise<Response> {
       .order("name", { ascending: true });
 
     if (error) {
-      console.error("Error fetching saved queries:", error);
       return NextResponse.json(
         { error: error.message },
         { status: 500 }
@@ -46,8 +45,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     }
 
     return NextResponse.json(data as SavedQuery[]);
-  } catch (err) {
-    console.error("Unexpected error:", err);
+  } catch {
     return NextResponse.json(
       { error: "Failed to fetch saved queries" },
       { status: 500 }
@@ -110,7 +108,6 @@ export async function POST(request: NextRequest): Promise<Response> {
           { status: 409 }
         );
       }
-      console.error("Error saving query:", error);
       return NextResponse.json(
         { error: error.message },
         { status: 500 }
@@ -118,8 +115,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     }
 
     return NextResponse.json(data as SavedQuery);
-  } catch (err) {
-    console.error("Unexpected error:", err);
+  } catch {
     return NextResponse.json(
       { error: "Failed to save query" },
       { status: 500 }
@@ -158,7 +154,6 @@ export async function PUT(request: NextRequest): Promise<Response> {
     const { data, error } = await query.select().single();
 
     if (error) {
-      console.error("Error updating query:", error);
       return NextResponse.json(
         { error: error.message },
         { status: 500 }
@@ -166,8 +161,7 @@ export async function PUT(request: NextRequest): Promise<Response> {
     }
 
     return NextResponse.json(data as SavedQuery);
-  } catch (err) {
-    console.error("Unexpected error:", err);
+  } catch {
     return NextResponse.json(
       { error: "Failed to update query" },
       { status: 500 }
@@ -206,7 +200,6 @@ export async function DELETE(request: NextRequest): Promise<Response> {
     const { error } = await query;
 
     if (error) {
-      console.error("Error deleting query:", error);
       return NextResponse.json(
         { error: error.message },
         { status: 500 }
@@ -214,8 +207,7 @@ export async function DELETE(request: NextRequest): Promise<Response> {
     }
 
     return NextResponse.json({ success: true });
-  } catch (err) {
-    console.error("Unexpected error:", err);
+  } catch {
     return NextResponse.json(
       { error: "Failed to delete query" },
       { status: 500 }

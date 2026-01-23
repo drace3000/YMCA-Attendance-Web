@@ -120,17 +120,16 @@ export async function GET(req: Request, context: Params): Promise<NextResponse> 
   {
     const res = await supabase.from("ymca_branches").select(selectWithAvailability).eq("id", id).single();
     data = res.data;
-    error = res.error as any;
+    error = res.error ? { message: res.error.message } : null;
   }
 
   if (error?.message?.includes("availability_time_start") && error.message.includes("does not exist")) {
     const res = await supabase.from("ymca_branches").select(selectWithoutAvailability).eq("id", id).single();
     data = res.data;
-    error = res.error as any;
+    error = res.error ? { message: res.error.message } : null;
   }
 
   if (error) {
-    console.error("Error fetching branch:", error.message);
     return NextResponse.json({ error: "Failed to fetch branch" }, { status: 500 });
   }
 

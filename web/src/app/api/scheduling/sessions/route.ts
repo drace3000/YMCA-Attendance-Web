@@ -309,13 +309,25 @@ async function fetchInstructorAvailabilityForConflictCheck(opts: {
 
   if (error) throw new Error(error.message);
 
-  return ((data ?? []) as any[]).map((r) => ({
-    instructor_id: String(r.instructor_id),
-    schedule_month: String(r.schedule_month),
-    day_of_week: String(r.day_of_week),
-    available_start: String(r.available_start).slice(0, 5),
-    available_end: String(r.available_end).slice(0, 5),
-  }));
+  const rows = Array.isArray(data) ? (data as Array<Record<string, unknown>>) : [];
+  return rows
+    .map(
+      (r): InstructorAvailability => ({
+        instructor_id: String(r.instructor_id ?? ""),
+        schedule_month: String(r.schedule_month ?? ""),
+        day_of_week: String(r.day_of_week ?? ""),
+        available_start: String(r.available_start ?? "").slice(0, 5),
+        available_end: String(r.available_end ?? "").slice(0, 5),
+      }),
+    )
+    .filter(
+      (r) =>
+        !!r.instructor_id &&
+        !!r.schedule_month &&
+        !!r.day_of_week &&
+        !!r.available_start &&
+        !!r.available_end,
+    );
 }
 
 async function fetchHolidaysForConflictCheck(opts: {
@@ -334,7 +346,7 @@ async function fetchHolidaysForConflictCheck(opts: {
 
   if (error) throw new Error(error.message);
 
-  const rows = Array.isArray(data) ? (data as any[]) : [];
+  const rows = Array.isArray(data) ? (data as Array<Record<string, unknown>>) : [];
   return rows
     .map((r) => ({
       holiday_date: String(r.holiday_date ?? "").slice(0, 10),
@@ -413,7 +425,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   // Fetch instructor assignments for all sessions (batch to avoid URI too long)
   const sessionIds = (sessions || []).map((s: { id: string }) => s.id);
   
-  let instructorMap: Record<
+  const instructorMap: Record<
     string,
     { id: string; nickname: string; first_name: string; last_name: string; readable_id: string | null }[]
   > = {};
@@ -441,10 +453,7 @@ export async function GET(req: NextRequest): Promise<Response> {
 
     // Process results from all batches
     for (const { data: instructorLinks, error: instructorError } of batchResults) {
-      if (instructorError) {
-        console.error("Error fetching instructors:", instructorError);
-        continue;
-      }
+      if (instructorError) continue;
       
       // Group instructors by session_id
       for (const link of instructorLinks || []) {
@@ -513,6 +522,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   const supabase = createSupabaseServerClient();
+  let scheduleMonthForConflictCheck: string | undefined;
 
   // Ensure the selected schedule belongs to this branch.
   {
@@ -546,8 +556,7 @@ export async function POST(req: NextRequest): Promise<Response> {
         ? (scheduleRow as unknown as { month_start: string }).month_start.slice(0, 7)
         : undefined;
 
-    // Save for conflict checks later (same closure scope)
-    (req as any).__scheduleMonth = scheduleMonth;
+    scheduleMonthForConflictCheck = scheduleMonth;
   }
 
   // Ensure the selected class belongs to this branch.
@@ -642,7 +651,7 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   // HIGH conflict enforcement (server-side gate)
   {
-    const scheduleMonth = (req as any).__scheduleMonth as string | undefined;
+    const scheduleMonth = scheduleMonthForConflictCheck;
     const existing = await fetchSessionsForConflictCheck({
       supabase,
       branchId: branch_id,

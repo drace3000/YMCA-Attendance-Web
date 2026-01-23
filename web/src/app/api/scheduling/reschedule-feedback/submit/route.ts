@@ -19,12 +19,21 @@ function isValidEmail(value: unknown): value is string {
 }
 
 function extractAllowedSessionIds(payload: unknown): Set<string> {
-  const root = payload as any;
-  const rows = Array.isArray(root?.rows) ? root.rows : [];
+  const root =
+    typeof payload === "object" && payload !== null
+      ? (payload as { rows?: unknown }).rows
+      : undefined;
+  const rows = Array.isArray(root) ? root : [];
   const ids = new Set<string>();
   for (const r of rows) {
-    const sessionId = typeof r?.session_id === "string" ? r.session_id : null;
-    const hasProposal = r?.proposed && typeof r.proposed?.date === "string";
+    if (typeof r !== "object" || r === null) continue;
+    const row = r as { session_id?: unknown; proposed?: unknown };
+    const sessionId = typeof row.session_id === "string" ? row.session_id : null;
+    const proposed = row.proposed;
+    const hasProposal =
+      typeof proposed === "object" &&
+      proposed !== null &&
+      typeof (proposed as { date?: unknown }).date === "string";
     if (sessionId && hasProposal) ids.add(sessionId);
   }
   return ids;
@@ -64,7 +73,7 @@ export async function POST(req: NextRequest): Promise<Response> {
         branch_id: string;
         schedule_id: string;
         instructor_id: string;
-        request_payload: any;
+        request_payload: unknown;
         expires_at: string;
       }>();
 
@@ -157,7 +166,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     });
 
     if (sendRes.ok) {
-      const { error: logErr } = await supabase.from("schedule_reschedule_submit_notify_log").insert({
+      await supabase.from("schedule_reschedule_submit_notify_log").insert({
         branch_id: row.branch_id,
         schedule_id: row.schedule_id,
         instructor_id: row.instructor_id,
@@ -166,13 +175,9 @@ export async function POST(req: NextRequest): Promise<Response> {
         subject: notify.subject,
         message_id: sendRes.messageId ?? null,
       });
-      if (logErr) {
-        // Best-effort; don't fail instructor UX.
-        console.error("[reschedule-feedback] notify log insert failed:", logErr);
-      }
+      // Best-effort; don't fail instructor UX if logging fails.
     } else {
-      // Best-effort; don't fail instructor UX.
-      console.error("[reschedule-feedback] notify email failed:", sendRes);
+      // Best-effort; don't fail instructor UX if email fails.
     }
 
     return NextResponse.json({ success: true, responded_at: now.toISOString(), selected_count: uniqueSelected.length });

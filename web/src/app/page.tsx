@@ -138,12 +138,13 @@ function HomeInner() {
   useEffect(() => {
     if (appliedDeepLinkRef.current) return;
     // Some unit tests mock `useSearchParams()` as null; guard to avoid crashing.
-    if (!searchParams || typeof (searchParams as any).get !== "function") return;
-    const mode = (searchParams as any).get("mode");
+    const maybeSearch = searchParams as unknown as { get?: (key: string) => string | null } | null;
+    if (!maybeSearch || typeof maybeSearch.get !== "function") return;
+    const mode = maybeSearch.get("mode");
     if (mode !== "otp") return;
 
     appliedDeepLinkRef.current = true;
-    const qpEmail = (searchParams as any).get("email");
+    const qpEmail = maybeSearch.get("email");
     setActiveTab("signin");
     setSignInMode("otp");
     if (qpEmail) setEmail(qpEmail);
@@ -204,12 +205,17 @@ function HomeInner() {
     phone.trim() &&
     isValidPhone(phone.trim());
 
-  const loadRecipientContextAfterAuth = async (normalizedEmail: string): Promise<void> => {
+  const loadRecipientContextAfterAuth = async (normalizedEmail: string, accessToken?: string | null): Promise<void> => {
     setPendingEmail(normalizedEmail);
+
+    const token = typeof accessToken === "string" && accessToken.trim() ? accessToken.trim() : null;
 
     const ctxRes = await fetch("/api/auth/login-context", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
       body: JSON.stringify({ email: normalizedEmail }),
     });
 
@@ -290,13 +296,13 @@ function HomeInner() {
     setError(null);
 
     try {
-      const { error } = await signInWithPassword(email.trim(), password);
+      const { data, error } = await signInWithPassword(email.trim(), password);
       if (error) {
         setError(error.message);
       } else {
         // After auth, load recipient context and enforce first-time password change if needed.
         const normalizedEmail = email.trim().toLowerCase();
-        await loadRecipientContextAfterAuth(normalizedEmail);
+        await loadRecipientContextAfterAuth(normalizedEmail, data?.session?.access_token ?? null);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to sign in");
@@ -355,13 +361,13 @@ function HomeInner() {
     setError(null);
 
     try {
-      const { error } = await verifyOtp(normalizedEmail, token);
+      const { data, error } = await verifyOtp(normalizedEmail, token);
       if (error) {
         setSignInOtpError(error.message);
         return;
       }
 
-      await loadRecipientContextAfterAuth(normalizedEmail);
+      await loadRecipientContextAfterAuth(normalizedEmail, data?.session?.access_token ?? null);
     } catch (e) {
       setSignInOtpError(e instanceof Error ? e.message : "Failed to verify code");
     } finally {

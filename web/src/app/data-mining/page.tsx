@@ -225,8 +225,8 @@ export default function DataMiningPage() {
         const data = await res.json();
         setSavedQueries(data);
       }
-    } catch (err) {
-      console.error("Failed to load saved queries:", err);
+    } catch {
+      setError("Failed to load saved queries");
     }
   }, [branch?.id]);
 
@@ -462,7 +462,7 @@ export default function DataMiningPage() {
       setSavedQueries(prev => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)));
       setSaveModalOpen(false);
       setQueryName("");
-    } catch (err) {
+    } catch {
       setSaveError("Failed to save query");
     } finally {
       setSavingQuery(false);
@@ -487,15 +487,17 @@ export default function DataMiningPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        console.error("Failed to update query:", data.error);
+        setError(data.error || "Failed to update query");
+        setStatus("error");
         return;
       }
 
       // Update in local state
       setSavedQueries(prev => prev.map(q => q.id === selectedSavedQueryId ? data : q));
       setUpdateModalOpen(false);
-    } catch (err) {
-      console.error("Failed to update query:", err);
+    } catch {
+      setError("Failed to update query");
+      setStatus("error");
     } finally {
       setUpdatingQuery(false);
     }
@@ -510,8 +512,8 @@ export default function DataMiningPage() {
       if (res.ok) {
         setSavedQueries(prev => prev.filter(q => q.id !== id));
       }
-    } catch (err) {
-      console.error("Failed to delete query:", err);
+    } catch {
+      setError("Failed to delete query");
     }
   };
 

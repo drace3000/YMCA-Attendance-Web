@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { X, FileText, FileSpreadsheet, Printer, Download, Eye, Loader2 } from "lucide-react";
+import { X, FileSpreadsheet, Printer, Download, Eye, Loader2 } from "lucide-react";
 import * as XLSX from "xlsx";
 
 import type { Session } from "@/app/scheduling/sessions-tab";
@@ -167,7 +167,6 @@ export function PrintScheduleConflictsReportModal({
       excelWorkbookRef.current = wb;
       setExcelPreviewOpen(true);
     } catch (err) {
-      console.error("Conflicts Excel preview error:", err);
       setExcelError(err instanceof Error ? err.message : "Failed to generate Excel preview");
     } finally {
       setExcelLoading(false);
@@ -180,7 +179,6 @@ export function PrintScheduleConflictsReportModal({
       const wb = excelWorkbookRef.current ?? buildExcelWorkbook();
       XLSX.writeFile(wb, excelFilename);
     } catch (err) {
-      console.error("Conflicts Excel download error:", err);
       setExcelError(err instanceof Error ? err.message : "Failed to download Excel file");
     }
   };
@@ -195,7 +193,6 @@ export function PrintScheduleConflictsReportModal({
       if (action === "download") await downloadScheduleConflictsChecklistPDF(args);
       if (action === "print") await printScheduleConflictsChecklistPDF(args);
     } catch (err) {
-      console.error("Conflicts PDF generation error:", err);
       setPdfError(err instanceof Error ? err.message : "Failed to generate PDF");
     } finally {
       setPdfLoading(null);

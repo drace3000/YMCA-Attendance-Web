@@ -124,9 +124,7 @@ export function buildSessionConfirmationEmail(params: {
     ["Class", safeLine(params.className)],
     ["Location", safeLine(params.locationName)],
     ["Manager Email", safeLine(params.managerEmail)],
-  ];
-
-  const labelWidth = Math.max(...detailRows.map(([label]) => label.length), "Manager Email".length);
+  ];  const labelWidth = Math.max(...detailRows.map(([label]) => label.length), "Manager Email".length);
   const textDetailLines = detailRows.map(([label, value]) => `  ${label.padEnd(labelWidth)}  ${value}`);
 
   const introName = safeLine(params.instructorLabel);
@@ -166,4 +164,3 @@ export function buildSessionConfirmationEmail(params: {
 
   return { subject, text, html };
 }
-

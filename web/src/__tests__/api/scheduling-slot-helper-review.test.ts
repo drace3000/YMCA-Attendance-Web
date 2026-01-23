@@ -96,7 +96,7 @@ vi.mock("@/lib/supabaseServer", () => ({
   createSupabaseServerClient: () => mockCreateSupabaseServerClient(),
 }));
 
-const mockSupabaseAdmin = { from: vi.fn() };
+const mockSupabaseAdmin = vi.hoisted(() => ({ from: vi.fn() }));
 vi.mock("@/lib/supabaseAdmin", () => ({
   supabaseAdmin: mockSupabaseAdmin,
 }));

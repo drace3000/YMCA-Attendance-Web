@@ -70,8 +70,8 @@ export function EmailPdfModal({
 
         setRecipients(selectable);
       }
-    } catch (err) {
-      console.error("Failed to load recipients:", err);
+    } catch {
+      // Swallow fetch errors; UI will continue to allow manual entry.
     } finally {
       setLoadingRecipients(false);
     }

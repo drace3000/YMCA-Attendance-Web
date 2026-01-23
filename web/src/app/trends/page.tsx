@@ -108,8 +108,8 @@ export default function TrendsPage() {
           const details: Branch = await res.json();
           setBranchDetails(details);
         }
-      } catch (err) {
-        console.error("Error fetching branch details:", err);
+      } catch {
+        // Ignore fetch errors; UI already handles missing branch details.
       }
     };
     fetchBranchDetails();
@@ -253,9 +253,8 @@ export default function TrendsPage() {
       if (cancelCaptureRef.current) return;
       setChartImages(images);
       setExportModalOpen(true);
-    } catch (err) {
+    } catch {
       if (cancelCaptureRef.current) return;
-      console.error("Failed to capture charts:", err);
       // Open modal anyway, will show placeholder for charts
       setExportModalOpen(true);
     } finally {

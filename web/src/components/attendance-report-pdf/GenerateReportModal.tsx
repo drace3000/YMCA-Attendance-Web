@@ -149,7 +149,6 @@ ${selectedSections.map(s => `• ${REPORT_SECTION_LABELS[s]}`).join("\n")}`;
           break;
       }
     } catch (err) {
-      console.error("PDF generation error:", err);
       setError(err instanceof Error ? err.message : "Failed to generate PDF");
     } finally {
       setLoading(null);

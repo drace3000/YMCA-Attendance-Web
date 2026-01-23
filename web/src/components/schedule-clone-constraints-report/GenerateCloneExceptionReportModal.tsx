@@ -43,7 +43,7 @@ export function GenerateCloneExceptionReportModal(props: {
   branchId: string | null;
   programGroupId: string | null;
   targetScheduleId: string | null;
-}): JSX.Element | null {
+}) {
   const { isOpen, onClose, branchId, programGroupId, targetScheduleId } = props;
 
   const [loading, setLoading] = useState<ActionType>(null);

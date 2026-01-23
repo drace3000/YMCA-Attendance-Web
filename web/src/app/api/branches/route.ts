@@ -75,7 +75,6 @@ export async function GET(): Promise<NextResponse> {
     .order("name", { ascending: true });
 
   if (error) {
-    console.error("Error fetching branches:", error.message);
     // Return a UUID-based fallback so we never poison localStorage with non-UUID ids.
     // (Local dev restored DB uses this Eastside UUID.)
     const fallback: Branch = {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { X, Mail, Send, Loader2, Paperclip, AlertCircle, CheckCircle, FileSpreadsheet } from "lucide-react";
+import { X, Mail, Send, Loader2, AlertCircle, CheckCircle, FileSpreadsheet } from "lucide-react";
 import { RecipientPicker, type Recipient } from "@/components/email-pdf-modal/RecipientPicker";
 
 interface EmailExcelModalProps {
@@ -70,8 +70,8 @@ export function EmailExcelModal({
 
         setRecipients(selectable);
       }
-    } catch (err) {
-      console.error("Failed to load recipients:", err);
+    } catch {
+      // Swallow fetch errors; UI will continue to allow manual entry.
     } finally {
       setLoadingRecipients(false);
     }

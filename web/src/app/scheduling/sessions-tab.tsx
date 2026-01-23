@@ -9,10 +9,7 @@ import {
   CheckCircle2,
   Mail,
   ChevronDown,
-  Download,
   Edit2,
-  Eye,
-  FileSpreadsheet,
   Filter,
   Info,
   Loader2,
@@ -291,7 +288,7 @@ function parseHHmmToMinutes(value: string): number | null {
 function formatTimeAmPm(valueHHmm: string): string {
   const min = parseHHmmToMinutes(valueHHmm);
   if (min === null) return valueHHmm;
-  let hh = Math.floor(min / 60);
+  const hh = Math.floor(min / 60);
   const mm = min % 60;
   const am = hh < 12;
   let h12 = hh % 12;
@@ -400,13 +397,8 @@ function useDraggableModal(
     _setOffset(next);
   }, []);
 
-  // On open, re-hydrate from localStorage (useful after page reload / different tab).
-  useEffect(() => {
-    if (!isOpen) return;
-    const stored = readStoredOffset();
-    if (!stored) return;
-    setOffset(stored);
-  }, [isOpen, readStoredOffset]);
+  // Offset is initialized from localStorage in the lazy useState initializer.
+  // We intentionally do not rehydrate on open to avoid cascading renders.
 
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
@@ -491,6 +483,167 @@ type SlotHelperSubmitResult = {
   email: { ok: boolean; recipients: string[]; error?: string };
 };
 
+type AvailabilityStatus = "ANYTIME" | "AVAILABLE" | "OUTSIDE" | "NO_WINDOWS" | "NEEDS_INPUT";
+
+function availabilityStatusLabel(status: AvailabilityStatus): string {
+  if (status === "NO_WINDOWS" || status === "OUTSIDE") return "NOT AVAILABLE";
+  if (status === "NEEDS_INPUT") return "NEEDS INPUT";
+  return status;
+}
+
+function shortDowLabel(day: string): string {
+  const clean = String(day || "").trim().toUpperCase();
+  return clean.length <= 3 ? clean : clean.slice(0, 3);
+}
+
+type AvailabilityVm = {
+  instructor_id: string;
+  instructor_label: string;
+  month: string | null;
+  day: string | null;
+  status: AvailabilityStatus;
+  checkLine: string;
+  monthLabel: string | null;
+  monthPills: Array<{ day: string; window: string }>;
+};
+
+const AVAIL_DOW_ORDER: Record<string, number> = {
+  MONDAY: 0,
+  TUESDAY: 1,
+  WEDNESDAY: 2,
+  THURSDAY: 3,
+  FRIDAY: 4,
+  SATURDAY: 5,
+  SUNDAY: 6,
+};
+
+function hm(value: string): string {
+  // normalize to HH:mm for display like Maintenance
+  const m = /^(\d{1,2}):(\d{2})/.exec(String(value ?? "").trim());
+  if (!m) return String(value ?? "").slice(0, 5);
+  return `${String(Number(m[1])).padStart(2, "0")}:${m[2]}`;
+}
+
+function buildAvailabilityVm(opts: {
+  instructorId: string;
+  instructorLabel: string;
+  month: string | null;
+  isoDate: string | null;
+  startHHmm: string | null;
+  endHHmm: string | null;
+  availabilityRows: AvailabilityRule[];
+}): AvailabilityVm {
+  const { instructorId, instructorLabel, month, isoDate, startHHmm, endHHmm, availabilityRows } = opts;
+
+  const day = isoDate ? dayOfWeekFromIsoDateUtc(isoDate) : null;
+  const startMin = startHHmm ? parseHHmmToMinutes(startHHmm) : null;
+  const endMin = endHHmm ? parseHHmmToMinutes(endHHmm) : null;
+
+  const rulesForMonth =
+    month
+      ? availabilityRows.filter((r) => r.instructor_id === instructorId && r.schedule_month === month)
+      : [];
+
+  const monthPills = rulesForMonth
+    .slice()
+    .sort((a, b) => {
+      const aDay = AVAIL_DOW_ORDER[String(a.day_of_week).toUpperCase()] ?? 99;
+      const bDay = AVAIL_DOW_ORDER[String(b.day_of_week).toUpperCase()] ?? 99;
+      if (aDay !== bDay) return aDay - bDay;
+      return String(a.available_start).localeCompare(String(b.available_start));
+    })
+    .map((r) => ({
+      day: String(r.day_of_week).toUpperCase(),
+      window: `${hm(String(r.available_start).slice(0, 5))}–${hm(String(r.available_end).slice(0, 5))}`,
+    }));
+
+  // No rules at all in month => available any time
+  if (!month || rulesForMonth.length === 0) {
+    const monthLabel = month ? formatMonthShortYear(month) : null;
+    return {
+      instructor_id: instructorId,
+      instructor_label: instructorLabel,
+      month,
+      day,
+      status: "ANYTIME",
+      checkLine: month
+        ? `No availability rules for ${monthLabel}; available any time.`
+        : "Select a date to view availability.",
+      monthLabel,
+      monthPills: [],
+    };
+  }
+
+  const monthLabel = formatMonthShortYear(month);
+
+  if (!isoDate || !day) {
+    return {
+      instructor_id: instructorId,
+      instructor_label: instructorLabel,
+      month,
+      day,
+      status: "NEEDS_INPUT",
+      checkLine: "Select a date to check availability.",
+      monthLabel,
+      monthPills,
+    };
+  }
+
+  if (startMin === null || endMin === null || endMin <= startMin) {
+    return {
+      instructor_id: instructorId,
+      instructor_label: instructorLabel,
+      month,
+      day,
+      status: "NEEDS_INPUT",
+      checkLine: "Select a start and end time to check availability.",
+      monthLabel,
+      monthPills,
+    };
+  }
+
+  const windowsForDay = rulesForMonth
+    .filter((r) => String(r.day_of_week).toUpperCase() === day)
+    .map((r) => ({ start: hm(String(r.available_start).slice(0, 5)), end: hm(String(r.available_end).slice(0, 5)) }));
+
+  const dateLabel = formatIsoDateForMessage(isoDate);
+  const startLabel = formatTimeAmPm(startHHmm ?? "");
+  const endLabel = formatTimeAmPm(endHHmm ?? "");
+
+  if (windowsForDay.length === 0) {
+    return {
+      instructor_id: instructorId,
+      instructor_label: instructorLabel,
+      month,
+      day,
+      status: "NO_WINDOWS",
+      checkLine: `No Availability for ${dateLabel} from ${startLabel} to ${endLabel}.`,
+      monthLabel,
+      monthPills,
+    };
+  }
+
+  const covered = windowsForDay.some((w) => {
+    const wStart = parseHHmmToMinutes(w.start);
+    const wEnd = parseHHmmToMinutes(w.end);
+    if (wStart === null || wEnd === null) return false;
+    return startMin >= wStart && endMin <= wEnd;
+  });
+
+  return {
+    instructor_id: instructorId,
+    instructor_label: instructorLabel,
+    month,
+    day,
+    status: covered ? "AVAILABLE" : "OUTSIDE",
+    checkLine: covered
+      ? `Available for ${dateLabel} from ${startLabel} to ${endLabel}.`
+      : `No Availability for ${dateLabel} from ${startLabel} to ${endLabel}.`,
+    monthLabel,
+    monthPills,
+  };
+}
+
 export function SessionsTab({
   scheduleId,
   branchId,
@@ -541,6 +694,7 @@ export function SessionsTab({
         | "reschedule_preview_modal_offset"
         | "reschedule_email_modal_offset"
         | "slot_helper_modal_offset"
+        | "slot_helper_multi_day_modal_offset"
         | "slot_helper_review_email_modal_offset"
         | "slot_helper_review_modal_offset",
       offset: DragOffset,
@@ -654,7 +808,7 @@ export function SessionsTab({
   const [slotHelperMultiDayOpen, setSlotHelperMultiDayOpen] = useState(false);
   const [slotHelperMultiDayDays, setSlotHelperMultiDayDays] = useState<SlotHelperDayValue[]>([]);
   const [slotHelperMultiDayOptions, setSlotHelperMultiDayOptions] = useState<
-    Array<{ key: string; date: string; start_time: string; end_time: string; label: string; checked: boolean }>
+    Array<{ key: string; date: string; day_of_week?: string; start_time: string; end_time: string; label: string; checked: boolean }>
   >([]);
   const slotHelperMultiDayDrag = useDraggableModal(slotHelperMultiDayOpen, slotHelperMultiDayDragStorageKey, (offset) =>
     persistUiOffset("slot_helper_multi_day_modal_offset", offset),
@@ -752,7 +906,7 @@ export function SessionsTab({
     const order = new Map(SLOT_HELPER_DAY_PILLS.map((x, idx) => [x.value, idx] as const));
     const seen = new Set<string>();
     const filtered = values.filter((v) => {
-      if (!allowed.has(v)) return false;
+      if (!allowed.has(v as SlotHelperDayValue)) return false;
       if (seen.has(v)) return false;
       seen.add(v);
       return true;
@@ -867,7 +1021,13 @@ useEffect(() => {
   return () => {
     cancelled = true;
   };
-}, [branchId, normalizeSlotHelperDatesRaw, normalizeSlotHelperWeekdays, slotHelperOpen]);
+}, [
+  branchId,
+  normalizeSlotHelperDatesRaw,
+  normalizeSlotHelperWeekdays,
+  slotHelperOpen,
+  slotHelperWeekdaysLocalStorageKey,
+]);
 
 useEffect(() => {
   if (!slotHelperOpen) return;
@@ -946,7 +1106,14 @@ useEffect(() => {
       // best effort
     }
   })();
-}, [branchId, normalizeSlotHelperWeekdays, slotHelperOpen, slotHelperSelectedDays, slotHelperWeekdaysPersistKey]);
+}, [
+  branchId,
+  normalizeSlotHelperWeekdays,
+  slotHelperOpen,
+  slotHelperSelectedDays,
+  slotHelperWeekdaysLocalStorageKey,
+  slotHelperWeekdaysPersistKey,
+]);
 
 useEffect(() => {
   if (!slotHelperOpen) return;
@@ -1009,7 +1176,7 @@ useEffect(() => {
   const [slotHelperReviewEmailSuccess, setSlotHelperReviewEmailSuccess] = useState(false);
   const [slotHelperReviewRequests, setSlotHelperReviewRequests] = useState<SlotHelperReviewRequest[]>([]);
   const [slotHelperReviewRequestsLoading, setSlotHelperReviewRequestsLoading] = useState(false);
-  const [slotHelperReviewRequestsError, setSlotHelperReviewRequestsError] = useState<string | null>(null);
+  const [, setSlotHelperReviewRequestsError] = useState<string | null>(null);
   const [slotHelperReviewRequestId, setSlotHelperReviewRequestId] = useState<string | null>(null);
   const slotHelperReviewRequestIdRef = useRef<string | null>(null);
   const [slotHelperReviewRequestDetail, setSlotHelperReviewRequestDetail] = useState<{
@@ -1027,8 +1194,7 @@ useEffect(() => {
   const slotHelperLastPrefilledRequestIdRef = useRef<string | null>(null);
   const slotHelperSkipSelectedSlotClearRef = useRef(false);
   const [slotHelperReviewRequestDetailLoading, setSlotHelperReviewRequestDetailLoading] = useState(false);
-  const [slotHelperReviewRequestActionLoading, setSlotHelperReviewRequestActionLoading] = useState(false);
-  const [slotHelperReviewRequestActionError, setSlotHelperReviewRequestActionError] = useState<string | null>(null);
+  const [, setSlotHelperReviewRequestActionError] = useState<string | null>(null);
   const [slotHelperActiveHolds, setSlotHelperActiveHolds] = useState<SlotHelperReviewHold[]>([]);
 
   const classById = useMemo(() => new Map(classes.map((c) => [c.id, c] as const)), [classes]);
@@ -1213,15 +1379,58 @@ useEffect(() => {
       params.set("schedule_id", scheduleId);
       params.set("instructor_id", rescheduleTargetInstructorId);
       const res = await fetch(`/api/scheduling/reschedule-feedback/status?${params.toString()}`);
-      const json = (await res.json().catch(() => null)) as any;
+      const json = (await res.json().catch(() => null)) as unknown;
       if (!res.ok) {
         setRescheduleStatus(null);
         return;
       }
+      const obj =
+        json && typeof json === "object" ? (json as Record<string, unknown>) : null;
+
+      const emailRaw = obj?.email;
+      const emailObj =
+        emailRaw && typeof emailRaw === "object"
+          ? (emailRaw as Record<string, unknown>)
+          : null;
+      const parsedEmail =
+        emailObj &&
+        typeof emailObj.sent_at === "string" &&
+        typeof emailObj.from_email === "string" &&
+        typeof emailObj.to_email === "string" &&
+        typeof emailObj.subject === "string"
+          ? {
+              sent_at: emailObj.sent_at,
+              from_email: emailObj.from_email,
+              to_email: emailObj.to_email,
+              subject: emailObj.subject,
+              message_id: typeof emailObj.message_id === "string" ? emailObj.message_id : null,
+            }
+          : null;
+
+      const requestRaw = obj?.request;
+      const requestObj =
+        requestRaw && typeof requestRaw === "object"
+          ? (requestRaw as Record<string, unknown>)
+          : null;
+      const parsedRequest =
+        requestObj &&
+        typeof requestObj.created_at === "string" &&
+        typeof requestObj.expires_at === "string"
+          ? {
+              responded_at: typeof requestObj.responded_at === "string" ? requestObj.responded_at : null,
+              response_selected_session_ids: Array.isArray(requestObj.response_selected_session_ids)
+                ? requestObj.response_selected_session_ids.filter(
+                    (v): v is string => typeof v === "string",
+                  )
+                : [],
+              created_at: requestObj.created_at,
+              expires_at: requestObj.expires_at,
+            }
+          : null;
       setRescheduleStatus({
-        email: json?.email ?? null,
-        request: json?.request ?? null,
-        instructor_email: typeof json?.instructor_email === "string" ? json.instructor_email : null,
+        email: parsedEmail,
+        request: parsedRequest,
+        instructor_email: typeof obj?.instructor_email === "string" ? obj.instructor_email : null,
       });
     } catch {
       setRescheduleStatus(null);
@@ -1259,9 +1468,12 @@ useEffect(() => {
           ...(extras.length > 0 ? { additional_emails: extras } : null),
         }),
       });
-      const json = (await res.json().catch(() => null)) as any;
+      const json = (await res.json().catch(() => null)) as unknown;
+      const obj =
+        json && typeof json === "object" ? (json as Record<string, unknown>) : null;
       if (!res.ok) {
-        setRescheduleEmailError(json?.error || "Failed to send email");
+        const msg = typeof obj?.error === "string" ? obj.error : null;
+        setRescheduleEmailError(msg || "Failed to send email");
         return;
       }
       setRescheduleEmailSuccess(true);
@@ -1629,8 +1841,8 @@ useEffect(() => {
 
   // Holidays (Phase 5)
   const [holidays, setHolidays] = useState<HolidayRule[]>([]);
-  const [holidaysLoading, setHolidaysLoading] = useState(false);
-  const [holidaysError, setHolidaysError] = useState<string | null>(null);
+  const [, setHolidaysLoading] = useState(false);
+  const [, setHolidaysError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterField, setFilterField] = useState<FilterField>("class");
   const [searchMode, setSearchMode] = useState<SearchMode>("find");
@@ -1697,7 +1909,7 @@ useEffect(() => {
     } catch (err) {
       // PRODUCTION ERROR HANDLING - Do not remove
       const error = err instanceof Error ? err : new Error(String(err));
-      const errorCode = await logError(
+      await logError(
         error,
         "API_ERROR",
         {
@@ -1708,7 +1920,6 @@ useEffect(() => {
           description: error.message,
         }
       );
-      console.error(`[${errorCode}] Error fetching reference data:`, err);
     }
   }, [branchId, programGroupId]);
 
@@ -1796,7 +2007,7 @@ useEffect(() => {
     setEditModalOpen(true);
   }, [requireApproved, setEditModalForm]);
 
-  const closeEditModal = () => {
+  const closeEditModal = useCallback((): void => {
     setSaveError(null);
     setSaveConflicts(null);
     setEditModalOpening(false);
@@ -1818,7 +2029,7 @@ useEffect(() => {
     setEditModalClassDropdownOpen(false);
     setEditModalLocationDropdownOpen(false);
     setEditModalInstructorDropdownOpen(false);
-  };
+  }, []);
 
   const closeReschedulePreview = () => {
     setReschedulePreviewOpen(false);
@@ -1835,9 +2046,6 @@ useEffect(() => {
     setRescheduleStatus(null);
     setRescheduleStatusLoading(false);
   };
-
-  // Back-compat name (inline edit UI will be removed in a later step)
-  const handleCancelEdit = closeEditModal;
 
   const handleSaveEdit = async (opts?: { skipMediumConfirm?: boolean }) => {
     if (!editModalSessionId) return;
@@ -1904,7 +2112,6 @@ useEffect(() => {
         branchId,
         params: { scheduleId, sessionId: editModalSessionId },
       });
-      console.error(`[${code}] Error updating session:`, err);
       setSaveError(getUserErrorMessage(code));
     } finally {
       setSaving(false);
@@ -2093,7 +2300,6 @@ useEffect(() => {
         branchId,
         params: { scheduleId },
       });
-      console.error(`[${code}] Error creating session:`, err);
       setAddError(getUserErrorMessage(code));
     } finally {
       setSaving(false);
@@ -2137,7 +2343,6 @@ useEffect(() => {
         branchId,
         params: { scheduleId, sessionId: deleteConfirmSessionId },
       });
-      console.error(`[${code}] Error deleting session:`, err);
       setDeleteConfirmError(getUserErrorMessage(code));
     } finally {
       setSaving(false);
@@ -2195,7 +2400,7 @@ useEffect(() => {
       if (loc && loc !== "-") set.add(loc);
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [sessions]);
+  }, [sessions, formatLocation]);
 
   const uniqueInstructorValues = useMemo(() => {
     const set = new Set<string>();
@@ -2398,6 +2603,8 @@ useEffect(() => {
     classFilter,
     locationFilter,
     instructorFilter,
+    formatInstructors,
+    formatLocation,
   ]);
 
   const scheduleMonth = useMemo((): string | undefined => {
@@ -2543,7 +2750,6 @@ useEffect(() => {
     }
   }, [
     branchId,
-    fetchSessions,
     scheduleId,
     scheduleMonthYear?.month,
     scheduleMonthYear?.year,
@@ -2575,15 +2781,6 @@ useEffect(() => {
     return `${formatTimeAmPm(availabilityTimeStart)}–${formatTimeAmPm(availabilityTimeEnd)}`;
   }, [availabilityTimeStart, availabilityTimeEnd]);
 
-  const slotHelperHierarchyChain = useMemo((): string => {
-    const parts = [
-      slotHelperHierarchyLabel.allianceName,
-      slotHelperHierarchyLabel.associationName,
-      slotHelperHierarchyLabel.branchName,
-    ].filter((x): x is string => typeof x === "string" && x.trim().length > 0);
-    return parts.join(" -> ");
-  }, [slotHelperHierarchyLabel]);
-
   const slotHelperTotalCheckedLabel = useMemo((): string | null => {
     if (slotHelperDurationMinutes === null) return null;
     const d = slotHelperDurationMinutes;
@@ -2602,17 +2799,21 @@ useEffect(() => {
       if (scheduleMonth) url += `&month=${encodeURIComponent(scheduleMonth)}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error("Failed to fetch instructor availability");
-      const json = await res.json();
-      const rows = Array.isArray(json?.availability) ? json.availability : [];
+      const json = (await res.json()) as unknown;
+      const availabilityRaw =
+        json && typeof json === "object" ? (json as Record<string, unknown>).availability : null;
+      const rows = Array.isArray(availabilityRaw)
+        ? (availabilityRaw as Array<Record<string, unknown>>)
+        : [];
 
       const mapped: AvailabilityRule[] = rows
-        .map((r: any) => ({
-          id: String(r.id),
-          instructor_id: String(r.instructor_id),
-          schedule_month: String(r.schedule_month),
-          day_of_week: String(r.day_of_week),
-          available_start: String(r.available_start).slice(0, 5),
-          available_end: String(r.available_end).slice(0, 5),
+        .map((r) => ({
+          id: String(r.id ?? ""),
+          instructor_id: String(r.instructor_id ?? ""),
+          schedule_month: String(r.schedule_month ?? ""),
+          day_of_week: String(r.day_of_week ?? ""),
+          available_start: String(r.available_start ?? "").slice(0, 5),
+          available_end: String(r.available_end ?? "").slice(0, 5),
         }))
         .filter((r: AvailabilityRule) => !!r.id && !!r.instructor_id && !!r.schedule_month);
 
@@ -2626,7 +2827,6 @@ useEffect(() => {
         branchId,
         params: { scheduleMonth: scheduleMonth ?? null },
       });
-      console.error(`[${code}] Error fetching instructor availability:`, err);
       setAvailabilityError(getUserErrorMessage(code));
       setAvailability([]);
     } finally {
@@ -2645,12 +2845,12 @@ useEffect(() => {
       if (scheduleMonth) params.set("month", scheduleMonth);
       const res = await fetch(`/api/maintenance/holidays?${params.toString()}`);
       if (!res.ok) throw new Error("Failed to fetch holidays");
-      const json = await res.json();
-      const rows = Array.isArray(json) ? json : [];
+      const json = (await res.json()) as unknown;
+      const rows = Array.isArray(json) ? (json as Array<Record<string, unknown>>) : [];
       const mapped: HolidayRule[] = rows
-        .map((r: any) => ({
-          id: String(r.id),
-          holiday_date: String(r.holiday_date),
+        .map((r) => ({
+          id: String(r.id ?? ""),
+          holiday_date: String(r.holiday_date ?? ""),
           observed_date: r.observed_date ? String(r.observed_date).slice(0, 10) : null,
           name: String(r.name ?? ""),
           is_active: !!r.is_active,
@@ -2669,7 +2869,6 @@ useEffect(() => {
         branchId,
         params: { scheduleMonth: scheduleMonth ?? null },
       });
-      console.error(`[${code}] Error fetching holidays:`, err);
       setHolidaysError(getUserErrorMessage(code));
       setHolidays([]);
     } finally {
@@ -3101,7 +3300,7 @@ useEffect(() => {
         } else {
           setSlotHelperReviewRequestDetail(null);
         }
-      } catch (err) {
+      } catch {
         if (slotHelperReviewRequestIdRef.current !== requestId) return;
         setSlotHelperReviewRequestDetail(null);
       } finally {
@@ -3176,7 +3375,6 @@ useEffect(() => {
 
   useEffect(() => {
     if (!slotHelperOpen) return;
-    const prevRequestId = slotHelperReviewRequestIdRef.current;
     slotHelperReviewRequestIdRef.current = slotHelperReviewRequestId;
     if (!slotHelperReviewRequestId) {
       setSlotHelperReviewRequestDetail(null);
@@ -3184,9 +3382,10 @@ useEffect(() => {
       slotHelperLastPrefilledRequestIdRef.current = null;
       return;
     }
-    if (!slotHelperReviewRequestDetail || slotHelperReviewRequestDetail.request.id !== slotHelperReviewRequestId) {
-      setSlotHelperReviewRequestDetail(null);
-    }
+  setSlotHelperReviewRequestDetail((current) => {
+    if (!current || current.request.id !== slotHelperReviewRequestId) return null;
+    return current;
+  });
     void refreshSlotHelperReviewRequestDetail(slotHelperReviewRequestId);
   }, [slotHelperReviewRequestId, refreshSlotHelperReviewRequestDetail, slotHelperOpen]);
 
@@ -3322,68 +3521,6 @@ useEffect(() => {
     slotHelperSelectedSlotKeys,
     slotHelperTransitionMinutes,
     slotHelperTurnoverMinutes,
-  ]);
-
-  const completeSlotHelperReviewRequest = useCallback(async (): Promise<void> => {
-    if (!slotHelperReviewRequestId) return;
-    setSlotHelperReviewRequestActionLoading(true);
-    setSlotHelperReviewRequestActionError(null);
-    try {
-      const res = await fetch("/api/scheduling/slot-helper-review/complete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ request_id: slotHelperReviewRequestId }),
-      });
-      const json = await res.json().catch(() => null);
-      if (!res.ok) {
-        const msg = json && typeof json === "object" && typeof json.error === "string" ? json.error : "Failed to complete request";
-        setSlotHelperReviewRequestActionError(msg);
-        return;
-      }
-      await refreshSlotHelperReviewRequests();
-      await refreshSlotHelperReviewRequestDetail(slotHelperReviewRequestId);
-      await refreshSlotHelperActiveHolds();
-    } catch (err) {
-      setSlotHelperReviewRequestActionError(err instanceof Error ? err.message : "Failed to complete request");
-    } finally {
-      setSlotHelperReviewRequestActionLoading(false);
-    }
-  }, [
-    refreshSlotHelperActiveHolds,
-    refreshSlotHelperReviewRequestDetail,
-    refreshSlotHelperReviewRequests,
-    slotHelperReviewRequestId,
-  ]);
-
-  const overrideSlotHelperReviewRequest = useCallback(async (): Promise<void> => {
-    if (!slotHelperReviewRequestId) return;
-    setSlotHelperReviewRequestActionLoading(true);
-    setSlotHelperReviewRequestActionError(null);
-    try {
-      const res = await fetch("/api/scheduling/slot-helper-review/override", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ request_id: slotHelperReviewRequestId }),
-      });
-      const json = await res.json().catch(() => null);
-      if (!res.ok) {
-        const msg = json && typeof json === "object" && typeof json.error === "string" ? json.error : "Failed to override request";
-        setSlotHelperReviewRequestActionError(msg);
-        return;
-      }
-      await refreshSlotHelperReviewRequests();
-      await refreshSlotHelperReviewRequestDetail(slotHelperReviewRequestId);
-      await refreshSlotHelperActiveHolds();
-    } catch (err) {
-      setSlotHelperReviewRequestActionError(err instanceof Error ? err.message : "Failed to override request");
-    } finally {
-      setSlotHelperReviewRequestActionLoading(false);
-    }
-  }, [
-    refreshSlotHelperActiveHolds,
-    refreshSlotHelperReviewRequestDetail,
-    refreshSlotHelperReviewRequests,
-    slotHelperReviewRequestId,
   ]);
 
   const slotHelperResults = useMemo(() => {
@@ -3683,7 +3820,7 @@ useEffect(() => {
     const earliest = slotHelperFilteredResults[0]?.date ?? null;
     if (!earliest) return;
 
-    setSlotHelperCollapsedDates((prev) => {
+    setSlotHelperCollapsedDates(() => {
       const next: Record<string, boolean> = {};
       for (const opt of slotHelperDateOptions) {
         next[opt.value] = opt.value !== earliest;
@@ -4445,166 +4582,6 @@ useEffect(() => {
     return (addCandidateConflicts ?? []).filter((c) => c.severity === "HIGH");
   }, [addCandidateConflicts]);
 
-  type AvailabilityStatus = "ANYTIME" | "AVAILABLE" | "OUTSIDE" | "NO_WINDOWS" | "NEEDS_INPUT";
-
-function availabilityStatusLabel(status: AvailabilityStatus): string {
-  if (status === "NO_WINDOWS" || status === "OUTSIDE") return "NOT AVAILABLE";
-  if (status === "NEEDS_INPUT") return "NEEDS INPUT";
-  return status;
-}
-
-function shortDowLabel(day: string): string {
-  const clean = String(day || "").trim().toUpperCase();
-  return clean.length <= 3 ? clean : clean.slice(0, 3);
-}
-  type AvailabilityVm = {
-    instructor_id: string;
-    instructor_label: string;
-    month: string | null;
-    day: string | null;
-    status: AvailabilityStatus;
-  checkLine: string;
-  monthLabel: string | null;
-  monthPills: Array<{ day: string; window: string }>;
-  };
-
-const AVAIL_DOW_ORDER: Record<string, number> = {
-  MONDAY: 0,
-  TUESDAY: 1,
-  WEDNESDAY: 2,
-  THURSDAY: 3,
-  FRIDAY: 4,
-  SATURDAY: 5,
-  SUNDAY: 6,
-};
-
-function hm(value: string): string {
-  // normalize to HH:mm for display like Maintenance
-  const m = /^(\d{1,2}):(\d{2})/.exec(String(value ?? "").trim());
-  if (!m) return String(value ?? "").slice(0, 5);
-  return `${String(Number(m[1])).padStart(2, "0")}:${m[2]}`;
-}
-
-function buildAvailabilityVm(opts: {
-  instructorId: string;
-  instructorLabel: string;
-  month: string | null;
-  isoDate: string | null;
-  startHHmm: string | null;
-  endHHmm: string | null;
-  availabilityRows: AvailabilityRule[];
-}): AvailabilityVm {
-  const { instructorId, instructorLabel, month, isoDate, startHHmm, endHHmm, availabilityRows } = opts;
-
-  const day = isoDate ? dayOfWeekFromIsoDateUtc(isoDate) : null;
-  const startMin = startHHmm ? parseHHmmToMinutes(startHHmm) : null;
-  const endMin = endHHmm ? parseHHmmToMinutes(endHHmm) : null;
-
-  const rulesForMonth =
-    month
-      ? availabilityRows.filter((r) => r.instructor_id === instructorId && r.schedule_month === month)
-      : [];
-
-  const monthPills = rulesForMonth
-    .slice()
-    .sort((a, b) => {
-      const aDay = AVAIL_DOW_ORDER[String(a.day_of_week).toUpperCase()] ?? 99;
-      const bDay = AVAIL_DOW_ORDER[String(b.day_of_week).toUpperCase()] ?? 99;
-      if (aDay !== bDay) return aDay - bDay;
-      return String(a.available_start).localeCompare(String(b.available_start));
-    })
-    .map((r) => ({
-      day: String(r.day_of_week).toUpperCase(),
-      window: `${hm(String(r.available_start).slice(0, 5))}–${hm(String(r.available_end).slice(0, 5))}`,
-    }));
-
-  // No rules at all in month => available any time
-  if (!month || rulesForMonth.length === 0) {
-    const monthLabel = month ? formatMonthShortYear(month) : null;
-    return {
-      instructor_id: instructorId,
-      instructor_label: instructorLabel,
-      month,
-      day,
-      status: "ANYTIME",
-      checkLine: month
-        ? `No availability rules for ${monthLabel}; available any time.`
-        : "Select a date to view availability.",
-      monthLabel,
-      monthPills: [],
-    };
-  }
-
-  const monthLabel = formatMonthShortYear(month);
-
-  if (!isoDate || !day) {
-    return {
-      instructor_id: instructorId,
-      instructor_label: instructorLabel,
-      month,
-      day,
-      status: "NEEDS_INPUT",
-      checkLine: "Select a date to check availability.",
-      monthLabel,
-      monthPills,
-    };
-  }
-
-  if (startMin === null || endMin === null || endMin <= startMin) {
-    return {
-      instructor_id: instructorId,
-      instructor_label: instructorLabel,
-      month,
-      day,
-      status: "NEEDS_INPUT",
-      checkLine: "Select a start and end time to check availability.",
-      monthLabel,
-      monthPills,
-    };
-  }
-
-  const windowsForDay = rulesForMonth
-    .filter((r) => String(r.day_of_week).toUpperCase() === day)
-    .map((r) => ({ start: hm(String(r.available_start).slice(0, 5)), end: hm(String(r.available_end).slice(0, 5)) }));
-
-  const dateLabel = formatIsoDateForMessage(isoDate);
-  const startLabel = formatTimeAmPm(startHHmm ?? "");
-  const endLabel = formatTimeAmPm(endHHmm ?? "");
-
-  if (windowsForDay.length === 0) {
-    return {
-      instructor_id: instructorId,
-      instructor_label: instructorLabel,
-      month,
-      day,
-      status: "NO_WINDOWS",
-      checkLine: `No Availability for ${dateLabel} from ${startLabel} to ${endLabel}.`,
-      monthLabel,
-      monthPills,
-    };
-  }
-
-  const covered = windowsForDay.some((w) => {
-    const wStart = parseHHmmToMinutes(w.start);
-    const wEnd = parseHHmmToMinutes(w.end);
-    if (wStart === null || wEnd === null) return false;
-    return startMin >= wStart && endMin <= wEnd;
-  });
-
-  return {
-    instructor_id: instructorId,
-    instructor_label: instructorLabel,
-    month,
-    day,
-    status: covered ? "AVAILABLE" : "OUTSIDE",
-    checkLine: covered
-      ? `Available for ${dateLabel} from ${startLabel} to ${endLabel}.`
-      : `No Availability for ${dateLabel} from ${startLabel} to ${endLabel}.`,
-    monthLabel,
-    monthPills,
-  };
-}
-
   const addAvailabilityVm = useMemo((): AvailabilityVm[] => {
     if (!addOpen) return [];
 
@@ -4684,6 +4661,7 @@ function buildAvailabilityVm(opts: {
     editModalForm.instructor_ids,
     classes,
     locations,
+    sessions,
     engineSessions,
     conflictEngineConfig,
   ]);
@@ -4809,8 +4787,7 @@ function buildAvailabilityVm(opts: {
       setReschedulePreviewResults(results);
       // Requirement: default to unchecked on first load.
       setRescheduleSelectedSessionIds([]);
-    } catch (err) {
-      console.error("[reschedule-preview] compute failed:", err);
+    } catch {
       setReschedulePreviewError("Failed to compute reschedule preview.");
     } finally {
       setReschedulePreviewComputing(false);
@@ -5094,7 +5071,6 @@ function buildAvailabilityVm(opts: {
     ));
     return rows;
   }, [
-    editModalOpen,
     formatInstructorIds,
     formatInstructors,
     formatLocation,
@@ -8038,7 +8014,7 @@ function buildAvailabilityVm(opts: {
                           aria-label="Expand all date sections"
                           disabled={slotHelperDateOptions.length === 0 || slotHelperAllExpanded}
                           onClick={() => {
-                            setSlotHelperCollapsedDates((prev) => {
+                            setSlotHelperCollapsedDates(() => {
                               const next: Record<string, boolean> = {};
                               for (const opt of slotHelperDateOptions) next[opt.value] = false;
                               return next;
@@ -8058,7 +8034,7 @@ function buildAvailabilityVm(opts: {
                           aria-label="Collapse all date sections"
                           disabled={slotHelperDateOptions.length === 0 || slotHelperAllCollapsed}
                           onClick={() => {
-                            setSlotHelperCollapsedDates((prev) => {
+                            setSlotHelperCollapsedDates(() => {
                               const next: Record<string, boolean> = {};
                               for (const opt of slotHelperDateOptions) next[opt.value] = true;
                               return next;
@@ -8605,6 +8581,10 @@ function buildAvailabilityVm(opts: {
                     type="button"
                     onClick={() => void handleSlotHelperSubmit()}
                     disabled={slotHelperSelectedSlotKeys.length === 0 || slotHelperSubmitStatus === "submitting" || slotHelperSubmitComplete}
+                    onMouseEnter={() => setSlotHelperSubmitTooltipOpen(true)}
+                    onMouseLeave={() => setSlotHelperSubmitTooltipOpen(false)}
+                    onFocus={() => setSlotHelperSubmitTooltipOpen(true)}
+                    onBlur={() => setSlotHelperSubmitTooltipOpen(false)}
                     className="inline-flex items-center gap-2 rounded-xl border border-[var(--cta)] bg-[var(--cta)] px-3 py-2 text-sm font-semibold text-[var(--cta-foreground)] transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Submit

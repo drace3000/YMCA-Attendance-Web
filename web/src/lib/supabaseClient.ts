@@ -4,7 +4,8 @@ import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
 // Dev bypass - skip Supabase entirely.
 // Set NEXT_PUBLIC_DEV_AUTH_BYPASS=true in web/.env.local ONLY if you explicitly want to bypass auth.
-const DEV_AUTH_BYPASS = process.env.NEXT_PUBLIC_DEV_AUTH_BYPASS === "true";
+const DEV_AUTH_BYPASS =
+  process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_DEV_AUTH_BYPASS === "true";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 // Support both legacy anon key and newer publishable keys.
@@ -25,6 +26,10 @@ export const supabase: SupabaseClient =
         },
       })
     : (null as unknown as SupabaseClient);
+
+export function isSupabaseConfigured(): boolean {
+  return !DEV_AUTH_BYPASS && !!supabaseUrl && !!supabasePublicKey;
+}
 
 function assertSupabaseConfigured(): void {
   if (DEV_AUTH_BYPASS) return;

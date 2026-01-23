@@ -94,7 +94,6 @@ Key metrics included:
           break;
       }
     } catch (err) {
-      console.error("PDF generation error:", err);
       setError(err instanceof Error ? err.message : "Failed to generate PDF");
     } finally {
       setLoading(null);

@@ -42,6 +42,33 @@ export async function POST(req: NextRequest): Promise<Response> {
 
     const supabase = createSupabaseServerClient();
 
+    // SECURITY: In production, require a valid Supabase access token and ensure it matches the requested email.
+    // (In local dev, we allow email-only passthrough for the DEV_AUTH_BYPASS workflow.)
+    const allowDevPassthrough =
+      process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_DEV_AUTH_BYPASS === "true";
+
+    const authHeader = req.headers.get("authorization");
+    const bearer = authHeader?.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : null;
+
+    if (!bearer && !allowDevPassthrough) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    if (bearer) {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser(bearer);
+
+      const authedEmail = user?.email?.trim().toLowerCase() ?? null;
+      if (userError || !authedEmail) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      }
+      if (authedEmail !== email) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+    }
+
     const { data: recipient, error: recipientError } = await supabase
       .from("branch_schedule_recipients")
       .select("id, email, recipient_type, branch_id, is_active, needs_password_setup, last_login_at")
@@ -72,7 +99,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     }
 
     // Load branch + hierarchy (best-effort)
-    const { data: rawBranch, error: branchError } = await supabase
+    const { data: rawBranch } = await supabase
       .from("ymca_branches")
       .select(
         `
@@ -88,11 +115,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       .eq("id", recipient.branch_id)
       .single();
 
-    if (branchError && branchError.code !== "PGRST116") {
-      // Non-fatal, still return recipient context
-      // (log server-side for debugging)
-      console.warn("[login-context] Failed to load branch:", branchError.message);
-    }
+    // Non-fatal, still return recipient context even if branch lookup fails.
 
     const branch = rawBranch as
       | {
