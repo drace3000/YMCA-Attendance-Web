@@ -1,6 +1,7 @@
 "use client";
 
-import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { createBrowserClient } from "@supabase/ssr";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 // Dev bypass - skip Supabase entirely.
 // Set NEXT_PUBLIC_DEV_AUTH_BYPASS=true in web/.env.local ONLY if you explicitly want to bypass auth.
@@ -18,13 +19,7 @@ const supabasePublicKey =
 // Note: We do NOT construct a real client if env vars are missing (common in tests).
 export const supabase: SupabaseClient =
   !DEV_AUTH_BYPASS && supabaseUrl && supabasePublicKey
-    ? createClient(supabaseUrl, supabasePublicKey, {
-        auth: {
-          autoRefreshToken: true,
-          persistSession: true,
-          detectSessionInUrl: true,
-        },
-      })
+    ? createBrowserClient(supabaseUrl, supabasePublicKey)
     : (null as unknown as SupabaseClient);
 
 export function isSupabaseConfigured(): boolean {
