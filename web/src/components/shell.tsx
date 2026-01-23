@@ -310,6 +310,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
                         side="bottom"
                         align="start"
                         sideOffset={8}
+                        onOpenAutoFocus={(e) => e.preventDefault()}
+                        onCloseAutoFocus={(e) => e.preventDefault()}
                         className="pointer-events-none w-auto rounded-2xl border-[var(--brand-strong)] bg-[rgb(var(--brand-soft-rgb)/0.35)] px-3 py-2 text-xs text-foreground shadow-lg backdrop-blur-md"
                       >
                         <PopoverArrow
