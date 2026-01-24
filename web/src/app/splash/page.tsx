@@ -48,7 +48,8 @@ export default function SplashPage() {
           (branchId && branchId === EASTSIDE_BRANCH_ID) ||
           (branchName && branchName.toLowerCase() === EASTSIDE_BRANCH_NAME.toLowerCase());
 
-        if (!isAdmin || !isEastside) {
+        // Admin is restricted to Eastside; Branch users are allowed.
+        if (isAdmin && !isEastside) {
           setError("Admin access restricted to Eastside Family YMCA.");
           await signOut();
           return;
