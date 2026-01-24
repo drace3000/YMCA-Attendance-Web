@@ -67,7 +67,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
     branch,
     setSidebarPosition,
   } = useThemeSettings();
-  const { user, signOut } = useAuth();
+  const { user, signOut, loading: authLoading } = useAuth();
   const { isAdmin, isBranch } = useBranchAccess();
   const { hasSelection: adminHasSelection, selection: adminSelection, isComplete: adminSelectionComplete } =
     useAdminHierarchySelection();
@@ -174,6 +174,20 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
   const adminSelectionIncomplete = isAdmin && !adminSelectionComplete;
 
+  // Splash/login routing: unauthenticated users -> /splash, authenticated users on /splash -> /
+  useEffect(() => {
+    if (authLoading) return;
+    if (pathname === "/splash") {
+      if (user) {
+        router.replace("/");
+      }
+      return;
+    }
+    if (!user) {
+      router.replace("/splash");
+    }
+  }, [authLoading, pathname, router, user]);
+
   // If admin selection is incomplete, keep the user on Maintenance until a Branch is chosen.
   useEffect(() => {
     if (!mounted) return;
@@ -181,6 +195,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
     if (pathname === "/maintenance") return;
     router.push("/maintenance");
   }, [adminSelectionIncomplete, mounted, pathname, router]);
+
+  // Minimal chrome for splash page
+  if (pathname === "/splash") {
+    return <div className="min-h-screen bg-black text-foreground">{children}</div>;
+  }
 
   const displayMode = mounted ? mode : "light";
 
