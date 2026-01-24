@@ -2102,7 +2102,41 @@ useEffect(() => {
         }
         throw new Error(json?.error || "Failed to update session");
       }
-      // Skip full refresh; new sessions are already represented in the UI.
+      setSessions((prev) =>
+        prev.map((session) => {
+          if (session.id !== editModalSessionId) return session;
+          const normalizedStart = editModalForm.start_time.slice(0, 5);
+          const normalizedEnd = editModalForm.end_time.slice(0, 5);
+          const nextClass =
+            classes.find((entry) => entry.id === editModalForm.class_id) ??
+            (session.class?.id === editModalForm.class_id ? session.class : null);
+          const nextLocation =
+            locations.find((entry) => entry.id === editModalForm.location_id) ??
+            (session.location?.id === editModalForm.location_id ? session.location : null);
+          const instructorMap = new Map(instructors.map((entry) => [entry.id, entry]));
+          const nextInstructors = editModalForm.instructor_ids.map((id) => {
+            const fromOptions = instructorMap.get(id);
+            if (fromOptions) return { ...fromOptions };
+            const fromSession = session.instructors.find((entry) => entry.id === id);
+            if (fromSession) return fromSession;
+            return { id, nickname: "", first_name: "", last_name: "", readable_id: null };
+          });
+
+          return {
+            ...session,
+            session_date: editModalForm.session_date,
+            day_of_week: day,
+            start_time: normalizedStart,
+            end_time: normalizedEnd,
+            class_id: editModalForm.class_id,
+            location_id: editModalForm.location_id,
+            headcount: editModalForm.headcount,
+            class: nextClass,
+            location: nextLocation,
+            instructors: nextInstructors,
+          };
+        }),
+      );
       closeEditModal();
     } catch (err) {
       const errorObj = err instanceof Error ? err : new Error(String(err));
