@@ -206,9 +206,12 @@ export function Shell({ children }: { children: React.ReactNode }) {
             />
           </div>
           <div className="h-10 w-px bg-white/20" />
-          <div className="flex flex-col leading-tight">
+          <div className="flex flex-col leading-tight text-center">
             <p className="pt-0.5 text-xs font-bold uppercase tracking-[0.22em] text-foreground/85">
-              EZ-ATTENDANCE v2
+              EZ-ATTENDANCE
+            </p>
+            <p className="text-[10px] font-semibold tracking-[0.14em] text-foreground/75">
+              ver RC13.b
             </p>
           </div>
         </div>

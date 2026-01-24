@@ -5016,7 +5016,7 @@ useEffect(() => {
         onClick={() => handleEdit(session)}
         className={`cursor-pointer border-b border-white/5 transition hover:bg-white/5 ${idx % 2 === 0 ? "bg-white/[0.02]" : ""}`}
       >
-        <td className="px-3 py-2">
+        <td className="px-2.5 sm:px-3 py-2 whitespace-nowrap min-w-[7ch]">
           <div className="flex items-center gap-2">
             {renderConflictBadge(session.id, localConflictsBySessionId[session.id] ?? null)}
             {isRecentSession(session.created_at) ? (
@@ -5026,22 +5026,22 @@ useEffect(() => {
                 fill="currentColor"
               />
             ) : null}
-            <span>{session.day_of_week.slice(0, 3)}</span>
+            <span className="whitespace-nowrap">{session.day_of_week.slice(0, 3)}</span>
           </div>
         </td>
-        <td className="px-3 py-2">{session.session_date}</td>
-        <td className="px-3 py-2">{session.start_time.slice(0, 5)}</td>
-        <td className="px-3 py-2">{session.end_time.slice(0, 5)}</td>
-        <td className="px-3 py-2">{session.class?.name || "-"}</td>
-        <td className="px-3 py-2">{formatLocation(session.location)}</td>
-        <td className="px-3 py-2 max-w-[200px] truncate">{formatInstructors(session.instructors)}</td>
+        <td className="px-2.5 sm:px-3 py-2 whitespace-nowrap min-w-[8ch]">{session.session_date}</td>
+        <td className="px-2.5 sm:px-3 py-2 whitespace-nowrap min-w-[7ch]">{session.start_time.slice(0, 5)}</td>
+        <td className="px-2.5 sm:px-3 py-2 whitespace-nowrap min-w-[7ch]">{session.end_time.slice(0, 5)}</td>
+        <td className="px-2.5 sm:px-3 py-2 min-w-[12ch] max-w-[20ch] truncate">{session.class?.name || "-"}</td>
+        <td className="px-2.5 sm:px-3 py-2 min-w-[12ch] max-w-[18ch] truncate">{formatLocation(session.location)}</td>
+        <td className="px-2.5 sm:px-3 py-2 min-w-[12ch] max-w-[18ch] truncate">{formatInstructors(session.instructors)}</td>
         <td
-          className="px-3 py-2 max-w-[240px] truncate font-mono text-xs text-muted-foreground"
+          className="px-2.5 sm:px-3 py-2 min-w-[14ch] max-w-[22ch] truncate font-mono text-xs text-muted-foreground"
           title={formatInstructorIds(session.instructors)}
         >
           {formatInstructorIds(session.instructors)}
         </td>
-        <td className="px-3 py-2 text-center">{session.headcount ?? "-"}</td>
+        <td className="px-2.5 sm:px-3 py-2 text-center whitespace-nowrap min-w-[6ch]">{session.headcount ?? "-"}</td>
         <td className="px-2 py-2">
           <div className="flex justify-center gap-1">
             <button
@@ -5579,7 +5579,7 @@ useEffect(() => {
                 - Include sort/filter icons inside the pill only when clickable (true here).
               */}
               {(() => null)()}
-              <th className="px-3 py-3 text-left font-medium">
+              <th className="px-2.5 sm:px-3 py-3 text-left font-medium whitespace-nowrap">
                 <div className="flex items-center gap-2">
                   {/* Align header text with day values (which render after the conflict badge) */}
                   <span className="inline-flex h-8 w-8" aria-hidden="true" />
@@ -5588,23 +5588,23 @@ useEffect(() => {
                   </div>
                 </div>
               </th>
-              <th className="px-3 py-3 text-left font-medium">
-                <div className="inline-flex items-center gap-2 rounded-full border border-[var(--brand-strong)]/60 bg-[rgb(var(--brand-soft-rgb)/0.18)] px-2.5 py-1 text-sm font-semibold text-foreground">
+              <th className="px-2.5 sm:px-3 py-3 text-left font-medium whitespace-nowrap min-w-[8ch]">
+                <div className="inline-flex items-center gap-2 rounded-full border border-[var(--brand-strong)]/60 bg-[rgb(var(--brand-soft-rgb)/0.18)] px-2.5 py-1 text-sm font-semibold text-foreground whitespace-nowrap">
                   Date
                 </div>
               </th>
-              <th className="px-3 py-3 text-left font-medium">
-                <div className="inline-flex items-center gap-2 rounded-full border border-[var(--brand-strong)]/60 bg-[rgb(var(--brand-soft-rgb)/0.18)] px-2.5 py-1 text-sm font-semibold text-foreground">
+              <th className="px-2.5 sm:px-3 py-3 text-left font-medium whitespace-nowrap min-w-[7ch]">
+                <div className="inline-flex items-center gap-2 rounded-full border border-[var(--brand-strong)]/60 bg-[rgb(var(--brand-soft-rgb)/0.18)] px-2.5 py-1 text-sm font-semibold text-foreground whitespace-nowrap">
                   Start
                 </div>
               </th>
-              <th className="px-3 py-3 text-left font-medium">
-                <div className="inline-flex items-center gap-2 rounded-full border border-[var(--brand-strong)]/60 bg-[rgb(var(--brand-soft-rgb)/0.18)] px-2.5 py-1 text-sm font-semibold text-foreground">
+              <th className="px-2.5 sm:px-3 py-3 text-left font-medium whitespace-nowrap min-w-[7ch]">
+                <div className="inline-flex items-center gap-2 rounded-full border border-[var(--brand-strong)]/60 bg-[rgb(var(--brand-soft-rgb)/0.18)] px-2.5 py-1 text-sm font-semibold text-foreground whitespace-nowrap">
                   End
                 </div>
               </th>
-              <th className="px-3 py-3 text-left font-medium">
-                <div className="inline-flex items-center gap-2 rounded-full border border-[var(--brand-strong)]/60 bg-[rgb(var(--brand-soft-rgb)/0.18)] px-2.5 py-1 text-sm font-semibold text-foreground">
+              <th className="px-2.5 sm:px-3 py-3 text-left font-medium whitespace-nowrap min-w-[12ch] max-w-[20ch]">
+                <div className="inline-flex items-center gap-2 rounded-full border border-[var(--brand-strong)]/60 bg-[rgb(var(--brand-soft-rgb)/0.18)] px-2.5 py-1 text-sm font-semibold text-foreground whitespace-nowrap">
                   <span>Class</span>
                   <button
                     type="button"
@@ -5700,8 +5700,8 @@ useEffect(() => {
                   </Popover>
                 </div>
               </th>
-              <th className="px-3 py-3 text-left font-medium">
-                <div className="inline-flex items-center gap-2 rounded-full border border-[var(--brand-strong)]/60 bg-[rgb(var(--brand-soft-rgb)/0.18)] px-2.5 py-1 text-sm font-semibold text-foreground">
+              <th className="px-2.5 sm:px-3 py-3 text-left font-medium whitespace-nowrap min-w-[12ch] max-w-[18ch]">
+                <div className="inline-flex items-center gap-2 rounded-full border border-[var(--brand-strong)]/60 bg-[rgb(var(--brand-soft-rgb)/0.18)] px-2.5 py-1 text-sm font-semibold text-foreground whitespace-nowrap">
                   <span>Location</span>
                   <button
                     type="button"
@@ -5797,8 +5797,8 @@ useEffect(() => {
                   </Popover>
                 </div>
               </th>
-              <th className="px-3 py-3 text-left font-medium">
-                <div className="inline-flex items-center gap-2 rounded-full border border-[var(--brand-strong)]/60 bg-[rgb(var(--brand-soft-rgb)/0.18)] px-2.5 py-1 text-sm font-semibold text-foreground">
+              <th className="px-2.5 sm:px-3 py-3 text-left font-medium whitespace-nowrap min-w-[12ch] max-w-[18ch]">
+                <div className="inline-flex items-center gap-2 rounded-full border border-[var(--brand-strong)]/60 bg-[rgb(var(--brand-soft-rgb)/0.18)] px-2.5 py-1 text-sm font-semibold text-foreground whitespace-nowrap">
                   <span>Instructor(s)</span>
                   <button
                     type="button"
@@ -5894,19 +5894,19 @@ useEffect(() => {
                   </Popover>
                 </div>
               </th>
-              <th className="px-3 py-3 text-left font-medium">
-                <div className="inline-flex items-center gap-2 rounded-full border border-[var(--brand-strong)]/60 bg-[rgb(var(--brand-soft-rgb)/0.18)] px-2.5 py-1 text-sm font-semibold text-foreground">
+              <th className="px-2.5 sm:px-3 py-3 text-left font-medium whitespace-nowrap min-w-[14ch] max-w-[22ch]">
+                <div className="inline-flex items-center gap-2 rounded-full border border-[var(--brand-strong)]/60 bg-[rgb(var(--brand-soft-rgb)/0.18)] px-2.5 py-1 text-sm font-semibold text-foreground whitespace-nowrap">
                   Instructor ID(s)
                 </div>
               </th>
-              <th className="px-3 py-3 text-center font-medium">
+              <th className="px-2.5 sm:px-3 py-3 text-center font-medium whitespace-nowrap min-w-[6ch]">
                 <div className="flex justify-center">
                   <div className="inline-flex items-center gap-2 rounded-full border border-[var(--brand-strong)]/60 bg-[rgb(var(--brand-soft-rgb)/0.18)] px-2.5 py-1 text-sm font-semibold text-foreground">
                     HC
                   </div>
                 </div>
               </th>
-              <th className="px-3 py-3 text-center font-medium w-20">
+              <th className="px-2.5 sm:px-3 py-3 text-center font-medium w-20">
                 <div className="flex justify-center">
                   <div className="inline-flex items-center gap-2 rounded-full border border-[var(--brand-strong)]/60 bg-[rgb(var(--brand-soft-rgb)/0.18)] px-2.5 py-1 text-sm font-semibold text-foreground">
                     Actions
