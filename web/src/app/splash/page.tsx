@@ -163,8 +163,18 @@ export default function SplashPage() {
       />
       <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-black/25 to-black/55" />
 
+      {/* Footer hotspot (image contains text) */}
+      <a
+        href="https://www.affordablewebdesigns.co"
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label="Open Affordable Web Designs website"
+        title="Affordable Web Designs"
+        className="absolute left-1/2 bottom-[30px] z-10 h-[34px] w-[min(520px,85vw)] -translate-x-1/2 rounded-full bg-white/0 ring-1 ring-white/0 transition hover:bg-white/10 hover:ring-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--cta)]/60"
+      />
+
       {!loginOpen ? (
-        <div className="absolute left-1/2 bottom-[max(64px,6vh)] z-10 -translate-x-1/2">
+        <div className="absolute right-[max(24px,6vw)] bottom-[max(120px,12vh)] z-10">
           <button
             type="button"
             onClick={openLogin}
