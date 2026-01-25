@@ -23,6 +23,25 @@ type Branch = {
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_REGEX = /^\(\d{3}\)\s\d{3}-\d{4}$/;
 
+const OTP_EXPIRY_SECONDS = (() => {
+  const raw = Number(process.env.NEXT_PUBLIC_OTP_EXPIRY_SECONDS);
+  if (!Number.isFinite(raw) || raw <= 0) return 3600;
+  return Math.floor(raw);
+})();
+
+function formatCountdown(seconds: number): string {
+  const safe = Number.isFinite(seconds) && seconds > 0 ? Math.floor(seconds) : 0;
+  const mins = Math.floor(safe / 60);
+  const secs = safe % 60;
+  return `${mins}:${String(secs).padStart(2, "0")}`;
+}
+
+function formatCountdownWithUnit(seconds: number): { display: string; unit: "minutes" | "seconds" } {
+  const safe = Number.isFinite(seconds) && seconds > 0 ? Math.floor(seconds) : 0;
+  if (safe < 60) return { display: String(safe), unit: "seconds" };
+  return { display: formatCountdown(safe), unit: "minutes" };
+}
+
 // Format phone as (123) 456-7890
 function formatPhoneInput(value: string): string {
   const digits = value.replace(/\D/g, "").slice(0, 10);
@@ -49,7 +68,7 @@ function HomeInner() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [otpDigits, setOtpDigits] = useState<string[]>(["", "", "", "", "", ""]);
+  const [otpDigits, setOtpDigits] = useState<string[]>(["", "", "", "", "", "", "", ""]);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [phone, setPhone] = useState("");
@@ -98,7 +117,7 @@ function HomeInner() {
   const [forgotLoading, setForgotLoading] = useState(false);
   const [forgotError, setForgotError] = useState<string | null>(null);
   const [forgotInfo, setForgotInfo] = useState<string | null>(null);
-  const [forgotOtpDigits, setForgotOtpDigits] = useState<string[]>(["", "", "", "", "", ""]);
+  const [forgotOtpDigits, setForgotOtpDigits] = useState<string[]>(["", "", "", "", "", "", "", ""]);
   const forgotOtpRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [forgotNewPassword, setForgotNewPassword] = useState("");
   const [forgotConfirmPassword, setForgotConfirmPassword] = useState("");
@@ -108,11 +127,13 @@ function HomeInner() {
 
   // Sign-in with code (OTP) state
   const [signInOtpSent, setSignInOtpSent] = useState(false);
-  const [signInOtpDigits, setSignInOtpDigits] = useState<string[]>(["", "", "", "", "", ""]);
+  const [signInOtpDigits, setSignInOtpDigits] = useState<string[]>(["", "", "", "", "", "", "", ""]);
   const signInOtpRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [signInOtpLoading, setSignInOtpLoading] = useState(false);
   const [signInOtpError, setSignInOtpError] = useState<string | null>(null);
   const [signInOtpInfo, setSignInOtpInfo] = useState<string | null>(null);
+  const [signInOtpExpiresAtMs, setSignInOtpExpiresAtMs] = useState<number | null>(null);
+  const [signInOtpSecondsLeft, setSignInOtpSecondsLeft] = useState(0);
 
   // Refs for OTP inputs
   const otpInputRefs = useRef<(HTMLInputElement | null)[]>([]);
@@ -125,6 +146,23 @@ function HomeInner() {
     }, 1000);
     return () => window.clearInterval(id);
   }, [resendSeconds]);
+
+  // Countdown for sign-in OTP expiry
+  useEffect(() => {
+    if (!signInOtpSent || !signInOtpExpiresAtMs) return;
+
+    const tick = () => {
+      const next = Math.max(0, Math.ceil((signInOtpExpiresAtMs - Date.now()) / 1000));
+      setSignInOtpSecondsLeft(next);
+      if (next === 0) {
+        setSignInOtpError((prev) => prev ?? "Code expired. Send a new code.");
+      }
+    };
+
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, [signInOtpExpiresAtMs, signInOtpSent]);
 
   // Load branches when register tab is active
   useEffect(() => {
@@ -334,7 +372,9 @@ function HomeInner() {
         return;
       }
       setSignInOtpSent(true);
-      setSignInOtpDigits(["", "", "", "", "", ""]);
+      setSignInOtpDigits(["", "", "", "", "", "", "", ""]);
+      setSignInOtpExpiresAtMs(Date.now() + OTP_EXPIRY_SECONDS * 1000);
+      setSignInOtpSecondsLeft(OTP_EXPIRY_SECONDS);
       setSignInOtpInfo(`Code sent to ${normalizedEmail}`);
       setTimeout(() => signInOtpRefs.current[0]?.focus(), 50);
     } catch (e) {
@@ -351,8 +391,12 @@ function HomeInner() {
       return;
     }
     const token = signInOtpDigits.join("");
-    if (token.length !== 6) {
-      setSignInOtpError("Enter the 6-digit code");
+    if (token.length !== 8) {
+      setSignInOtpError("Enter the 8-digit code");
+      return;
+    }
+    if (signInOtpExpiresAtMs && signInOtpSecondsLeft <= 0) {
+      setSignInOtpError("Code expired. Send a new code.");
       return;
     }
 
@@ -381,7 +425,7 @@ function HomeInner() {
     next[index] = digit;
     setSignInOtpDigits(next);
     setSignInOtpError(null);
-    if (digit && index < 5) {
+    if (digit && index < signInOtpDigits.length - 1) {
       signInOtpRefs.current[index + 1]?.focus();
     }
   };
@@ -397,13 +441,13 @@ function HomeInner() {
 
   const handleSignInOtpPaste = (e: React.ClipboardEvent) => {
     e.preventDefault();
-    const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
+    const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 8);
     if (!pasted) return;
-    const next = ["", "", "", "", "", ""];
+    const next = ["", "", "", "", "", "", "", ""];
     for (let i = 0; i < pasted.length; i++) next[i] = pasted[i]!;
     setSignInOtpDigits(next);
     const nextEmpty = next.findIndex((d) => !d);
-    signInOtpRefs.current[nextEmpty >= 0 ? nextEmpty : 5]?.focus();
+    signInOtpRefs.current[nextEmpty >= 0 ? nextEmpty : 7]?.focus();
   };
 
   // Handle dev login success confirmation
@@ -526,7 +570,7 @@ function HomeInner() {
           setError(otpError.message);
           return;
         }
-        setOtpDigits(["", "", "", "", "", ""]);
+        setOtpDigits(["", "", "", "", "", "", "", ""]);
         setOtpError(null);
         setShowOtpModal(true);
         setTimeout(() => otpInputRefs.current[0]?.focus(), 100);
@@ -548,7 +592,7 @@ function HomeInner() {
     newDigits[index] = digit;
     setOtpDigits(newDigits);
     setOtpError(null);
-    if (digit && index < 5) {
+    if (digit && index < otpDigits.length - 1) {
       otpInputRefs.current[index + 1]?.focus();
     }
   };
@@ -564,7 +608,7 @@ function HomeInner() {
 
   const handleOtpPaste = (e: React.ClipboardEvent) => {
     e.preventDefault();
-    const pastedData = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
+    const pastedData = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 8);
     if (pastedData) {
       const newDigits = [...otpDigits];
       for (let i = 0; i < pastedData.length; i++) {
@@ -572,14 +616,14 @@ function HomeInner() {
       }
       setOtpDigits(newDigits);
       const nextEmpty = newDigits.findIndex(d => !d);
-      otpInputRefs.current[nextEmpty >= 0 ? nextEmpty : 5]?.focus();
+      otpInputRefs.current[nextEmpty >= 0 ? nextEmpty : 7]?.focus();
     }
   };
 
   const handleVerifyOtp = async () => {
     const code = otpDigits.join("");
-    if (code.length !== 6) {
-      setOtpError("Please enter all 6 digits");
+    if (code.length !== 8) {
+      setOtpError("Please enter all 8 digits");
       return;
     }
 
@@ -632,7 +676,7 @@ function HomeInner() {
         setEmail("");
         setPassword("");
         setShowPassword(false);
-        setOtpDigits(["", "", "", "", "", ""]);
+        setOtpDigits(["", "", "", "", "", "", "", ""]);
         setFirstName("");
         setLastName("");
         setPhone("");
@@ -652,7 +696,7 @@ function HomeInner() {
     setEmail("");
     setPassword("");
     setShowPassword(false);
-    setOtpDigits(["", "", "", "", "", ""]);
+    setOtpDigits(["", "", "", "", "", "", "", ""]);
     setFirstName("");
     setLastName("");
     setPhone("");
@@ -678,13 +722,19 @@ function HomeInner() {
   // Always show the splash image - auth forms only when not logged in
   const showAuthCard = !user || isRegistering;
   const centerSplashOnly = !!user && !isRegistering;
+  const showOtpLayout =
+    (showAuthCard && activeTab === "signin" && signInMode === "otp") ||
+    showOtpModal ||
+    (showForgotPasswordModal && forgotStep === "otp");
 
   return (
     <div
       className={
         centerSplashOnly
           ? "mx-auto flex min-h-[calc(100vh-8rem)] max-w-6xl items-center justify-center"
-          : "mx-auto max-w-2xl space-y-6"
+          : showOtpLayout
+            ? "mx-auto min-h-[calc(100vh-8rem)] max-w-6xl space-y-6 lg:grid lg:grid-cols-2 lg:items-center lg:gap-8 lg:space-y-0"
+            : "mx-auto max-w-2xl space-y-6"
       }
     >
       {/* Splash Image - Always Visible */}
@@ -705,7 +755,11 @@ function HomeInner() {
 
       {/* Auth Card - Shown when NOT logged in OR during registration flow */}
       {showAuthCard && (
-        <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+        <div
+          className={`overflow-hidden rounded-2xl border border-border bg-card shadow-sm ${
+            showOtpLayout ? "lg:max-h-[calc(100vh-8rem)] lg:overflow-auto lg:ymca-scrollbar" : ""
+          }`}
+        >
           {/* Tab Headers */}
           <div className="flex border-b border-border">
             <button
@@ -779,7 +833,7 @@ function HomeInner() {
                       setSignInOtpError(null);
                       setSignInOtpInfo(null);
                       setSignInOtpSent(false);
-                      setSignInOtpDigits(["", "", "", "", "", ""]);
+                      setSignInOtpDigits(["", "", "", "", "", "", "", ""]);
                     }}
                     className={`btn-pill flex items-center justify-center gap-2 border px-3 py-2 text-sm font-semibold transition ${
                       signInMode === "password"
@@ -799,7 +853,7 @@ function HomeInner() {
                       setSignInOtpError(null);
                       setSignInOtpInfo(null);
                       setSignInOtpSent(false);
-                      setSignInOtpDigits(["", "", "", "", "", ""]);
+                      setSignInOtpDigits(["", "", "", "", "", "", "", ""]);
                     }}
                     className={`btn-pill flex items-center justify-center gap-2 border px-3 py-2 text-sm font-semibold transition ${
                       signInMode === "otp"
@@ -843,7 +897,7 @@ function HomeInner() {
                           setForgotError(null);
                           setForgotInfo(null);
                           setForgotStep("email");
-                          setForgotOtpDigits(["", "", "", "", "", ""]);
+                          setForgotOtpDigits(["", "", "", "", "", "", "", ""]);
                           setForgotNewPassword("");
                           setForgotConfirmPassword("");
                           setResendSeconds(0);
@@ -874,7 +928,7 @@ function HomeInner() {
                 ) : (
                   <>
                     <div className="rounded-xl border border-white/10 bg-black/10 px-4 py-3 text-sm text-foreground/90">
-                      We’ll email you a 6-digit sign-in code. You’ll click “Send code” first.
+                      We’ll email you a 8-digit sign-in code. You’ll click “Send code” first.
                     </div>
 
                     {signInOtpInfo && (
@@ -904,7 +958,18 @@ function HomeInner() {
                     ) : (
                       <>
                         <div>
-                          <label className="mb-2 block text-sm font-medium text-foreground/90">6-digit code</label>
+                          <label className="sr-only">8-digit code</label>
+                          <div className="mb-2 text-center text-sm font-semibold text-muted-foreground">
+                            Email code expires in:{" "}
+                            {(() => {
+                              const { display, unit } = formatCountdownWithUnit(signInOtpSecondsLeft);
+                              return (
+                                <>
+                                  <span className="tabular-nums">{display}</span> {unit}.
+                                </>
+                              );
+                            })()}
+                          </div>
                           <div className="flex justify-center gap-2" aria-label="Sign in code inputs">
                             {signInOtpDigits.map((digit, index) => (
                               <input
@@ -945,9 +1010,11 @@ function HomeInner() {
                           type="button"
                           onClick={() => {
                             setSignInOtpSent(false);
-                            setSignInOtpDigits(["", "", "", "", "", ""]);
+                            setSignInOtpDigits(["", "", "", "", "", "", "", ""]);
                             setSignInOtpError(null);
                             setSignInOtpInfo(null);
+                            setSignInOtpExpiresAtMs(null);
+                            setSignInOtpSecondsLeft(0);
                           }}
                           disabled={signInOtpLoading}
                           className="btn-pill flex w-full items-center justify-center gap-2 border border-white/10 bg-black/20 py-3 text-sm font-semibold text-foreground shadow-sm transition hover:bg-black/30 disabled:opacity-50"
@@ -1141,7 +1208,7 @@ function HomeInner() {
                 </button>
 
                 <p className="text-center text-xs text-muted-foreground">
-                  We&apos;ll send a 6-digit verification code to your email
+                  We&apos;ll send an 8-digit verification code to your email
                 </p>
               </div>
             )}
@@ -1169,7 +1236,7 @@ function HomeInner() {
                 Enter Authorization Code
               </h2>
               <p className="mb-6 text-sm text-muted-foreground">
-                We sent a 6-digit code to<br />
+                We sent an 8-digit code to<br />
                 <span className="font-medium text-foreground">{email}</span>
               </p>
 
@@ -1232,6 +1299,11 @@ function HomeInner() {
               <h2 className="mb-2 text-xl font-bold text-foreground">
                 Welcome! Please create your password
               </h2>
+              {(pendingEmail || email.trim()) && (
+                <p className="mb-2 text-center text-sm font-semibold text-foreground/90">
+                  {(pendingEmail ?? email).trim()}
+                </p>
+              )}
               <p className="mb-6 text-sm text-muted-foreground">
                 You must set a new password before continuing.
               </p>
@@ -1458,9 +1530,9 @@ function HomeInner() {
               <h2 className="mb-2 text-xl font-bold text-foreground">Reset Password</h2>
               <p className="mb-6 text-sm text-muted-foreground">
                 {forgotStep === "email"
-                  ? "Enter your email to receive a 6-digit reset code."
+                  ? "Enter your email to receive an 8-digit reset code."
                   : forgotStep === "otp"
-                    ? "Enter the 6-digit code and create a new password."
+                    ? "Enter the 8-digit code and create a new password."
                     : "Your password has been reset. You can sign in now."}
               </p>
 
@@ -1569,13 +1641,13 @@ function HomeInner() {
                           onPaste={(e) => {
                             if (index !== 0) return;
                             e.preventDefault();
-                            const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
+                            const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 8);
                             if (!pasted) return;
-                            const next = ["", "", "", "", "", ""];
+                            const next = ["", "", "", "", "", "", "", ""];
                             for (let i = 0; i < pasted.length; i++) next[i] = pasted[i]!;
                             setForgotOtpDigits(next);
                             const nextEmpty = next.findIndex((d) => !d);
-                            forgotOtpRefs.current[nextEmpty >= 0 ? nextEmpty : 5]?.focus();
+                            forgotOtpRefs.current[nextEmpty >= 0 ? nextEmpty : 7]?.focus();
                           }}
                           onChange={(e) => {
                             const d = e.target.value.replace(/\D/g, "").slice(-1);
@@ -1583,7 +1655,7 @@ function HomeInner() {
                             next[index] = d;
                             setForgotOtpDigits(next);
                             setForgotError(null);
-                            if (d && index < 5) forgotOtpRefs.current[index + 1]?.focus();
+                            if (d && index < forgotOtpDigits.length - 1) forgotOtpRefs.current[index + 1]?.focus();
                           }}
                           onKeyDown={(e) => {
                             if (e.key === "Backspace" && !forgotOtpDigits[index] && index > 0) {
@@ -1679,8 +1751,8 @@ function HomeInner() {
                       const pw = forgotNewPassword.trim();
                       const confirm = forgotConfirmPassword.trim();
 
-                      if (code.length !== 6) {
-                        setForgotError("Please enter all 6 digits");
+                      if (code.length !== 8) {
+                        setForgotError("Please enter all 8 digits");
                         return;
                       }
                       if (pw.length < 8) {

@@ -53,6 +53,9 @@ import {
 import { PopoverSelect } from "@/components/ui/popover-select";
 import { PrintScheduleConflictsReportModal } from "@/components/scheduling-conflicts-report/PrintScheduleConflictsReportModal";
 import { useAuth } from "@/components/auth-provider";
+import { supabaseRealtime, isSupabaseRealtimeConfigured } from "@/lib/supabaseClient";
+import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
+import { applyHeadcountUpdate } from "@/lib/scheduling/realtime-headcount";
 
 function ModalPortal({ children }: { children: React.ReactNode }): React.ReactPortal | null {
   if (typeof document === "undefined") return null;
@@ -662,7 +665,7 @@ export function SessionsTab({
   availabilityTimeStart = "06:00",
   availabilityTimeEnd = "23:00",
 }: SessionsTabProps) {
-  const { user } = useAuth();
+  const { user, isDevMode } = useAuth();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [classes, setClasses] = useState<ClassOption[]>([]);
   const [locations, setLocations] = useState<LocationOption[]>([]);
@@ -1965,6 +1968,45 @@ useEffect(() => {
     setSessions([]); // Clear stale data immediately
     void fetchSessions();
   }, [fetchSessions, refreshKey]);
+
+  // Realtime: update headcount as mobile/app updates arrive.
+  useEffect(() => {
+    if (!scheduleId || !branchId) return;
+    if (!isDevMode && !user?.id) return;
+    if (!isSupabaseRealtimeConfigured()) return;
+    if (!supabaseRealtime) return;
+
+    const channel = supabaseRealtime
+      .channel(`smart-scheduler-headcount:${branchId}:${scheduleId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "class_sessions",
+          // Supabase realtime supports a single filter string; use schedule_id for selectivity
+          // and verify branch_id in the payload below.
+          filter: `schedule_id=eq.${scheduleId}`,
+        },
+        (payload: RealtimePostgresChangesPayload<{ id: string; branch_id: string | null; headcount: number | null }>) => {
+          const next = payload.new;
+          if (!next?.id) return;
+
+          setSessions((prev) => applyHeadcountUpdate(prev, { id: next.id, headcount: next.headcount }));
+        },
+      )
+      .subscribe((status) => {
+        if (process.env.NODE_ENV !== "development") return;
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          // eslint-disable-next-line no-console
+          console.warn("[SmartScheduler] Realtime channel status:", status);
+        }
+      });
+
+    return () => {
+      supabaseRealtime.removeChannel(channel);
+    };
+  }, [branchId, isDevMode, scheduleId, user?.id]);
 
   // Callback refs to scroll to selected item when dropdown content mounts
   const scrollToSelected = useCallback((node: HTMLDivElement | null) => {

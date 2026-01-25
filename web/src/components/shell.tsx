@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Calendar,
   ChartPie,
@@ -60,6 +60,7 @@ const navItems: NavItem[] = [
 export function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const {
     sidebarPosition,
     toggleMode,
@@ -89,6 +90,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const roleAriaLabel = isAdmin ? "Administrator" : isBranch ? "Branch manager" : "User";
   const roleIconFill = isAdmin ? "currentColor" : "none";
   const roleIconStroke = isAdmin ? "none" : "currentColor";
+  const isOtpDeepLink =
+    pathname === "/" && searchParams.get("mode") === "otp" && !!searchParams.get("email");
 
   // Avoid hydration mismatch between server (default light) and client (stored theme)
   useEffect(() => {
@@ -184,17 +187,10 @@ export function Shell({ children }: { children: React.ReactNode }) {
       return;
     }
     if (!user) {
+      if (isOtpDeepLink) return;
       router.replace("/splash");
     }
-  }, [authLoading, pathname, router, user]);
-
-  // If admin selection is incomplete, keep the user on Maintenance until a Branch is chosen.
-  useEffect(() => {
-    if (!mounted) return;
-    if (!adminSelectionIncomplete) return;
-    if (pathname === "/maintenance") return;
-    router.push("/maintenance");
-  }, [adminSelectionIncomplete, mounted, pathname, router]);
+  }, [authLoading, isOtpDeepLink, pathname, router, user]);
 
   // Minimal chrome for splash page
   if (pathname === "/splash") {

@@ -15,6 +15,9 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
   let response = NextResponse.next({ request });
 
   const pathname = request.nextUrl.pathname;
+  const otpMode = request.nextUrl.searchParams.get("mode");
+  const otpEmail = request.nextUrl.searchParams.get("email");
+  const isOtpDeepLink = pathname === "/" && otpMode === "otp" && !!otpEmail;
 
   // Dev bypass should not force routing.
   const devAuthBypass =
@@ -75,6 +78,9 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
   }
 
   if (!user) {
+    if (isOtpDeepLink) {
+      return response;
+    }
     const target = request.nextUrl.clone();
     target.pathname = "/splash";
     const redirect = NextResponse.redirect(target);

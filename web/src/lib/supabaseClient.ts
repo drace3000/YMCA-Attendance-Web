@@ -14,6 +14,16 @@ const supabasePublicKey =
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
   process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
+// Realtime-safe client:
+// - In DEV_AUTH_BYPASS mode we still may want realtime (anon role) even though we skip auth.
+// - In tests, env vars are commonly missing, so keep this nullable.
+export const supabaseRealtime: SupabaseClient | null =
+  supabaseUrl && supabasePublicKey ? createBrowserClient(supabaseUrl, supabasePublicKey) : null;
+
+export function isSupabaseRealtimeConfigured(): boolean {
+  return !!supabaseRealtime;
+}
+
 // Client-side Supabase client.
 //
 // Note: We do NOT construct a real client if env vars are missing (common in tests).
