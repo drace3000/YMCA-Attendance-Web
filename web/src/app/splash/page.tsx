@@ -4,9 +4,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { signInWithPassword, signOut } from "@/lib/supabaseClient";
+import { Popover, PopoverArrow, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 const EASTSIDE_BRANCH_ID = "26d6acb8-5acf-4a32-ac24-343f30b1442c";
 const EASTSIDE_BRANCH_NAME = "Eastside Family YMCA";
+const SPLASH_IMAGE_ASPECT = 1.5; // 1536 / 1024
 
 type RecipientAccessResponse = {
   recipient: {
@@ -23,6 +25,8 @@ export default function SplashPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
+  const [signInHintOpen, setSignInHintOpen] = useState(false);
+  const [footerTooltipOpen, setFooterTooltipOpen] = useState(false);
 
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const draggingRef = useRef<{
@@ -153,37 +157,87 @@ export default function SplashPage() {
 
   return (
     <div className="relative min-h-[100svh] w-full overflow-hidden bg-black text-foreground">
-      <Image
-        src="/EZ-Attendance.Splash.AWD.png"
-        alt=""
-        fill
-        priority
-        aria-hidden="true"
-        className="object-cover object-top md:object-contain md:object-center"
-      />
-      <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-black/25 to-black/55" />
+      <div className="absolute inset-0 pointer-events-none bg-gradient-to-b from-black/50 via-black/25 to-black/55" />
 
-      {/* Footer hotspot (image contains text) */}
-      <a
-        href="https://www.affordablewebdesigns.co"
-        target="_blank"
-        rel="noopener noreferrer"
-        aria-label="Open Affordable Web Designs website"
-        title="Affordable Web Designs"
-        className="absolute left-1/2 bottom-[30px] z-10 h-[34px] w-[min(520px,85vw)] -translate-x-1/2 rounded-full bg-white/0 ring-1 ring-white/0 transition hover:bg-white/10 hover:ring-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--cta)]/60"
-      />
+      {/* Splash image stage (maintains image aspect ratio) */}
+      <div className="absolute inset-0 flex items-center justify-center">
+        <div
+          className="relative"
+          style={{
+            width: `min(100vw, calc(100svh * ${SPLASH_IMAGE_ASPECT}))`,
+            height: `min(100svh, calc(100vw / ${SPLASH_IMAGE_ASPECT}))`,
+          }}
+        >
+          <Image
+            src="/EZ-Attendance.Splash.AWD.png"
+            alt=""
+            fill
+            priority
+            aria-hidden="true"
+            className="object-contain"
+          />
 
-      {!loginOpen ? (
-        <div className="absolute right-[max(24px,6vw)] bottom-[max(120px,12vh)] z-10">
-          <button
-            type="button"
-            onClick={openLogin}
-            className="btn-pill rounded-full border border-[var(--brand-strong)] bg-[var(--cta)] px-5 py-2 text-sm font-semibold text-[var(--cta-foreground)] shadow-lg ring-1 ring-black/15 transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--cta)]/60"
-          >
-            Client Sign in
-          </button>
+          {/* Main graphic hotspot (click to sign in) */}
+          {!loginOpen ? (
+            <Popover modal={false} open={signInHintOpen} onOpenChange={setSignInHintOpen}>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  aria-label="Click to sign in"
+                  onClick={openLogin}
+                  onMouseEnter={() => setSignInHintOpen(true)}
+                  onMouseLeave={() => setSignInHintOpen(false)}
+                  onFocus={() => setSignInHintOpen(true)}
+                  onBlur={() => setSignInHintOpen(false)}
+                  className="absolute inset-x-0 top-0 bottom-[12%] z-10 -translate-y-[5px] cursor-pointer bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--cta)]/60"
+                />
+              </PopoverTrigger>
+              <PopoverContent
+                side="top"
+                align="center"
+                sideOffset={10}
+                onOpenAutoFocus={(e) => e.preventDefault()}
+                onCloseAutoFocus={(e) => e.preventDefault()}
+                className="w-auto rounded-xl border border-border bg-popover px-3 py-2 text-sm font-semibold text-foreground shadow-xl"
+              >
+                <span className="text-[var(--cta)] text-base">click now to signin</span>
+              </PopoverContent>
+            </Popover>
+          ) : null}
+
+          {/* Footer hotspot (image contains text) */}
+          <Popover open={!loginOpen && footerTooltipOpen} onOpenChange={() => {}}>
+            <PopoverTrigger asChild>
+              <a
+                href="https://www.affordablewebdesigns.co"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Open Affordable Web Designs website"
+                onMouseEnter={() => setFooterTooltipOpen(true)}
+                onMouseLeave={() => setFooterTooltipOpen(false)}
+                onFocus={() => setFooterTooltipOpen(true)}
+                onBlur={() => setFooterTooltipOpen(false)}
+                className="absolute left-1/2 bottom-[3.5%] z-20 h-[4%] min-h-[26px] w-[37%] -translate-x-1/2 rounded-full bg-white/0 ring-1 ring-white/0 transition hover:bg-white/10 hover:ring-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--cta)]/60"
+              />
+            </PopoverTrigger>
+            <PopoverContent
+              side="top"
+              align="center"
+              sideOffset={8}
+              onOpenAutoFocus={(e) => e.preventDefault()}
+              onCloseAutoFocus={(e) => e.preventDefault()}
+              className="pointer-events-none w-auto rounded-2xl border-[var(--brand-strong)] bg-[rgb(var(--brand-soft-rgb)/0.35)] px-3 py-2 text-xs text-foreground shadow-lg backdrop-blur-md"
+            >
+              <PopoverArrow
+                width={12}
+                height={8}
+                className="fill-[rgb(var(--brand-soft-rgb)/0.35)] stroke-[var(--brand-strong)] stroke-1"
+              />
+              Open Affordable Web Designs
+            </PopoverContent>
+          </Popover>
         </div>
-      ) : null}
+      </div>
 
       {loginOpen ? (
         <div className="relative mx-auto flex min-h-[100svh] w-full max-w-6xl items-center justify-center px-4 py-8 sm:py-10">
