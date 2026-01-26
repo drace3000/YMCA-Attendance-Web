@@ -3,6 +3,13 @@ import { createSupabaseServerClient } from "@/lib/supabaseServer";
 import { requireRecipientAccess } from "@/lib/requireRecipientAccess";
 import { loadUsFederalHolidaysJson, type UsHolidaysJson } from "@/lib/us-federal-holidays-source";
 import {
+  detectScheduleConflicts,
+  getDefaultConflictEngineConfig,
+  type SessionForConflicts,
+  type InstructorAvailability,
+  type ScheduleConflict,
+} from "@/lib/scheduling/conflict-engine";
+import {
   addMonthsIso,
   mapSessionDateToNextMonthByWeekdayOrdinal,
   monthPrefixFromMonthStart,
@@ -48,6 +55,7 @@ type CloneConstraintEventType =
   | "SKIPPED_MISSING_OCCURRENCE"
   | "SKIPPED_OUTSIDE_TARGET_MONTH"
   | "SKIPPED_DEDUPED"
+  | "SKIPPED_CONSTRAINT_CONFLICT"
   | "SKIPPED_NO_INSTRUCTORS_AFTER_AVAILABILITY"
   | "MODIFIED_DROPPED_INSTRUCTORS";
 
@@ -122,34 +130,21 @@ function normalizeDayOfWeek(value: string): string {
   return String(value ?? "").trim().toUpperCase();
 }
 
-function parseTimeToMinutes(time: string): number | null {
-  const m = /^(\d{2}):(\d{2})$/.exec(String(time ?? "").trim());
-  if (!m) return null;
-  const hh = Number(m[1]);
-  const mm = Number(m[2]);
-  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
-  if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
-  return hh * 60 + mm;
-}
-
-type AvailabilityWindow = { startMin: number; endMin: number; start: string; end: string };
-type AvailabilityIndex = Map<string, Map<string, AvailabilityWindow[]>>; // instructor_id -> day_of_week -> windows
-
-async function loadTargetMonthAvailabilityIndex(opts: {
+async function loadTargetMonthInstructorAvailability(opts: {
   supabase: ReturnType<typeof createSupabaseServerClient>;
   branchId: string;
   instructorIds: string[];
   scheduleMonth: string; // "YYYY-MM"
-}): Promise<AvailabilityIndex> {
+}): Promise<InstructorAvailability[]> {
   const { supabase, branchId, instructorIds, scheduleMonth } = opts;
   const ids = Array.from(new Set(instructorIds.filter(Boolean)));
-  if (ids.length === 0) return new Map();
+  if (ids.length === 0) return [];
 
-  const index: AvailabilityIndex = new Map();
+  const rows: InstructorAvailability[] = [];
   for (const chunk of chunkArray(ids, 150)) {
     const { data, error } = await supabase
       .from("instructor_availability")
-      .select("instructor_id, day_of_week, available_start, available_end, schedule_month")
+      .select("instructor_id, schedule_month, day_of_week, available_start, available_end")
       .eq("branch_id", branchId)
       .eq("schedule_month", scheduleMonth)
       .in("instructor_id", chunk);
@@ -157,36 +152,77 @@ async function loadTargetMonthAvailabilityIndex(opts: {
 
     for (const r of (data ?? []) as Array<{
       instructor_id: string;
+      schedule_month: string;
       day_of_week: string;
       available_start: string;
       available_end: string;
-      schedule_month: string;
     }>) {
-      const instructorId = String(r.instructor_id ?? "").trim();
-      if (!instructorId) continue;
-      if (String(r.schedule_month ?? "").trim() !== scheduleMonth) continue;
-
-      const day = normalizeDayOfWeek(r.day_of_week);
-      if (!day) continue;
-
-      const start = String(r.available_start ?? "").slice(0, 5);
-      const end = String(r.available_end ?? "").slice(0, 5);
-      const startMin = parseTimeToMinutes(start);
-      const endMin = parseTimeToMinutes(end);
-      if (startMin === null || endMin === null) continue;
-      if (endMin <= startMin) continue;
-
-      if (!index.has(instructorId)) index.set(instructorId, new Map());
-      const byDay = index.get(instructorId)!;
-      const list = byDay.get(day) ?? [];
-      list.push({ startMin, endMin, start, end });
-      byDay.set(day, list);
+      rows.push({
+        instructor_id: String(r.instructor_id ?? ""),
+        schedule_month: String(r.schedule_month ?? ""),
+        day_of_week: String(r.day_of_week ?? ""),
+        available_start: String(r.available_start ?? "").slice(0, 5),
+        available_end: String(r.available_end ?? "").slice(0, 5),
+      });
     }
   }
 
-  return index;
+  return rows;
 }
 
+async function loadTargetMonthHolidays(opts: {
+  supabase: ReturnType<typeof createSupabaseServerClient>;
+  branchId: string;
+  scheduleMonth: string; // "YYYY-MM"
+}): Promise<
+  Array<{
+    holiday_date: string;
+    observed_date?: string | null;
+    name: string;
+    is_closed?: boolean;
+    closed_start_time?: string | null;
+    closed_end_time?: string | null;
+  }>
+> {
+  const { supabase, branchId, scheduleMonth } = opts;
+  const { data, error } = await supabase
+    .from("holidays")
+    .select("holiday_date, observed_date, name, is_closed, closed_start_time, closed_end_time")
+    .eq("branch_id", branchId)
+    .eq("is_active", true);
+  if (error) throw new Error(error.message);
+
+  return ((data ?? []) as Array<{
+    holiday_date: string;
+    observed_date?: string | null;
+    name: string;
+    is_closed?: boolean;
+    closed_start_time?: string | null;
+    closed_end_time?: string | null;
+  }>)
+    .map((r) => ({
+      holiday_date: String(r.holiday_date ?? "").slice(0, 10),
+      observed_date: r.observed_date ? String(r.observed_date).slice(0, 10) : null,
+      name: String(r.name ?? ""),
+      is_closed: !!r.is_closed,
+      closed_start_time: r.closed_start_time ? String(r.closed_start_time).slice(0, 5) : null,
+      closed_end_time: r.closed_end_time ? String(r.closed_end_time).slice(0, 5) : null,
+    }))
+    .filter((h) => {
+      const effective = String((h.observed_date ?? h.holiday_date) ?? "");
+      return effective && effective.startsWith(scheduleMonth);
+    });
+}
+
+function buildConstraintReason(conflicts: ScheduleConflict[]): string {
+  if (conflicts.length === 0) return "Constraint conflict detected.";
+  const holiday = conflicts.find((c) => c.type === "HOLIDAY" && c.severity === "HIGH");
+  const high = conflicts.find((c) => c.severity === "HIGH");
+  const medium = conflicts.find((c) => c.severity === "MEDIUM");
+  const first = holiday ?? high ?? medium ?? conflicts[0];
+  if (conflicts.length === 1) return first.message;
+  return `${first.message} (+${conflicts.length - 1} more conflict${conflicts.length - 1 === 1 ? "" : "s"})`;
+}
 async function copyInstructorAvailabilityForTargetMonth(opts: {
   supabase: ReturnType<typeof createSupabaseServerClient>;
   branchId: string;
@@ -577,16 +613,24 @@ export async function POST(req: NextRequest): Promise<Response> {
     if (createScheduleError) throw new Error(createScheduleError.message);
     const target = targetSchedule as ScheduleRow;
 
-    // 8) Load target-month availability rules for enforcement during cloning.
-    // Semantics (matches conflict engine):
-    // - If an instructor has NO rows for the month, availability is NOT enforced (assumed available).
-    // - If an instructor has any rows for the month, they must be fully covered by a window for that day.
-    const targetAvailabilityIndex = await loadTargetMonthAvailabilityIndex({
+    // 8) Load constraint data for the target month (availability + holidays)
+    const instructorAvailability = await loadTargetMonthInstructorAvailability({
       supabase,
       branchId,
       instructorIds: allInstructorIds,
       scheduleMonth: targetScheduleMonth,
     });
+    const holidays = await loadTargetMonthHolidays({
+      supabase,
+      branchId,
+      scheduleMonth: targetScheduleMonth,
+    });
+    const conflictConfig = {
+      ...getDefaultConflictEngineConfig(),
+      scheduleMonth: targetScheduleMonth,
+      instructorAvailability,
+      holidays,
+    };
 
     // 9) Build clone plan (map dates)
     const sourceMonthStart = source.month_start;
@@ -698,9 +742,9 @@ export async function POST(req: NextRequest): Promise<Response> {
 
     // 10) Insert sessions + instructor links (sequential to preserve mapping reliably)
     const createdSessionIds: string[] = [];
+    const engineSessions: SessionForConflicts[] = [];
     let skippedOutsideTargetMonth = 0;
-    let skippedNoInstructorsAfterAvailability = 0;
-    let modifiedDroppedInstructors = 0;
+    let skippedConstraintConflicts = 0;
     try {
       const totalToInsert = deduped.length;
       let processed = 0;
@@ -730,74 +774,38 @@ export async function POST(req: NextRequest): Promise<Response> {
           continue;
         }
 
-        // Availability enforcement (drop unavailable instructors; skip session if none remain).
-        const originalInstructorIds = (p.instructor_ids ?? []).filter(Boolean);
-        let keptInstructorIds = originalInstructorIds;
-        const droppedInstructorIds: string[] = [];
+        const candidateId = `candidate:${p.source_session_id ?? `${processed}`}`;
+        const candidate: SessionForConflicts = {
+          id: candidateId,
+          day_of_week: p.target_day_of_week,
+          session_date: p.target_session_date,
+          start_time: p.start_time,
+          end_time: p.end_time,
+          location_id: p.location_id,
+          instructor_ids: Array.from(new Set((p.instructor_ids ?? []).filter(Boolean))),
+        };
 
-        if (originalInstructorIds.length > 0 && targetAvailabilityIndex.size > 0) {
-          const startMin = parseTimeToMinutes(p.start_time);
-          const endMin = parseTimeToMinutes(p.end_time);
-          const day = normalizeDayOfWeek(p.target_day_of_week);
-
-          if (startMin !== null && endMin !== null && endMin > startMin && day) {
-            const nextKept: string[] = [];
-            for (const instructorId of originalInstructorIds) {
-              const byDay = targetAvailabilityIndex.get(instructorId);
-              if (!byDay) {
-                // No rows for this instructor+month => no enforcement.
-                nextKept.push(instructorId);
-                continue;
-              }
-
-              const windows = byDay.get(day) ?? [];
-              const covered = windows.some((w) => startMin >= w.startMin && endMin <= w.endMin);
-              if (covered) nextKept.push(instructorId);
-              else droppedInstructorIds.push(instructorId);
-            }
-
-            keptInstructorIds = nextKept;
+        const conflicts = detectScheduleConflicts([...engineSessions, candidate], conflictConfig);
+        const candidateConflicts = conflicts.filter((c) => {
+          if (c.session_a_id === candidateId || c.session_b_id === candidateId) return true;
+          if (c.type === "INSTRUCTOR_MAX_HOURS") {
+            const instructorId = typeof c.meta?.instructor_id === "string" ? c.meta.instructor_id : null;
+            return !!instructorId && candidate.instructor_ids.includes(instructorId);
           }
-        }
+          return false;
+        });
+        const blockingConflicts = candidateConflicts.filter(
+          (c) => c.severity === "HIGH" || c.severity === "MEDIUM",
+        );
 
-        if (originalInstructorIds.length > 0 && droppedInstructorIds.length > 0) {
-          if (keptInstructorIds.length === 0) {
-            skippedNoInstructorsAfterAvailability += 1;
-            exceptionEvents.push({
-              branch_id: branchId,
-              program_group_id: programGroupId,
-              source_schedule_id: source.id,
-              target_schedule_id: target.id,
-              event_type: "SKIPPED_NO_INSTRUCTORS_AFTER_AVAILABILITY",
-              source_session_id: p.source_session_id ?? null,
-              class_id: p.class_id ?? null,
-              location_id: p.location_id ?? null,
-              target_session_date: p.target_session_date ?? null,
-              target_day_of_week: p.target_day_of_week ?? null,
-              target_start_time: p.start_time ?? null,
-              target_end_time: p.end_time ?? null,
-              details: {
-                reason: "All instructors unavailable for target day/time",
-                schedule_month: targetScheduleMonth,
-                original_instructor_ids: originalInstructorIds,
-                dropped_instructor_ids: droppedInstructorIds,
-              },
-            });
-            if (onProgress) {
-              const total = Math.max(1, totalToInsert);
-              const percent = Math.round((processed / total) * 100);
-              onProgress({ done: processed, total, percent });
-            }
-            continue;
-          }
-
-          modifiedDroppedInstructors += 1;
+        if (blockingConflicts.length > 0) {
+          skippedConstraintConflicts += 1;
           exceptionEvents.push({
             branch_id: branchId,
             program_group_id: programGroupId,
             source_schedule_id: source.id,
             target_schedule_id: target.id,
-            event_type: "MODIFIED_DROPPED_INSTRUCTORS",
+            event_type: "SKIPPED_CONSTRAINT_CONFLICT",
             source_session_id: p.source_session_id ?? null,
             class_id: p.class_id ?? null,
             location_id: p.location_id ?? null,
@@ -806,13 +814,21 @@ export async function POST(req: NextRequest): Promise<Response> {
             target_start_time: p.start_time ?? null,
             target_end_time: p.end_time ?? null,
             details: {
-              reason: "Dropped unavailable instructors for target day/time",
-              schedule_month: targetScheduleMonth,
-              original_instructor_ids: originalInstructorIds,
-              kept_instructor_ids: keptInstructorIds,
-              dropped_instructor_ids: droppedInstructorIds,
+              reason: buildConstraintReason(blockingConflicts),
+              conflicts: blockingConflicts.map((c) => ({
+                type: c.type,
+                severity: c.severity,
+                message: c.message,
+                meta: c.meta ?? null,
+              })),
             },
           });
+          if (onProgress) {
+            const total = Math.max(1, totalToInsert);
+            const percent = Math.round((processed / total) * 100);
+            onProgress({ done: processed, total, percent });
+          }
+          continue;
         }
 
         const { data: created, error: insertErr } = await supabase
@@ -833,7 +849,8 @@ export async function POST(req: NextRequest): Promise<Response> {
           .single();
 
         if (insertErr) throw new Error(insertErr.message);
-        createdSessionIds.push(String((created as any)?.id));
+        const createdId = String((created as any)?.id ?? "");
+        createdSessionIds.push(createdId);
 
         if (onProgress) {
           const total = Math.max(1, totalToInsert);
@@ -841,14 +858,24 @@ export async function POST(req: NextRequest): Promise<Response> {
           onProgress({ done: processed, total, percent });
         }
 
-        if (keptInstructorIds.length > 0) {
-          const links = keptInstructorIds.map((instructor_id) => ({
+        if (candidate.instructor_ids.length > 0) {
+          const links = candidate.instructor_ids.map((instructor_id) => ({
             session_id: created.id,
             instructor_id,
           }));
           const { error: linkErr } = await supabase.from("session_instructors").insert(links);
           if (linkErr) throw new Error(linkErr.message);
         }
+
+        engineSessions.push({
+          id: createdId,
+          day_of_week: p.target_day_of_week,
+          session_date: p.target_session_date,
+          start_time: p.start_time,
+          end_time: p.end_time,
+          location_id: p.location_id,
+          instructor_ids: candidate.instructor_ids,
+        });
       }
     } catch (e) {
       // Cleanup schedule (cascade deletes sessions)
@@ -856,9 +883,9 @@ export async function POST(req: NextRequest): Promise<Response> {
       throw e;
     }
 
-    const modifiedSessionsTotal = modifiedDroppedInstructors;
+    const modifiedSessionsTotal = 0;
     const skippedTotal =
-      skippable.length + dedupedSkipped + skippedOutsideTargetMonth + skippedNoInstructorsAfterAvailability;
+      skippable.length + dedupedSkipped + skippedOutsideTargetMonth + skippedConstraintConflicts;
 
     // 11) Audit log
     const { data: auditRow, error: auditErr } = await supabase
@@ -911,7 +938,8 @@ export async function POST(req: NextRequest): Promise<Response> {
         skipped_missing_occurrence: skippable.length,
         deduped_skipped: dedupedSkipped,
         skipped_outside_target_month: skippedOutsideTargetMonth,
-        skipped_no_instructors_after_availability: skippedNoInstructorsAfterAvailability,
+        skipped_constraint_conflicts: skippedConstraintConflicts,
+        skipped_no_instructors_after_availability: 0,
         skipped_sessions_total: skippedTotal,
         modified_sessions_total: modifiedSessionsTotal,
         missing_headcount_count: missingHeadcountCount,

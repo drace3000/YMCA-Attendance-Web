@@ -6,6 +6,7 @@ type ConstraintEventType =
   | "SKIPPED_MISSING_OCCURRENCE"
   | "SKIPPED_OUTSIDE_TARGET_MONTH"
   | "SKIPPED_DEDUPED"
+  | "SKIPPED_CONSTRAINT_CONFLICT"
   | "SKIPPED_NO_INSTRUCTORS_AFTER_AVAILABILITY"
   | "MODIFIED_DROPPED_INSTRUCTORS";
 
@@ -53,6 +54,8 @@ function suggestedResolutionForType(type: ConstraintEventType): string {
       return "This session mapped outside the target month and was skipped for safety. If it should exist in the cloned month, manually add it to the target schedule.";
     case "SKIPPED_DEDUPED":
       return "A duplicate target session was detected (same date/time/class/location). Review the cloned schedule to ensure the intended session exists and adjust or add sessions manually if required.";
+    case "SKIPPED_CONSTRAINT_CONFLICT":
+      return "One or more scheduling constraints were violated (e.g., closures, conflicts, max hours). Review the conflict details and adjust the session date/time or assignments before adding it manually.";
     case "SKIPPED_NO_INSTRUCTORS_AFTER_AVAILABILITY":
       return "All assigned instructors were unavailable for the target date/time. Update instructor availability for the target month or reassign an available instructor, then add the session manually if needed.";
     case "MODIFIED_DROPPED_INSTRUCTORS":
@@ -68,6 +71,8 @@ function labelForType(type: ConstraintEventType): string {
       return "Skipped: Outside target month";
     case "SKIPPED_DEDUPED":
       return "Skipped: Deduped (duplicate)";
+    case "SKIPPED_CONSTRAINT_CONFLICT":
+      return "Skipped: Constraint violation";
     case "SKIPPED_NO_INSTRUCTORS_AFTER_AVAILABILITY":
       return "Skipped: No instructors available";
     case "MODIFIED_DROPPED_INSTRUCTORS":
@@ -253,6 +258,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     "SKIPPED_MISSING_OCCURRENCE",
     "SKIPPED_OUTSIDE_TARGET_MONTH",
     "SKIPPED_DEDUPED",
+    "SKIPPED_CONSTRAINT_CONFLICT",
     "SKIPPED_NO_INSTRUCTORS_AFTER_AVAILABILITY",
     "MODIFIED_DROPPED_INSTRUCTORS",
   ];

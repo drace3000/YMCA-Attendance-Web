@@ -4544,6 +4544,7 @@ useEffect(() => {
   const [riskPillTooltipOpen, setRiskPillTooltipOpen] = useState<RiskPillId | null>(null);
   const [printConflictsModalOpen, setPrintConflictsModalOpen] = useState(false);
   const [slotHelperTimeHelpOpen, setSlotHelperTimeHelpOpen] = useState<"transition" | "turnover" | null>(null);
+  const [recentSessionTooltipId, setRecentSessionTooltipId] = useState<string | null>(null);
 
   // Counts are per-session (not per-conflict) within the current grid filters/search.
   const riskCounts = useMemo(() => {
@@ -5096,11 +5097,34 @@ useEffect(() => {
           <div className="flex items-center gap-2">
             {renderConflictBadge(session.id, localConflictsBySessionId[session.id] ?? null)}
             {isRecentSession(session.created_at) ? (
-              <Star
-                aria-label="New session"
-                className="h-4 w-4 text-orange-400"
-                fill="currentColor"
-              />
+              <Popover
+                open={recentSessionTooltipId === session.id}
+                onOpenChange={(open) => setRecentSessionTooltipId(open ? session.id : null)}
+              >
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="New within 24hrs"
+                    className="inline-flex items-center"
+                    onMouseEnter={() => setRecentSessionTooltipId(session.id)}
+                    onMouseLeave={() => setRecentSessionTooltipId(null)}
+                    onFocus={() => setRecentSessionTooltipId(session.id)}
+                    onBlur={() => setRecentSessionTooltipId(null)}
+                  >
+                    <Star className="h-4 w-4 text-orange-400" fill="currentColor" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent
+                  side="top"
+                  align="center"
+                  sideOffset={8}
+                  onOpenAutoFocus={(e) => e.preventDefault()}
+                  onCloseAutoFocus={(e) => e.preventDefault()}
+                  className="w-auto rounded-xl border border-border bg-popover px-3 py-2 text-xs font-semibold text-foreground shadow-xl"
+                >
+                  New within 24hrs
+                </PopoverContent>
+              </Popover>
             ) : null}
             <span className="whitespace-nowrap">{session.day_of_week.slice(0, 3)}</span>
           </div>
@@ -5153,9 +5177,11 @@ useEffect(() => {
     formatLocation,
     handleDelete,
     handleEdit,
+    recentSessionTooltipId,
     localConflictsBySessionId,
     isRecentSession,
     renderConflictBadge,
+    setRecentSessionTooltipId,
     sortedSessions,
   ]);
 

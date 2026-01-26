@@ -1001,7 +1001,7 @@ describe("/api/scheduling/clone", () => {
 
     expect(res.status).toBe(200);
     expect(json.summary.created_sessions).toBe(0);
-    expect(json.summary.skipped_no_instructors_after_availability).toBe(1);
+    expect(json.summary.skipped_constraint_conflicts).toBe(1);
     expect(json.summary.skipped_sessions_total).toBeGreaterThanOrEqual(1);
 
     expect(insertedSessions).toHaveLength(0);
@@ -1010,10 +1010,10 @@ describe("/api/scheduling/clone", () => {
       sessions_created_count: 0,
     });
 
-    expect(insertedConstraintEvents.some((e) => e.event_type === "SKIPPED_NO_INSTRUCTORS_AFTER_AVAILABILITY")).toBe(true);
+    expect(insertedConstraintEvents.some((e) => e.event_type === "SKIPPED_CONSTRAINT_CONFLICT")).toBe(true);
   });
 
-  it("drops only the unavailable instructor(s) and still creates the session when at least one remains", async () => {
+  it("skips sessions when any instructor violates availability constraints", async () => {
     mockRequireRecipientAccess.mockResolvedValueOnce({
       ok: true,
       access: { recipient_type: "Branch", branch_id: "br-1", email: "bm@example.com" },
@@ -1181,14 +1181,11 @@ describe("/api/scheduling/clone", () => {
     const json = await res.json();
 
     expect(res.status).toBe(200);
-    expect(json.summary.created_sessions).toBe(1);
-    expect(json.summary.modified_sessions_total).toBe(1);
+    expect(json.summary.created_sessions).toBe(0);
+    expect(json.summary.modified_sessions_total).toBe(0);
 
-    // Only inst-1 should be linked (inst-2 dropped)
-    expect(insertedLinks).toHaveLength(1);
-    expect(insertedLinks[0]).toMatchObject({ instructor_id: "inst-1" });
-
-    expect(insertedConstraintEvents.some((e) => e.event_type === "MODIFIED_DROPPED_INSTRUCTORS")).toBe(true);
+    expect(insertedLinks).toHaveLength(0);
+    expect(insertedConstraintEvents.some((e) => e.event_type === "SKIPPED_CONSTRAINT_CONFLICT")).toBe(true);
   });
 });
 

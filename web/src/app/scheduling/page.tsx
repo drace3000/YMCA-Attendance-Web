@@ -10,6 +10,7 @@ import {
   HelpCircle,
   Loader2,
   RotateCcw,
+  Trash2,
   ChevronDown,
   Printer,
   Layers3,
@@ -27,6 +28,7 @@ import {
 import { SessionsTab, Session } from "./sessions-tab";
 import { useThemeSettings } from "@/components/theme-settings-provider";
 import { useAuth } from "@/components/auth-provider";
+import { useBranchAccess } from "@/hooks/useBranchAccess";
 import {
   getPersistedScheduleSelectionStorageKey,
   isPersistedScheduleSelection,
@@ -93,6 +95,7 @@ type ProgramGroup = {
 export default function SchedulingPage() {
   const { branch } = useThemeSettings();
   const { user } = useAuth();
+  const { isAdmin } = useBranchAccess();
 
   const [refreshKey, setRefreshKey] = useState(0);
   const [refreshPopoverOpen, setRefreshPopoverOpen] = useState(false);
@@ -139,12 +142,27 @@ export default function SchedulingPage() {
   const [cloneResult, setCloneResult] = useState<any>(null);
   const [cloneProgress, setCloneProgress] = useState<{ done: number; total: number; percent: number } | null>(null);
   const [cloneOkPendingScheduleId, setCloneOkPendingScheduleId] = useState<string | null>(null);
+  const [cloneNextMonthTooltipOpen, setCloneNextMonthTooltipOpen] = useState(false);
+  const [exceptionReportTooltipOpen, setExceptionReportTooltipOpen] = useState(false);
+  const [approveTooltipOpen, setApproveTooltipOpen] = useState(false);
+  const [backoutTooltipOpen, setBackoutTooltipOpen] = useState(false);
+  const [publishTooltipOpen, setPublishTooltipOpen] = useState(false);
+  const [holidayTooltipOpen, setHolidayTooltipOpen] = useState(false);
+  const [deleteScheduleTooltipOpen, setDeleteScheduleTooltipOpen] = useState(false);
 
   // Approval actions for pending schedules
   const [approveSaving, setApproveSaving] = useState(false);
   const [backoutConfirmOpen, setBackoutConfirmOpen] = useState(false);
   const [backoutSaving, setBackoutSaving] = useState(false);
   const [approvalActionError, setApprovalActionError] = useState<string | null>(null);
+
+  // Admin-only: delete entire schedule month/year (testing support)
+  const [deleteScheduleOpen, setDeleteScheduleOpen] = useState(false);
+  const [deleteScheduleStage, setDeleteScheduleStage] = useState<"confirm" | "done">("confirm");
+  const [deleteScheduleSaving, setDeleteScheduleSaving] = useState(false);
+  const [deleteScheduleError, setDeleteScheduleError] = useState<string | null>(null);
+  const [deleteScheduleCount, setDeleteScheduleCount] = useState<number | null>(null);
+  const [deleteScheduleLabelSnapshot, setDeleteScheduleLabelSnapshot] = useState<string>("—");
 
   // Phase 7: Verify → Publish + Email
   const [publishOpen, setPublishOpen] = useState(false);
@@ -451,6 +469,21 @@ export default function SchedulingPage() {
   const selectedSchedule = schedules.find((s) => s.id === selectedScheduleId);
   const selectedBranch = branch as unknown as Branch;
   const scheduleApproved = selectedSchedule?.is_approved !== false;
+
+  const nextMonthExists = useMemo(() => {
+    if (!selectedSchedule?.month_start) return false;
+    const base = new Date(`${selectedSchedule.month_start}T00:00:00Z`);
+    if (Number.isNaN(base.getTime())) return false;
+    base.setUTCMonth(base.getUTCMonth() + 1);
+    const nextMonthStart = base.toISOString().slice(0, 10);
+    return schedules.some((s) => s.month_start === nextMonthStart);
+  }, [selectedSchedule?.month_start, schedules]);
+
+  const cloneTooltipMessage = nextMonthExists
+    ? "Next month already exists"
+    : "Clone the most recent schedule for this Branch/Group into the next month";
+  const cloneTooltipDisabled = !branch?.id || !selectedProgramGroupId;
+  const exceptionTooltipDisabled = !selectedProgramGroupId || !branch?.id;
 
   const [approvalBlockedOpen, setApprovalBlockedOpen] = useState(false);
   const [approvalBlockedAction, setApprovalBlockedAction] = useState<string>("change this schedule");
@@ -877,6 +910,60 @@ export default function SchedulingPage() {
     }
   }, [branch.id, fetchSchedules, selectedProgramGroupId, selectedScheduleId]);
 
+  const deleteScheduleLabel = useMemo(() => {
+    if (!selectedSchedule?.month_start) return "—";
+    return monthNameYearFromMonthStart(selectedSchedule.month_start);
+  }, [selectedSchedule?.month_start]);
+
+  const openDeleteSchedule = useCallback(() => {
+    if (!selectedScheduleId) return;
+    setDeleteScheduleError(null);
+    setDeleteScheduleCount(null);
+    setDeleteScheduleStage("confirm");
+    setDeleteScheduleLabelSnapshot(deleteScheduleLabel);
+    setDeleteScheduleOpen(true);
+  }, [deleteScheduleLabel, selectedScheduleId]);
+
+  const closeDeleteSchedule = useCallback(() => {
+    if (deleteScheduleSaving) return;
+    setDeleteScheduleOpen(false);
+    setDeleteScheduleError(null);
+    setDeleteScheduleCount(null);
+    setDeleteScheduleStage("confirm");
+    setDeleteScheduleLabelSnapshot("—");
+  }, [deleteScheduleSaving]);
+
+  const handleDeleteSchedule = useCallback(async () => {
+    if (!branch?.id || !selectedScheduleId) return;
+    setDeleteScheduleSaving(true);
+    setDeleteScheduleError(null);
+    try {
+      const res = await fetch("/api/scheduling/schedules", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ branch_id: branch.id, schedule_id: selectedScheduleId }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.error || "Failed to delete schedule");
+
+      const removed = Number(json?.removed_sessions ?? 0);
+      setDeleteScheduleCount(Number.isFinite(removed) ? removed : 0);
+      setDeleteScheduleStage("done");
+      await fetchSchedules();
+      handleRefresh();
+    } catch (err) {
+      await logError(err instanceof Error ? err : new Error(String(err)), "API_ERROR", {
+        page: "scheduling",
+        action: "deleteSchedule",
+        branchId: branch.id,
+        params: { scheduleId: selectedScheduleId },
+      });
+      setDeleteScheduleError(err instanceof Error ? err.message : "Failed to delete schedule");
+    } finally {
+      setDeleteScheduleSaving(false);
+    }
+  }, [branch?.id, fetchSchedules, handleRefresh, selectedScheduleId]);
+
   const runPublishPreflight = useCallback(async () => {
     if (!branch?.id || !selectedScheduleId) return;
     setPublishPreflightLoading(true);
@@ -993,81 +1080,237 @@ export default function SchedulingPage() {
             Print Schedule
           </button>
           {/* Clone Next Month Button */}
-          <button
-            type="button"
-            onClick={() => void openClone()}
-            disabled={!branch?.id || !selectedProgramGroupId}
-            className="btn-pill flex items-center gap-2 border border-white/10 bg-card/60 px-4 py-2 text-sm font-medium shadow-sm ring-1 ring-white/5 transition hover:bg-card hover:ring-white/10 disabled:cursor-not-allowed disabled:opacity-50"
-            title="Clone the most recent schedule for this Branch/Group into the next month"
-          >
-            <Copy className="h-4 w-4 text-muted-foreground" />
-            Clone Next Month
-          </button>
+          <Popover open={!cloneTooltipDisabled && cloneNextMonthTooltipOpen} onOpenChange={() => {}}>
+            <PopoverTrigger asChild>
+              <span
+                onMouseEnter={() => !cloneTooltipDisabled && setCloneNextMonthTooltipOpen(true)}
+                onMouseLeave={() => setCloneNextMonthTooltipOpen(false)}
+                onFocus={() => !cloneTooltipDisabled && setCloneNextMonthTooltipOpen(true)}
+                onBlur={() => setCloneNextMonthTooltipOpen(false)}
+                className="inline-flex"
+              >
+                <button
+                  type="button"
+                  onClick={() => void openClone()}
+                  disabled={!branch?.id || !selectedProgramGroupId || nextMonthExists}
+                  className="btn-pill flex items-center gap-2 border border-white/10 bg-card/60 px-4 py-2 text-sm font-medium shadow-sm ring-1 ring-white/5 transition hover:bg-card hover:ring-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Copy className="h-4 w-4 text-muted-foreground" />
+                  Clone Next Month
+                </button>
+              </span>
+            </PopoverTrigger>
+            <PopoverContent
+              side="bottom"
+              align="center"
+              sideOffset={8}
+              onOpenAutoFocus={(e) => e.preventDefault()}
+              onCloseAutoFocus={(e) => e.preventDefault()}
+              className="pointer-events-none w-auto rounded-2xl border-[var(--brand-strong)] bg-[rgb(var(--brand-soft-rgb)/0.35)] px-3 py-2 text-xs text-foreground shadow-lg backdrop-blur-md"
+            >
+              <PopoverArrow
+                width={12}
+                height={8}
+                className="fill-[rgb(var(--brand-soft-rgb)/0.35)] stroke-[var(--brand-strong)] stroke-1"
+              />
+              {cloneTooltipMessage}
+            </PopoverContent>
+          </Popover>
 
           {!scheduleApproved && !!selectedScheduleId && (
             <>
-              <button
-                type="button"
-                onClick={() => setExceptionReportOpen(true)}
-                disabled={!selectedProgramGroupId || !branch?.id}
-                className="btn-pill flex items-center gap-2 border border-white/10 bg-card/60 px-4 py-2 text-sm font-medium shadow-sm ring-1 ring-white/5 transition hover:bg-card hover:ring-white/10 disabled:cursor-not-allowed disabled:opacity-50"
-                title="Generate the cloning schedule exception report (PDF/email)"
-              >
-                <FileText className="h-4 w-4 text-muted-foreground" />
-                Exception Report
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleApproveSchedule()}
-                disabled={approveSaving || backoutSaving}
-                className="btn-pill flex items-center gap-2 border border-[var(--brand-strong)] bg-[var(--cta)] px-4 py-2 text-sm font-medium text-[var(--cta-foreground)] shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                title="Approve this schedule to allow edits and publishing"
-              >
-                {approveSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                Approve
-              </button>
-              <button
-                type="button"
-                onClick={() => setBackoutConfirmOpen(true)}
-                disabled={approveSaving || backoutSaving}
-                className="btn-pill flex items-center gap-2 border border-white/10 bg-card/60 px-4 py-2 text-sm font-medium shadow-sm ring-1 ring-white/5 transition hover:bg-card hover:ring-white/10 disabled:cursor-not-allowed disabled:opacity-50"
-                title="Backout (delete) this unapproved cloned schedule"
-              >
-                {backoutSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4 text-muted-foreground" />}
-                Backout
-              </button>
+              <Popover open={!exceptionTooltipDisabled && exceptionReportTooltipOpen} onOpenChange={() => {}}>
+                <PopoverTrigger asChild>
+                  <span
+                    onMouseEnter={() => !exceptionTooltipDisabled && setExceptionReportTooltipOpen(true)}
+                    onMouseLeave={() => setExceptionReportTooltipOpen(false)}
+                    onFocus={() => !exceptionTooltipDisabled && setExceptionReportTooltipOpen(true)}
+                    onBlur={() => setExceptionReportTooltipOpen(false)}
+                    className="inline-flex"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setExceptionReportOpen(true)}
+                      disabled={!selectedProgramGroupId || !branch?.id}
+                      className="btn-pill flex items-center gap-2 border border-white/10 bg-card/60 px-4 py-2 text-sm font-medium shadow-sm ring-1 ring-white/5 transition hover:bg-card hover:ring-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <FileText className="h-4 w-4 text-muted-foreground" />
+                      Exception Report
+                    </button>
+                  </span>
+                </PopoverTrigger>
+                <PopoverContent
+                  side="bottom"
+                  align="center"
+                  sideOffset={8}
+                  onOpenAutoFocus={(e) => e.preventDefault()}
+                  onCloseAutoFocus={(e) => e.preventDefault()}
+                  className="pointer-events-none w-auto rounded-2xl border-[var(--brand-strong)] bg-[rgb(var(--brand-soft-rgb)/0.35)] px-3 py-2 text-xs text-foreground shadow-lg backdrop-blur-md"
+                >
+                  <PopoverArrow
+                    width={12}
+                    height={8}
+                    className="fill-[rgb(var(--brand-soft-rgb)/0.35)] stroke-[var(--brand-strong)] stroke-1"
+                  />
+                  Generate the cloning schedule exception report (PDF/email)
+                </PopoverContent>
+              </Popover>
+              <Popover open={approveTooltipOpen} onOpenChange={() => {}}>
+                <PopoverTrigger asChild>
+                  <span
+                    onMouseEnter={() => setApproveTooltipOpen(true)}
+                    onMouseLeave={() => setApproveTooltipOpen(false)}
+                    onFocus={() => setApproveTooltipOpen(true)}
+                    onBlur={() => setApproveTooltipOpen(false)}
+                    className="inline-flex"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => void handleApproveSchedule()}
+                      disabled={approveSaving || backoutSaving}
+                      className="btn-pill flex items-center gap-2 border border-[var(--brand-strong)] bg-[var(--cta)] px-4 py-2 text-sm font-medium text-[var(--cta-foreground)] shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {approveSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                      Approve
+                    </button>
+                  </span>
+                </PopoverTrigger>
+                <PopoverContent
+                  side="bottom"
+                  align="center"
+                  sideOffset={8}
+                  onOpenAutoFocus={(e) => e.preventDefault()}
+                  onCloseAutoFocus={(e) => e.preventDefault()}
+                  className="pointer-events-none w-auto rounded-2xl border-[var(--brand-strong)] bg-[rgb(var(--brand-soft-rgb)/0.35)] px-3 py-2 text-xs text-foreground shadow-lg backdrop-blur-md"
+                >
+                  <PopoverArrow
+                    width={12}
+                    height={8}
+                    className="fill-[rgb(var(--brand-soft-rgb)/0.35)] stroke-[var(--brand-strong)] stroke-1"
+                  />
+                  Approve this schedule to allow edits and publishing
+                </PopoverContent>
+              </Popover>
+              <Popover open={backoutTooltipOpen} onOpenChange={() => {}}>
+                <PopoverTrigger asChild>
+                  <span
+                    onMouseEnter={() => setBackoutTooltipOpen(true)}
+                    onMouseLeave={() => setBackoutTooltipOpen(false)}
+                    onFocus={() => setBackoutTooltipOpen(true)}
+                    onBlur={() => setBackoutTooltipOpen(false)}
+                    className="inline-flex"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setBackoutConfirmOpen(true)}
+                      disabled={approveSaving || backoutSaving}
+                      className="btn-pill flex items-center gap-2 border border-white/10 bg-card/60 px-4 py-2 text-sm font-medium shadow-sm ring-1 ring-white/5 transition hover:bg-card hover:ring-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {backoutSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4 text-muted-foreground" />}
+                      Backout
+                    </button>
+                  </span>
+                </PopoverTrigger>
+                <PopoverContent
+                  side="bottom"
+                  align="center"
+                  sideOffset={8}
+                  onOpenAutoFocus={(e) => e.preventDefault()}
+                  onCloseAutoFocus={(e) => e.preventDefault()}
+                  className="pointer-events-none w-auto rounded-2xl border-[var(--brand-strong)] bg-[rgb(var(--brand-soft-rgb)/0.35)] px-3 py-2 text-xs text-foreground shadow-lg backdrop-blur-md"
+                >
+                  <PopoverArrow
+                    width={12}
+                    height={8}
+                    className="fill-[rgb(var(--brand-soft-rgb)/0.35)] stroke-[var(--brand-strong)] stroke-1"
+                  />
+                  Backout (delete) this unapproved cloned schedule
+                </PopoverContent>
+              </Popover>
             </>
           )}
           {/* Publish Button */}
-          <button
-            type="button"
-            onClick={() => {
-              if (!scheduleApproved) {
-                openApprovalBlocked("publish");
-                return;
-              }
-              openPublish();
-            }}
-            disabled={!branch?.id || !selectedScheduleId || hasGridHighConflicts}
-            className="btn-pill flex items-center gap-2 border border-white/10 bg-card/60 px-4 py-2 text-sm font-medium shadow-sm ring-1 ring-white/5 transition hover:bg-card hover:ring-white/10 disabled:cursor-not-allowed disabled:opacity-50"
-            title="Verify the full schedule for conflicts, then publish and email instructors"
-          >
-            <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
-            Publish
-          </button>
+          <Popover open={publishTooltipOpen} onOpenChange={() => {}}>
+            <PopoverTrigger asChild>
+              <span
+                onMouseEnter={() => setPublishTooltipOpen(true)}
+                onMouseLeave={() => setPublishTooltipOpen(false)}
+                onFocus={() => setPublishTooltipOpen(true)}
+                onBlur={() => setPublishTooltipOpen(false)}
+                className="inline-flex"
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!scheduleApproved) {
+                      openApprovalBlocked("publish");
+                      return;
+                    }
+                    openPublish();
+                  }}
+                  disabled={!branch?.id || !selectedScheduleId || hasGridHighConflicts}
+                  className="btn-pill flex items-center gap-2 border border-white/10 bg-card/60 px-4 py-2 text-sm font-medium shadow-sm ring-1 ring-white/5 transition hover:bg-card hover:ring-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+                  Publish
+                </button>
+              </span>
+            </PopoverTrigger>
+            <PopoverContent
+              side="bottom"
+              align="center"
+              sideOffset={8}
+              onOpenAutoFocus={(e) => e.preventDefault()}
+              onCloseAutoFocus={(e) => e.preventDefault()}
+              className="pointer-events-none w-auto rounded-2xl border-[var(--brand-strong)] bg-[rgb(var(--brand-soft-rgb)/0.35)] px-3 py-2 text-xs text-foreground shadow-lg backdrop-blur-md"
+            >
+              <PopoverArrow
+                width={12}
+                height={8}
+                className="fill-[rgb(var(--brand-soft-rgb)/0.35)] stroke-[var(--brand-strong)] stroke-1"
+              />
+              Verify the full schedule for conflicts, then publish and email instructors
+            </PopoverContent>
+          </Popover>
           {/* Load Holidays Button (only when selected schedule year is missing) */}
           {selectedScheduleId && scheduleMonthYear?.year && scheduleYearHolidaysMissing ? (
-            <button
-              type="button"
-              onClick={openHolidayImport}
-              disabled={holidayYearStatus.loading || holidayImporting}
-              className="btn-pill flex items-center gap-2 rounded-full border border-orange-400/90 bg-orange-400/10 px-4 py-2 text-sm font-medium text-foreground shadow-sm ring-1 ring-white/5 transition hover:bg-orange-400/15 disabled:cursor-not-allowed disabled:opacity-50"
-              title={`Load US federal holidays for ${scheduleMonthYear.year}`}
-              aria-label="Load holidays"
-            >
-              <Calendar className="h-4 w-4 text-orange-400/90" />
-              Load holidays
-            </button>
+            <Popover open={holidayTooltipOpen} onOpenChange={() => {}}>
+              <PopoverTrigger asChild>
+                <span
+                  onMouseEnter={() => setHolidayTooltipOpen(true)}
+                  onMouseLeave={() => setHolidayTooltipOpen(false)}
+                  onFocus={() => setHolidayTooltipOpen(true)}
+                  onBlur={() => setHolidayTooltipOpen(false)}
+                  className="inline-flex"
+                >
+                  <button
+                    type="button"
+                    onClick={openHolidayImport}
+                    disabled={holidayYearStatus.loading || holidayImporting}
+                    className="btn-pill flex items-center gap-2 rounded-full border border-orange-400/90 bg-orange-400/10 px-4 py-2 text-sm font-medium text-foreground shadow-sm ring-1 ring-white/5 transition hover:bg-orange-400/15 disabled:cursor-not-allowed disabled:opacity-50"
+                    aria-label="Load holidays"
+                  >
+                    <Calendar className="h-4 w-4 text-orange-400/90" />
+                    Load holidays
+                  </button>
+                </span>
+              </PopoverTrigger>
+              <PopoverContent
+                side="right"
+                align="center"
+                sideOffset={8}
+                onOpenAutoFocus={(e) => e.preventDefault()}
+                onCloseAutoFocus={(e) => e.preventDefault()}
+                className="pointer-events-none w-auto rounded-2xl border-[var(--brand-strong)] bg-[rgb(var(--brand-soft-rgb)/0.35)] px-3 py-2 text-xs text-foreground shadow-lg backdrop-blur-md"
+              >
+                <PopoverArrow
+                  width={12}
+                  height={8}
+                  className="fill-[rgb(var(--brand-soft-rgb)/0.35)] stroke-[var(--brand-strong)] stroke-1"
+                />
+                {`Load US federal holidays for ${scheduleMonthYear.year}`}
+              </PopoverContent>
+            </Popover>
           ) : null}
           {/* Helper Button (Popup) */}
           <button
@@ -1078,6 +1321,45 @@ export default function SchedulingPage() {
           >
             <HelpCircle className="h-4 w-4" />
           </button>
+          {isAdmin ? (
+            <Popover open={deleteScheduleTooltipOpen} onOpenChange={() => {}}>
+              <PopoverTrigger asChild>
+                <span
+                  onMouseEnter={() => setDeleteScheduleTooltipOpen(true)}
+                  onMouseLeave={() => setDeleteScheduleTooltipOpen(false)}
+                  onFocus={() => setDeleteScheduleTooltipOpen(true)}
+                  onBlur={() => setDeleteScheduleTooltipOpen(false)}
+                  className="inline-flex"
+                >
+                  <button
+                    type="button"
+                    onClick={openDeleteSchedule}
+                    disabled={!branch?.id || !selectedScheduleId}
+                    className="btn-pill inline-flex h-8 items-center gap-2 border border-red-500/30 bg-red-500/10 px-3 text-xs font-semibold text-red-100 shadow-sm transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                    aria-label="Delete schedule month"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Delete
+                  </button>
+                </span>
+              </PopoverTrigger>
+              <PopoverContent
+                side="right"
+                align="center"
+                sideOffset={8}
+                onOpenAutoFocus={(e) => e.preventDefault()}
+                onCloseAutoFocus={(e) => e.preventDefault()}
+                className="pointer-events-none w-auto rounded-2xl border-[var(--brand-strong)] bg-[rgb(var(--brand-soft-rgb)/0.35)] px-3 py-2 text-xs text-foreground shadow-lg backdrop-blur-md"
+              >
+                <PopoverArrow
+                  width={12}
+                  height={8}
+                  className="fill-[rgb(var(--brand-soft-rgb)/0.35)] stroke-[var(--brand-strong)] stroke-1"
+                />
+                Admin only: remove this schedule month/year for the selected branch
+              </PopoverContent>
+            </Popover>
+          ) : null}
         </div>
         <p className="text-sm text-muted-foreground">
           Manage class schedules, sessions, and generate printable schedules
@@ -2121,6 +2403,89 @@ export default function SchedulingPage() {
                 {backoutSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
                 Backout
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Admin Delete Schedule Modal */}
+      {deleteScheduleOpen && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={closeDeleteSchedule} />
+          <div className="relative z-10 w-full max-w-lg rounded-2xl border border-[var(--brand-strong)] bg-[rgb(var(--brand-rgb)/0.95)] p-6 shadow-2xl backdrop-blur-md">
+            <div className="mb-3 flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <h2 className="text-lg font-semibold text-foreground">
+                  {deleteScheduleStage === "done" ? "Schedule deleted" : "Delete schedule month/year?"}
+                </h2>
+                {deleteScheduleStage === "done" ? (
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Removed {deleteScheduleCount ?? 0} sessions from {deleteScheduleLabelSnapshot}.
+                  </p>
+                ) : (
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    This permanently deletes the schedule for <span className="font-semibold">{deleteScheduleLabelSnapshot}</span> and all
+                    sessions for the selected branch. This cannot be undone.
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={closeDeleteSchedule}
+                className="rounded-full p-1.5 text-muted-foreground hover:bg-[var(--brand-strong)]/50 hover:text-foreground"
+                aria-label="Close"
+                disabled={deleteScheduleSaving}
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {deleteScheduleStage === "confirm" ? (
+              <div className="rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-foreground/90">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 text-orange-300" />
+                  <span>Branch: {selectedBranch?.name ?? "—"}</span>
+                </div>
+                <div className="mt-1 text-xs text-foreground/70">Schedule: {selectedSchedule?.name ?? "—"}</div>
+              </div>
+            ) : null}
+
+            {deleteScheduleError ? (
+              <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                {deleteScheduleError}
+              </div>
+            ) : null}
+
+            <div className="mt-6 flex items-center justify-end gap-2">
+              {deleteScheduleStage === "done" ? (
+                <button
+                  type="button"
+                  onClick={closeDeleteSchedule}
+                  className="btn-pill flex items-center gap-2 bg-[var(--cta)] px-4 py-2 text-sm font-medium text-[var(--cta-foreground)] shadow-sm transition hover:opacity-90"
+                >
+                  OK
+                </button>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={closeDeleteSchedule}
+                    disabled={deleteScheduleSaving}
+                    className="rounded-xl border border-white/10 bg-black/20 px-4 py-2 text-sm text-foreground transition hover:bg-black/30 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleDeleteSchedule()}
+                    disabled={deleteScheduleSaving}
+                    className="btn-pill flex items-center gap-2 bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {deleteScheduleSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                    Delete Schedule
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>

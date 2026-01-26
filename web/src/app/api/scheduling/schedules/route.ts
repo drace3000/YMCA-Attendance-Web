@@ -61,3 +61,70 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   return NextResponse.json({ schedules: schedules || [] });
 }
+
+// DELETE - Remove a schedule month/year (admin only)
+export async function DELETE(req: NextRequest): Promise<Response> {
+  const required = await requireRecipientAccess(req, { allowDevPassthrough: true });
+  if (!required.ok) return required.response;
+
+  if (!required.devPassthrough && required.access?.recipient_type !== "Administrator") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const body = await req.json().catch(() => null) as { branch_id?: string; schedule_id?: string } | null;
+  const branchId = body?.branch_id ?? null;
+  const scheduleId = body?.schedule_id ?? null;
+
+  if (!branchId || !scheduleId) {
+    return NextResponse.json({ error: "branch_id and schedule_id are required" }, { status: 400 });
+  }
+
+  const supabase = createSupabaseServerClient();
+  const { data: schedule, error: scheduleError } = await supabase
+    .from("schedules")
+    .select("id, branch_id")
+    .eq("id", scheduleId)
+    .maybeSingle();
+
+  if (scheduleError) {
+    return NextResponse.json({ error: scheduleError.message }, { status: 500 });
+  }
+  if (!schedule) {
+    return NextResponse.json({ error: "Schedule not found" }, { status: 404 });
+  }
+  if (schedule.branch_id && schedule.branch_id !== branchId) {
+    return NextResponse.json({ error: "Schedule does not belong to this branch" }, { status: 403 });
+  }
+
+  const { error: deleteAuditError } = await supabase
+    .from("schedule_clone_audit")
+    .delete()
+    .or(`source_schedule_id.eq.${scheduleId},target_schedule_id.eq.${scheduleId}`)
+    .eq("branch_id", branchId);
+
+  if (deleteAuditError) {
+    return NextResponse.json({ error: deleteAuditError.message }, { status: 500 });
+  }
+
+  const { count, error: deleteSessionsError } = await supabase
+    .from("class_sessions")
+    .delete({ count: "exact" })
+    .eq("schedule_id", scheduleId)
+    .eq("branch_id", branchId);
+
+  if (deleteSessionsError) {
+    return NextResponse.json({ error: deleteSessionsError.message }, { status: 500 });
+  }
+
+  const { error: deleteScheduleError } = await supabase
+    .from("schedules")
+    .delete()
+    .eq("id", scheduleId)
+    .eq("branch_id", branchId);
+
+  if (deleteScheduleError) {
+    return NextResponse.json({ error: deleteScheduleError.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ removed_sessions: count ?? 0 });
+}
